@@ -122,6 +122,8 @@ canvas{display:block;width:100%;height:100%}
 .stance{font-family:var(--body);font-weight:700;font-size:12px;color:var(--sun);letter-spacing:.02em}
 .deckprev{display:block;height:22px;margin:3px 0 4px;transform:scaleX(-1)}
 .deckprev img{display:block;width:100%;height:100%;object-fit:fill;border-radius:38% 62% 62% 38% / 50%;box-shadow:0 1px 3px rgba(0,0,0,.5)}
+.deckprev.bb{height:30px}
+.deckprev.bb img{width:42%;margin:0 auto;border-radius:34% 14% 14% 34% / 50% 26% 26% 50%}
 @media (max-width:520px){#chars .cards{grid-template-columns:repeat(2,minmax(0,1fr))}#chars .card b{font-size:19px}#chars .card em{font-size:11px}.pips i{width:11px}}
 .volrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .vol{display:flex;align-items:center;gap:8px;font-family:var(--stamp);font-size:14px;background:rgba(13,22,32,.62);padding:7px 12px}
@@ -1676,7 +1678,7 @@ function renderCards() {
   for (const c of CHARS) {
     const b = document.createElement('button');
     b.className = 'card' + (c === CH ? ' sel' : ''); b.setAttribute('aria-pressed', c === CH); b.dataset.id = c.id;
-    b.innerHTML = ((PHOTOS[c.id] || portraits[c.id]) ? '<img class="portrait" alt="Foto de ' + c.name + '" src="' + (PHOTOS[c.id] || portraits[c.id]) + '">' : '') + '<span class="deckprev"' + (c.deckPhoto ? ' style="transform:scaleY(-1)"' : '') + '><img alt="Tabla de ' + c.name + '" src="' + deckPrev[c.id] + '"></span>' + '<span class="sws">' + c.sw.map(x => '<i style="background:' + hex(x) + '"></i>').join('') + '</span>' +
+    b.innerHTML = ((PHOTOS[c.id] || portraits[c.id]) ? '<img class="portrait" alt="Foto de ' + c.name + '" src="' + (PHOTOS[c.id] || portraits[c.id]) + '">' : '') + '<span class="deckprev' + (c.board === 'body' ? ' bb' : '') + '"' + (c.deckPhoto ? ' style="transform:scaleY(-1)"' : '') + '><img alt="Tabla de ' + c.name + '" src="' + deckPrev[c.id] + '"></span>' + '<span class="sws">' + c.sw.map(x => '<i style="background:' + hex(x) + '"></i>').join('') + '</span>' +
       '<b>' + c.name + '</b><em>' + c.tag + '</em>' + '<span class="stance">' + (c.bodyboard ? 'Bodyboard · tumbado con aletas' : c.goofy ? 'Goofy · pie derecho delante' : 'Regular · pie izquierdo delante') + '</span>' +
       '<span class="st"><span>Velocidad</span><span class="pips">' + pips(c.vel) + '</span></span>' +
       '<span class="st"><span>Aéreos</span><span class="pips">' + pips(c.air) + '</span></span>' +
