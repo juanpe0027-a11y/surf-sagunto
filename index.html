@@ -7,6 +7,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0a2a3d">
+<meta name="apple-mobile-web-app-title" content="Surf Sagunto">
+<link rel="apple-touch-icon" href="icono.png">
+<link rel="icon" href="icono.png">
 <title>Surf Puerto de Sagunto</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -191,6 +194,17 @@ canvas{display:block;width:100%;height:100%}
 .big{font-family:var(--display);font-size:56px;line-height:1;font-variant-numeric:tabular-nums}
 .stats{display:flex;gap:28px;align-items:flex-end}
 .newbest{font-family:var(--stamp);color:var(--sun);font-size:18px}
+.iosguide{position:fixed;inset:0;z-index:60;background:rgba(5,14,22,.82);display:flex;align-items:center;justify-content:center;padding:16px}
+.iosguide[hidden]{display:none!important}
+.ig-box{background:var(--paper);color:var(--ink);border-radius:14px;padding:18px 18px 16px;max-width:380px;width:100%;font-family:var(--body);box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.ig-box b{display:block;font-family:var(--display);font-size:26px;line-height:1.1}
+.ig-sub{display:block;margin:4px 0 8px;font-size:15px;opacity:.8}
+.ig-box ol{margin:0 0 14px 20px;padding:0;font-size:17px;line-height:1.45}
+.ig-box li{margin:6px 0}
+.ig-share{display:inline-flex;vertical-align:middle;background:#e7eef5;color:#0a7aff;border-radius:6px;padding:2px 4px}
+.ig-arrow{position:fixed;left:50%;bottom:6px;transform:translateX(-50%);font-size:54px;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.6);animation:igb .7s ease-in-out infinite alternate}
+.iosguide.land .ig-arrow{left:auto;right:18px;bottom:auto;top:6px;transform:rotate(180deg)}
+@keyframes igb{to{margin-bottom:-12px;margin-top:-12px}}
 .fade{position:absolute;inset:0;background:var(--foam);opacity:0;pointer-events:none;transition:opacity .28s}
 .err{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;font-size:20px}
 </style>
@@ -294,6 +308,19 @@ canvas{display:block;width:100%;height:100%}
       <div class="newbest" id="newbest" hidden>Nuevo récord en la playa del Puerto</div>
       <div class="actions"><button class="btn" id="again">Otra sesión</button><button class="mbtn" id="toMenu">Menú</button></div>
     </div>
+  </div>
+  <div class="iosguide" id="iosGuide" hidden>
+    <div class="ig-box">
+      <b>Pantalla completa en el iPhone</b>
+      <span class="ig-sub">Solo hay que hacerlo una vez:</span>
+      <ol>
+        <li>Toca el botón <i class="ig-share" aria-label="Compartir"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 10H6a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1h-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></i> de Safari (la flecha te lo señala)</li>
+        <li>Baja y elige <em>«Añadir a pantalla de inicio»</em></li>
+        <li>Toca <em>«Añadir»</em> y abre el juego desde el icono nuevo 🏄</li>
+      </ol>
+      <button class="btn" id="iosOk" type="button">Entendido</button>
+    </div>
+    <div class="ig-arrow" aria-hidden="true">⬇</div>
   </div>
   <div class="mplayer" id="mpLayer"><div id="myBub" hidden></div></div>
   <div class="mptoast" id="mpToast" hidden></div>
@@ -1364,7 +1391,7 @@ function useHumanBody(on) {
 }
 function loadHuman() {
   if (!THREE.GLTFLoader || !THREE.SkeletonUtils) return;
-  new THREE.GLTFLoader().load(BODY_URL, g => {
+  const onBody = g => {
     const sc = g.scene; sc.updateMatrixWorld(true);
     const pa = V3(0, 0, 0), pb = V3(0, 0, 0), pc = V3(0, 0, 0);
     sc.getObjectByName('mixamorigLeftUpLeg').getWorldPosition(pa); sc.getObjectByName('mixamorigLeftLeg').getWorldPosition(pb); sc.getObjectByName('mixamorigLeftFoot').getWorldPosition(pc);
@@ -1375,7 +1402,13 @@ function loadHuman() {
     boardRoot.add(HUMAN.local.root);
     useHumanBody(true);
     if (typeof rebuildRigs === 'function') rebuildRigs();
-  }, undefined, () => {});
+  };
+  // si el servidor no sirve .glb (enlaces de Claude), el modelo va como texto en base64
+  const fromText = () => fetch('cuerpo.txt').then(r => r.ok ? r.text() : Promise.reject()).then(t => {
+    const bin = atob(t.trim()), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    new THREE.GLTFLoader().parse(u.buffer, '', onBody, () => {});
+  }).catch(() => {});
+  new THREE.GLTFLoader().load(BODY_URL, onBody, undefined, fromText);
 }
 
 function applyPose(o) {
@@ -1960,11 +1993,20 @@ volEl.addEventListener('input', () => {
 // ---------- pantalla completa ----------
 const fsBtn = $('fsBtn'), fsNote = $('fsNote');
 const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
-function setFsLabel() { fsBtn.textContent = isFull() ? 'Salir de pantalla completa' : 'Pantalla completa'; }
+function setFsLabel() { fsBtn.textContent = isFull() ? 'Salir de pantalla completa' : (IS_IOS && !IS_APP ? '📱 Pantalla completa en iPhone' : 'Pantalla completa'); }
+// iPhone/iPad: Safari no deja poner pantalla completa a una web; la forma es añadirla a la pantalla de inicio
+const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const IS_APP = navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+const iosGuide = $('iosGuide');
+function showIosGuide() { iosGuide.hidden = false; iosGuide.classList.toggle('land', innerWidth > innerHeight); }
+$('iosOk').addEventListener('click', () => { iosGuide.hidden = true; });
+if (IS_IOS && !IS_APP) fsBtn.textContent = '📱 Pantalla completa en iPhone';
 function fsFailed() {
+  if (IS_IOS && !IS_APP) { showIosGuide(); return; }
   if (!overlay.hidden) fsNote.hidden = false; else say('Aquí no se puede poner pantalla completa: descarga el juego y ábrelo con Chrome', 3);
 }
 async function toggleFull() {
+  if (IS_IOS && !IS_APP) { showIosGuide(); return; }
   try {
     if (isFull()) { await (document.exitFullscreen || document.webkitExitFullscreen).call(document); return; }
     const el = document.documentElement, req = el.requestFullscreen || el.webkitRequestFullscreen;
