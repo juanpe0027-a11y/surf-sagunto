@@ -339,12 +339,10 @@ canvas{display:block;width:100%;height:100%}
 </div>
 <audio id="music" src="musica.mp4" loop preload="auto"></audio>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="vendor.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script>
 (() => {
 'use strict';
@@ -369,6 +367,7 @@ try { renderer = new THREE.WebGLRenderer({ canvas, antialias: !LOWQ, powerPrefer
 catch (e) { wrap.insertAdjacentHTML('beforeend', '<div class="err">Tu navegador no tiene WebGL activado, y el juego lo necesita.</div>'); return; }
 let pixRatio = Math.min(window.devicePixelRatio || 1, LOWQ ? 1.4 : 1.75);
 renderer.setPixelRatio(pixRatio);
+renderer.outputColorSpace = THREE.LinearSRGBColorSpace;   // mismo color que el juego original
 // calidad automática: si va a menos de ~48 fps, se baja la resolución poco a poco hasta que vaya fluido
 const perf = { t: 0, n: 0, last: 0, cool: 3 };
 function adaptQuality(now) {
@@ -379,6 +378,7 @@ function adaptQuality(now) {
   if (perf.t < 2000) return;
   const fps = perf.n * 1000 / perf.t; perf.t = 0; perf.n = 0;
   if (perf.cool > 0) { perf.cool--; return; }        // los primeros segundos no cuentan (carga)
+  if (fps < 40 && pixRatio <= 0.75 && FX.on && FX.composer) { FX.on = false; perf.cool = 1; return; }
   if (fps < 48 && pixRatio > 0.7) { pixRatio = Math.max(0.7, pixRatio - 0.15); renderer.setPixelRatio(pixRatio); resize(); perf.cool = 1; }
   else if (fps > 58 && pixRatio < Math.min(window.devicePixelRatio || 1, LOWQ ? 1.4 : 1.75) - 0.05 && !LOWQ) { pixRatio += 0.1; renderer.setPixelRatio(pixRatio); resize(); perf.cool = 2; }
 }
@@ -393,9 +393,9 @@ const world = new THREE.Group(); world.scale.x = -1; scene.add(world); world.upd
 const sunDirInt = V3(-0.32, 0.16, -1).normalize();            // coordenadas internas
 const sunDir = V3(-sunDirInt.x, sunDirInt.y, sunDirInt.z);     // coordenadas de mundo (shaders)
 
-const hemi = new THREE.HemisphereLight(0xcfe0ff, 0x1d5866, 0.85); scene.add(hemi);
-const sunL = new THREE.DirectionalLight(0xffd2a0, 1.25); sunL.position.copy(sunDirInt).multiplyScalar(100); world.add(sunL);
-const fillL = new THREE.DirectionalLight(0xbcd6ff, 0.5); fillL.position.set(-0.3, 0.6, 1); world.add(fillL);
+const hemi = new THREE.HemisphereLight(0xcfe0ff, 0x1d5866, 0.85 * Math.PI); scene.add(hemi);
+const sunL = new THREE.DirectionalLight(0xffd2a0, 1.25 * Math.PI); sunL.position.copy(sunDirInt).multiplyScalar(100); world.add(sunL);
+const fillL = new THREE.DirectionalLight(0xbcd6ff, 0.5 * Math.PI); fillL.position.set(-0.3, 0.6, 1); world.add(fillL);
 
 let pxScale = 500, aspect = 1;
 function resize() {
@@ -408,6 +408,34 @@ function resize() {
   camera.updateProjectionMatrix();
   pxScale = renderer.domElement.height / (2 * Math.tan(camera.fov * Math.PI / 360));
   if (partMat) partMat.uniforms.uScale.value = pxScale;
+  if (FX.composer) FX.composer.setSize(w, h, false);
+}
+
+// ---------- efectos de cámara de cine (librería postprocessing) ----------
+// brillo del sol y de la espuma, color más vivo, viñeta y, en ordenador, fondo desenfocado y bordes suaves
+const FX = { composer: null, on: true, dof: null };
+function setupFX() {
+  const P = window.POSTFX; if (!P) return;
+  try {
+    const c = new P.EffectComposer(renderer, { frameBufferType: LOWQ ? THREE.UnsignedByteType : THREE.HalfFloatType });
+    c.addPass(new P.RenderPass(scene, camera));
+    const fx = [];
+    if (!LOWQ) fx.push(new P.SMAAEffect());
+    if (!LOWQ) { FX.dof = new P.DepthOfFieldEffect(camera, { focusDistance: 20, focusRange: 30, bokehScale: 2.0, resolutionScale: 0.5 }); fx.push(FX.dof); }
+    fx.push(new P.BloomEffect({ intensity: LOWQ ? 0.45 : 0.6, luminanceThreshold: 0.86, luminanceSmoothing: 0.12, mipmapBlur: true, radius: 0.6 }));
+    fx.push(new P.HueSaturationEffect({ saturation: 0.14 }));
+    fx.push(new P.BrightnessContrastEffect({ contrast: 0.09 }));
+    fx.push(new P.VignetteEffect({ offset: 0.32, darkness: 0.42 }));
+    c.addPass(new P.EffectPass(camera, ...fx));
+    FX.composer = c;
+  } catch (e) { FX.composer = null; }
+}
+const fxV = new THREE.Vector3();
+function renderFrame(dt) {
+  if (FX.composer && FX.on) {
+    if (FX.dof) { boardRoot.getWorldPosition(fxV); FX.dof.cocMaterial.focusDistance = Math.max(4, camera.position.distanceTo(fxV)); }
+    FX.composer.render(dt);
+  } else renderer.render(scene, camera);
 }
 
 // ---------- GLSL compartido ----------
@@ -1300,7 +1328,7 @@ function makeHuman(c) {
   if (!HUMAN.tpl) return null;
   const sc = THREE.SkeletonUtils.clone(HUMAN.tpl);
   const root = new THREE.Group(); root.add(sc);
-  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, skinning: true, roughness: 0.5, metalness: 0.05 });
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.05 });
   const meshes = [];
   sc.traverse(o => { if (o.isSkinnedMesh) { o.geometry = o.geometry.clone(); o.material = mat; o.frustumCulled = false; o.castShadow = false; meshes.push(o); } });
   const b = {};
@@ -2676,7 +2704,7 @@ let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   adaptQuality(now);
-  if (!document.hidden) { update(dt); mpUpdate(dt); $('hudMic').hidden = hud.hidden; renderer.render(scene, camera); }
+  if (!document.hidden) { update(dt); mpUpdate(dt); $('hudMic').hidden = hud.hidden; renderFrame(dt); }
   requestAnimationFrame(frame);
 }
 
@@ -3251,6 +3279,7 @@ micBtn.addEventListener('contextmenu', e => e.preventDefault());
 window.addEventListener('resize', resize);
 if (window.ResizeObserver) new ResizeObserver(resize).observe(wrap);
 resize();
+setupFX();
 loadHuman();
 startTitleRide();
 placeBoardOnFace();
