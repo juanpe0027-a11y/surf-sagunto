@@ -2093,8 +2093,11 @@ function rideStep(dt, hT) {
     const push = (pushNear + pushFace) * cv * hf * fwd;
     // bombear: subir y bajar con giros suaves en la cara da velocidad; los giros bruscos la quitan
     const aw = Math.abs(omega), pump = (h > 0.15 && h < 0.9 ? 1 : 0.3) * (aw < 3 ? aw * 0.55 : 1.65 - (aw - 3) * 0.45);
-    const zone = -0.8 + 3.2 * sm(0.06, 0.5, h) - 1.0 * sm(0.9, 1, h);   // abajo frena, a media altura y arriba acelera
-    v += (-9.8 * 0.55 * sn + push + pump + zone - 0.033 * v * v) * dt;
+    // abajo, en el plano, la ola no empuja y el agua frena: te quedas más lento que la ola y el tubo te alcanza.
+    // A media altura y arriba de la cara se va más rápido.
+    const low = 1 - sm(0.12, 0.35, h);
+    const zone = -0.8 + 3.2 * sm(0.06, 0.5, h) - 1.0 * sm(0.9, 1, h);
+    v += (-9.8 * 0.55 * sn + push * (1 - 0.45 * low) + pump + zone - 0.033 * v * v - 0.22 * v * low) * dt;
     v = clamp(v, 2, 19);
     if (fs) {
       // misma línea: la altura no cambia y la tabla derrapa sin perder casi velocidad
