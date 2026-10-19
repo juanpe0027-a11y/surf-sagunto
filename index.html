@@ -3432,5 +3432,19 @@ window.__surf = { spawnDolphins, upsertPeer, onMsg, MP, get state() { return sta
 })();
 </script>
 
+<script>
+const BUILD_ID = '1792447257';
+(function () {
+  try {
+    fetch(location.pathname + '?b=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => {
+      const m = t.match(/const BUILD_ID = '(\d+)'/);
+      if (m && +m[1] > +BUILD_ID && !sessionStorage.getItem('upd' + m[1])) {
+        sessionStorage.setItem('upd' + m[1], '1');
+        location.replace(location.pathname + '?v=' + m[1] + location.hash);
+      }
+    }).catch(() => {});
+  } catch (e) {}
+})();
+</script>
 </body>
 </html>
