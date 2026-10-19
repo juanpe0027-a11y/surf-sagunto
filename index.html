@@ -177,7 +177,8 @@ canvas{display:block;width:100%;height:100%}
 .micbig.rec{background:var(--coral);animation:ringpulse2 .45s ease-in-out infinite alternate}
 @keyframes ringpulse2{to{transform:scale(1.12)}}
 .nickrow{display:flex;align-items:center;gap:10px;font-family:var(--stamp);font-size:14px;text-shadow:0 1px 4px rgba(0,0,0,.6)}
-.nickrow input{font:700 16px var(--body);padding:6px 10px;border-radius:6px;border:0;width:190px;color:var(--ink)}
+.nickrow input{font:700 16px var(--body);padding:6px 10px;border-radius:6px;border:2px solid rgba(255,255,255,.85);width:190px;color:#fff;background:rgba(13,22,32,.78);-webkit-text-fill-color:#fff;caret-color:#fff}
+.nickrow input::placeholder{color:rgba(255,255,255,.75);-webkit-text-fill-color:rgba(255,255,255,.75)}
 .mpmenu{font-family:var(--stamp);font-size:14px;text-shadow:0 1px 4px rgba(0,0,0,.6)}
 .mptoast{position:absolute;left:50%;top:18%;transform:translateX(-50%);z-index:50;max-width:min(90vw,420px);background:var(--coral);color:#fff;font:700 16px var(--body);padding:10px 16px;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.4);text-align:center;pointer-events:none}
 #chars .card.taken{opacity:.45;position:relative}
