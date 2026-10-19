@@ -277,6 +277,7 @@ canvas{display:block;width:100%;height:100%}
         <b>Saltar</b><span>Sube rápido hasta la cresta</span><span><kbd>↑</kbd> con velocidad</span>
         <b>Trucos</b><span>En el aire pulsa TRUCO: 1 vez 360, 2 rodeo, 3 720, 4 rodeo 360</span><span><kbd>T</kbd> (o <kbd>←</kbd> <kbd>→</kbd> <kbd>↓</kbd>)</span>
                 <b>Doble 180</b><span>Surfeando, pulsa TRUCO: gira 180 en su línea, va hacia el tubo y vuelve a girar 180 él solo</span><span><kbd>T</kbd></span>
+        <b>Moto (JuanP)</b><span>En el aire: 1 toque Superman, 2 Backflip, 3 giro 360, 4 Backflip + Superman</span><span><kbd>T</kbd></span>
         <b>Indy (agarrar)</b><span>En el aire, mantén pulsado TRUCO</span><span>Mantén <kbd>↑</kbd></span>
         <b>Tubo</b><span>Quédate bajo el labio, cerca de donde rompe</span><span></span>
         <b>Giro en el labio</b><span>Sube al labio y gira de golpe hacia abajo</span><span></span>
@@ -1196,9 +1197,16 @@ function bodyRide(o, c, grab, t, lean, twist) {
   if (grab > 0) { o.fB.y += 0.2 * grab; o.fF.y += 0.2 * grab; o.kB.y += 0.08 * grab; o.kF.y += 0.08 * grab; }
   return o;
 }
+const SUPERMAN = { hB: [-0.62, 1.04, -0.1], hF: [-0.62, 1.04, 0.1], kB: [-1.0, 1.1, -0.13], kF: [-1.0, 1.1, 0.13], fB: [-1.38, 1.14, -0.15], fF: [-1.38, 1.14, 0.15],
+  ch: [-0.16, 1.02, 0], hd: [0.2, 1.14, 0], sB: [0.04, 1.02, -0.2], sF: [0.04, 1.02, 0.2], eB: [0.22, 0.95, -0.3], eF: [0.22, 0.95, 0.3], aB: [0.36, 0.82, -0.3], aF: [0.36, 0.82, 0.3] };
 function jetRide(o, c, grab, t, lean, twist) {
   lean = lean || 0; c = c || 0; grab = grab || 0; t = t || 0;
-  const up = 0.14 * (1 - c) + 0.16 * grab, lz = lean * 0.12, bob = Math.sin(t * 7) * 0.012;
+  jetSeat(o, c, t, lean);
+  if (grab > 0.001) for (const k in SUPERMAN) { const p = SUPERMAN[k]; o[k].x += (p[0] - o[k].x) * grab; o[k].y += (p[1] - o[k].y) * grab; o[k].z += (p[2] - o[k].z) * grab; }
+  return o;
+}
+function jetSeat(o, c, t, lean) {
+  const up = 0.14 * (1 - c), lz = lean * 0.12, bob = Math.sin(t * 7) * 0.012;
   o.hB.set(-0.38, 0.66 + up, -0.12); o.hF.set(-0.38, 0.66 + up, 0.12);
   o.kB.set(-0.05, 0.66 + up * 0.5, -0.25); o.kF.set(-0.05, 0.66 + up * 0.5, 0.25);
   o.fB.set(-0.2, 0.44, -0.3); o.fF.set(-0.2, 0.44, 0.3);
@@ -1862,7 +1870,7 @@ function missTakeoff(why) {
 }
 const LAND_H = 0.8;
 function launch() {
-  air = true; airT = 0; spin = 0; flip = 0; spinT = 0; flipT = 0; grab = 0; grabT = 0; airHold = 0;
+  air = true; airT = 0; spin = 0; flip = 0; spinT = 0; flipT = 0; grab = 0; grabT = 0; airHold = 0; supT = 0;
   faceAt(px, 1);
   aPos.set(px, face.y + 0.05, face.z); launchY = aPos.y; launchZ = face.z; airTop = 0;
   // arco estable: siempre hay tiempo para un truco y la ola no te adelanta en el aire
@@ -1879,12 +1887,21 @@ function launch() {
   splash(aPos, 25, 0.8);
   ptr.ax = ptr.x; ptr.ay = ptr.y; ptr.moved = false;
   if (state === 'title') spinT = TAU;
-  else if (!airHintShown) { airHintShown = true; say('TRUCO: 1 toque 360 · 2 rodeo · 3 720 · mantén = agarrar', 2.6); }
+  else if (!airHintShown) { airHintShown = true; say(CH.jetski ? 'TRUCO: 1 toque Superman · 2 Backflip · 3 360 · 4 Backflip + Superman' : 'TRUCO: 1 toque 360 · 2 rodeo · 3 720 · mantén = agarrar', 2.6); }
 }
 // 1 pulsación = 360 · 2 = rodeo · 3 = 720 · 4 = rodeo 360 (se pueden encadenar mientras dure el salto)
 let trickTaps = 0, trickWin = 0;
+let supT = 0;
 function doTrick(n) {
   const dir = 1;
+  if (CH.jetski) {
+    if (n === 1) supT = 0.8;
+    else if (n === 2) flipT += TAU;
+    else if (n === 3) spinT += TAU;
+    else { flipT += TAU; supT = 0.9; }
+    spinT = clamp(spinT, -2 * TAU, 2 * TAU); flipT = Math.min(flipT, 2 * TAU);
+    return;
+  }
   if (n === 1) spinT += TAU * dir;
   else if (n === 2) flipT += TAU;
   else if (n === 3) spinT += 2 * TAU * dir;
@@ -1914,9 +1931,10 @@ function land() {
   spin = spinT; flip = flipT;
   const ns = Math.round(Math.abs(spinT) / TAU), nf = Math.round(flipT / TAU), grabbed = grabT > 0.2;
   const name = [];
-  if (grabbed) { name.push(grabT > 0.6 ? 'Indy largo' : 'Indy'); chip('✋ Indy ' + grabT.toFixed(1) + ' s'); }
+  const gName = CH.jetski ? 'Superman' : 'Indy';
+  if (grabbed) { name.push(grabT > 0.6 ? gName + ' largo' : gName); chip((CH.jetski ? '🦸 ' : '✋ ') + gName + ' ' + grabT.toFixed(1) + ' s'); }
   if (ns > 0) { const n = (spinT < 0 ? 'Alley-oop ' : '') + ns * 360; name.push(n); chip('↻ ' + n); }
-  if (nf > 0) { const n = nf > 1 ? nf + ' Rodeos' : 'Rodeo'; name.push(n); chip('⟳ ' + n); }
+  if (nf > 0) { const fn = CH.jetski ? 'Backflip' : 'Rodeo'; const n = nf > 1 ? 'Doble ' + fn : fn; name.push(n); chip('⟳ ' + n); }
   if (!name.length) name.push('Aéreo');
   chip('↑ ' + airTop.toFixed(1) + ' m');
   let pts = 120 + airTop * 80 + ns * 450 + nf * 800 + (grabbed ? 150 + grabT * 300 : 0);
@@ -2157,7 +2175,8 @@ function rideStep(dt, hT) {
       // botón TRUCO: las pulsaciones seguidas eligen el truco; mantenerlo pulsado agarra la tabla
       if (trickTaps && (trickWin -= dt) <= 0) { doTrick(trickTaps); trickTaps = 0; }
       if (ptr.down) airHold += dt; else airHold = 0;
-      grabbing = (ptr.down && airHold > 0.22) || keys.up;
+      supT = Math.max(0, supT - dt);
+      grabbing = (ptr.down && airHold > 0.22) || keys.up || supT > 0;
     }
     // giros suaves: arrancan con fuerza y frenan justo al cerrar, siempre a tiempo de caer
     const left = Math.max(0.22, (airDur - airT) * 0.8);
