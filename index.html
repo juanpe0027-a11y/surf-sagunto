@@ -557,7 +557,7 @@ const prm = { p: 0, g: 0, br: 0, dx: 0, H: 0, sz: 1 };
 function wparams(x, o) {
   const dx = x - curlX;
   let p, g, br;
-  if (dx >= 0) { p = 1 - sm(0, 9, dx); g = 1 - 0.45 * sm(XB * 0.33, XB * 0.93, dx); br = 0; }
+  if (dx >= 0) { p = 1 - sm(0, 18, dx); g = 1 - 0.45 * sm(XB * 0.33, XB * 0.93, dx); br = 0; }
   else { br = sm(0, 2.0, -dx); p = 1 - 0.8 * sm(2, 20, -dx); g = 1 - 0.62 * sm(0.5, 24, -dx); }
   g *= sm(XA, XA + 12, dx) * (1 - sm(XB - 16, XB, dx));
   o.p = p * pm; o.g = g * grow; o.br = br * pm; o.dx = dx;
@@ -717,7 +717,7 @@ function emitWave(dt) {
     acc.lip = (acc.lip || 0) + dt * 260 * pm;
     while (acc.lip >= 1) {
       acc.lip--;
-      const x = curlX + rnd(0, 9); wparams(x, prm); ctrl(prm);
+      const x = curlX + rnd(0, 18); wparams(x, prm); ctrl(prm);
       if (prm.p < 0.15) continue;
       const k = rnd(0.6, 1);
       emit(x, P[7][1] * k + P[8][1] * (1 - k), P[7][0] * k + P[8][0] * (1 - k) + rnd(-0.2, 0.2), rnd(-0.3, 0.3), rnd(-2.5, -0.5), rnd(0.2, 1.2), rnd(0.35, 0.7), rnd(0.12, 0.35), 0.75, 1);
@@ -1925,7 +1925,7 @@ function land() {
   if (key !== lastTrick) pts *= 1.2;                        // variar de truco premia
   lastTrick = key;
   const dx = px - curlX;
-  if (dx < 9) { pts += 100; chip('Reentrada'); }            // caer junto al tubo
+  if (dx < 18) { pts += 100; chip('Reentrada'); }            // caer junto al tubo
   const got = addPts(pts);
   showTrick(key, got);
   bump(0.1 + 0.08 * ns + 0.15 * nf + (grabbed ? 0.05 : 0));
@@ -2088,12 +2088,13 @@ function rideStep(dt, hT) {
     // energía: la gravedad en la pendiente de la cara y el empuje de la ola cerca del tubo
     // la ola empuja en toda la cara (más cuanto más alta), y aún más en el pocket junto al tubo
     const cv = 0.85 + 0.05 * CH.vel, hf = 0.5 + 0.5 * sm(0.1, 0.6, h), fwd = 0.55 + 0.45 * Math.max(cs, 0);
-    const pushNear = 4.0 * (1 - sm(2, 16, dxw)) * Math.max(pm, 0.4);
+    const pushNear = 4.0 * (1 - sm(4, 30, dxw)) * Math.max(pm, 0.4);
     const pushFace = 4.6 * clamp(Hc / HW, 0.3, 1) * sm(-1, 3, dxw);
     const push = (pushNear + pushFace) * cv * hf * fwd;
     // bombear: subir y bajar con giros suaves en la cara da velocidad; los giros bruscos la quitan
     const aw = Math.abs(omega), pump = (h > 0.15 && h < 0.9 ? 1 : 0.3) * (aw < 3 ? aw * 0.55 : 1.65 - (aw - 3) * 0.45);
-    v += (-9.8 * 0.55 * sn + push + pump - 0.033 * v * v - (h < 0.08 ? 1.6 : 0)) * dt;
+    const zone = -0.8 + 3.2 * sm(0.06, 0.5, h) - 1.0 * sm(0.9, 1, h);   // abajo frena, a media altura y arriba acelera
+    v += (-9.8 * 0.55 * sn + push + pump + zone - 0.033 * v * v) * dt;
     v = clamp(v, 2, 19);
     if (fs) {
       // misma línea: la altura no cambia y la tabla derrapa sin perder casi velocidad
@@ -2295,7 +2296,7 @@ function update(dt) {
       if (!air) {
         placeBoardOnFace();
         addPts(Math.abs(s) * 8 * dt);
-        const inTube = dx > 0 && dx < 3.6 + 0.3 * CH.tubo && h < 0.7 && pm > 0.8;
+        const inTube = dx > 0 && dx < (3.6 + 0.3 * CH.tubo) * 2 && h < 0.7 && pm > 0.8;
         if (inTube) { tubeT += dt; addPts(50 * dt); }
         else if (tubeT > 0) {
           if (tubeT > 0.8) { const v = addPts(tubeT * 200 * (0.7 + 0.1 * CH.tubo)); chip('◎ Tubo ' + tubeT.toFixed(1) + ' s'); showTrick('Tubo ' + tubeT.toFixed(1) + ' s', v); bump(0.15); }
