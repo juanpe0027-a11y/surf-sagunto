@@ -177,6 +177,9 @@ canvas{display:block;width:100%;height:100%}
 .nickrow{display:flex;align-items:center;gap:10px;font-family:var(--stamp);font-size:14px;text-shadow:0 1px 4px rgba(0,0,0,.6)}
 .nickrow input{font:700 16px var(--body);padding:6px 10px;border-radius:6px;border:0;width:190px;color:var(--ink)}
 .mpmenu{font-family:var(--stamp);font-size:14px;text-shadow:0 1px 4px rgba(0,0,0,.6)}
+.mptoast{position:absolute;left:50%;top:18%;transform:translateX(-50%);z-index:50;max-width:min(90vw,420px);background:var(--coral);color:#fff;font:700 16px var(--body);padding:10px 16px;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.4);text-align:center;pointer-events:none}
+#chars .card.taken{opacity:.45;position:relative}
+#chars .card.taken::after{content:attr(data-who);position:absolute;left:6px;right:6px;top:40%;background:rgba(13,22,32,.85);color:#fff;font:700 13px var(--body);padding:4px;border-radius:6px;text-align:center}
 #botsBtn{align-self:flex-start;font-size:18px}
 .mpboard{max-height:34vh;overflow-y:auto;margin-top:6px;font-family:var(--body);font-size:13px;font-weight:700;background:rgba(13,22,32,.5);padding:4px 8px;border-radius:6px;line-height:1.45}
 .mpboard .me{color:var(--sun)}
@@ -287,6 +290,7 @@ canvas{display:block;width:100%;height:100%}
     </div>
   </div>
   <div class="mplayer" id="mpLayer"><div id="myBub" hidden></div></div>
+  <div class="mptoast" id="mpToast" hidden></div>
   <div class="chatlog" id="chatLog"></div>
   <button class="micbig" id="hudMic" hidden aria-label="Mantén pulsado para grabar una nota de voz">🎤</button>
   <div class="chatp" id="chatP" hidden>
@@ -453,7 +457,8 @@ ocean.rotation.x = -Math.PI / 2; ocean.position.y = -0.05; world.add(ocean);
 
 // ---------- la ola ----------
 const HW = 3.4;           // altura de la ola en metros
-const NX = 300, XA = -48, XB = 150, NF = 65, NB = 16;
+const NX = 360, XA = -48, NF = 65, NB = 16;
+let XB = 150;           // largo de la ola por delante del tubo (en el online crece con los surfistas que haya)
 function makeStrip(nx, ns) {
   const g = new THREE.BufferGeometry(), n = (nx + 1) * ns;
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
@@ -547,7 +552,7 @@ const prm = { p: 0, g: 0, br: 0, dx: 0, H: 0, sz: 1 };
 function wparams(x, o) {
   const dx = x - curlX;
   let p, g, br;
-  if (dx >= 0) { p = 1 - sm(0, 9, dx); g = 1 - 0.45 * sm(50, 140, dx); br = 0; }
+  if (dx >= 0) { p = 1 - sm(0, 9, dx); g = 1 - 0.45 * sm(XB * 0.33, XB * 0.93, dx); br = 0; }
   else { br = sm(0, 2.0, -dx); p = 1 - 0.8 * sm(2, 20, -dx); g = 1 - 0.62 * sm(0.5, 24, -dx); }
   g *= sm(XA, XA + 12, dx) * (1 - sm(XB - 16, XB, dx));
   o.p = p * pm; o.g = g * grow; o.br = br * pm; o.dx = dx;
@@ -691,7 +696,7 @@ function emitWave(dt) {
     acc.crest += dt * 560 * grow;
     while (acc.crest >= 1) {
       acc.crest--;
-      const x = curlX + rnd(0.5, 125); wparams(x, prm); ctrl(prm);
+      const x = curlX + rnd(0.5, XB - 25); wparams(x, prm); ctrl(prm);
       if (prm.H < 0.8) continue;
       emit(x, P[5][1] + 0.05, P[5][0] - 0.1, rnd(-0.3, 0.3), rnd(2.5, 5.5), rnd(-7, -3), rnd(0.5, 1.0), rnd(0.25, 0.8) * prm.g, 0.42, 0.55);   // abanico de spray que el viento levanta de la cresta
     }
@@ -1670,9 +1675,9 @@ function renderCards() {
   cardsEl.textContent = '';
   for (const c of CHARS) {
     const b = document.createElement('button');
-    b.className = 'card' + (c === CH ? ' sel' : ''); b.setAttribute('aria-pressed', c === CH);
+    b.className = 'card' + (c === CH ? ' sel' : ''); b.setAttribute('aria-pressed', c === CH); b.dataset.id = c.id;
     b.innerHTML = ((PHOTOS[c.id] || portraits[c.id]) ? '<img class="portrait" alt="Foto de ' + c.name + '" src="' + (PHOTOS[c.id] || portraits[c.id]) + '">' : '') + '<span class="deckprev"' + (c.deckPhoto ? ' style="transform:scaleY(-1)"' : '') + '><img alt="Tabla de ' + c.name + '" src="' + deckPrev[c.id] + '"></span>' + '<span class="sws">' + c.sw.map(x => '<i style="background:' + hex(x) + '"></i>').join('') + '</span>' +
-      '<b>' + c.name + '</b><em>' + c.tag + '</em>' + '<span class="stance">' + (c.goofy ? 'Goofy · pie derecho delante' : 'Regular · pie izquierdo delante') + '</span>' +
+      '<b>' + c.name + '</b><em>' + c.tag + '</em>' + '<span class="stance">' + (c.bodyboard ? 'Bodyboard · tumbado con aletas' : c.goofy ? 'Goofy · pie derecho delante' : 'Regular · pie izquierdo delante') + '</span>' +
       '<span class="st"><span>Velocidad</span><span class="pips">' + pips(c.vel) + '</span></span>' +
       '<span class="st"><span>Aéreos</span><span class="pips">' + pips(c.air) + '</span></span>' +
       '<span class="st"><span>Tubos</span><span class="pips">' + pips(c.tubo) + '</span></span>';
@@ -2243,7 +2248,7 @@ function update(dt) {
         }
         if (dx < -0.4) wipeout('Te ha comido la ola');
         else if (h > 0.97 && dx < 2 && face.p > 0.7 && !turnLock && pivotAng === 0 && Math.sin(theta) > 0.3) wipeout('El labio te ha lanzado por encima');
-        else if (dx > 128) kickOut();
+        else if (dx > XB - 22) kickOut();
       } else if (dx < -0.4 && aVy < 0) wipeout('Has caído dentro de la espuma');
     }
     landT += dt;
@@ -2591,7 +2596,7 @@ function updateBots(dt) {
       const hT = 0.5 + 0.34 * Math.sin(b.ph);
       const hdot = clamp((hT - b.h) * 3, -1.2, 1.2); b.h = clamp(b.h + hdot * dt, 0.05, 0.95);
       b.dxTT -= dt;
-      if (b.dxTT <= 0) { b.dxTT = rnd(3, 6); b.dxT = Math.random() < 0.3 ? rnd(3, 7) : rnd(8, 45); }
+      if (b.dxTT <= 0) { b.dxTT = rnd(3, 6); b.dxT = Math.random() < 0.3 ? rnd(3, 7) : rnd(8, Math.max(45, XB * 0.7)); }
       const dxdot = clamp((b.dxT - b.dx) * 0.7, -7, 5);
       b.dx = Math.max(1.5, b.dx + dxdot * dt);
       const vx = curlSpeed + dxdot, vy = hdot * HW * 1.25, thN = Math.atan2(vy, vx);
@@ -2701,7 +2706,7 @@ function remoteFaceQuat(th, bk, out) {
 function mpUpdate(dt) {
   mpSend(dt);
   if (MP.sim) updateBots(dt);
-  updateBoard(dt);
+  updateBoard(dt); waveLength(dt);
   const showAll = !(state === 'title' && menuView === 'chars') && state !== 'over';
   const t = performance.now() / 1000, k = 1 - Math.exp(-dt * 10);
   for (const R of MP.remotes.values()) {
@@ -2780,10 +2785,36 @@ function tryPush() {
   v = Math.max(6, v - 1); crouch = 1;
   return true;
 }
+// cada personaje solo puede llevarlo una persona a la vez
+function takenBy(id) {
+  if (MP.sim) return null;
+  for (const R of MP.remotes.values()) if (R.chId === id) return R.nm || R.ch.name;
+  return null;
+}
+const toastEl = $('mpToast'); let toastTO = 0;
+function toast(t) { toastEl.textContent = t; toastEl.hidden = false; clearTimeout(toastTO); toastTO = setTimeout(() => { toastEl.hidden = true; }, 2600); }
+document.addEventListener('click', e => {
+  const card = e.target.closest && e.target.closest('#chars .card');
+  if (card) { const who = takenBy(card.dataset.id); if (who) { e.stopImmediatePropagation(); e.preventDefault(); toast('Ese personaje ya lo ha escogido ' + who + '. Elige otro.'); } return; }
+  if (e.target.closest && e.target.closest('#start')) {
+    const who = takenBy(CH.id);
+    if (who) { e.stopImmediatePropagation(); e.preventDefault(); toast(CH.name + ' ya lo lleva ' + who + '. Elige otro personaje.'); $('toChars').click(); }
+  }
+}, true);
+function markTaken() {
+  document.querySelectorAll('#chars .card').forEach(c => { const who = takenBy(c.dataset.id); c.classList.toggle('taken', !!who); if (who) c.dataset.who = 'Escogido por ' + who; });
+}
+// la ola se alarga cuantos más surfistas hay en el agua, para que quepan todos
+function waveLength(dt) {
+  let n = 1; for (const R of MP.remotes.values()) if (R.st !== 'menu') n++;
+  const target = Math.min(420, 150 + 45 * (n - 1));
+  XB = lerp(XB, target, 1 - Math.exp(-dt * 0.5));
+}
 // clasificación de los que están en la sala
 const boardEl = $('mpBoard'); let boardT = 0;
 function updateBoard(dt) {
   boardT -= dt; if (boardT > 0) return; boardT = 0.25;
+  markTaken();
   const rows = [{ n: 'Tú', s: Math.floor(score), me: true }];
   for (const R of MP.remotes.values()) if (R.st !== 'menu') rows.push({ n: R.nm || R.ch.name, s: R.sc || 0 });
   boardEl.hidden = rows.length < 2 || hud.hidden;
