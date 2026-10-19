@@ -316,6 +316,8 @@ canvas{display:block;width:100%;height:100%}
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script>
 (() => {
 'use strict';
@@ -1133,13 +1135,14 @@ const footGeo = new THREE.BoxGeometry(0.11, 0.06, 0.25);
 const footB = new THREE.Mesh(footGeo, matSkin), footF = new THREE.Mesh(footGeo, matSkin); rider.add(footB, footF);
 const matFlipper = new THREE.MeshStandardMaterial({ color: 0x1f2a22, roughness: 0.5 });
 
-const KEYS_POSE = ['hB', 'hF', 'kB', 'kF', 'fB', 'fF', 'ch', 'hd', 'sB', 'sF', 'eB', 'eF', 'aB', 'aF'];
+const KEYS_POSE = ['hB', 'hF', 'kB', 'kF', 'fB', 'fF', 'ch', 'hd', 'sB', 'sF', 'eB', 'eF', 'aB', 'aF', 'fw'];
 const mkPose = () => { const o = {}; for (const k of KEYS_POSE) o[k] = V3(0, 0, 0); return o; };
 const poseA = mkPose(), poseB = mkPose(), poseOut = mkPose();
 // c = flexión (0 de pie, 1 agachado a tope); lean = inclinación del cuerpo hacia la ola (-) o hacia fuera (+)
 function stance(o, c, grab, t, lean, twist) {
   lean = lean || 0;
   const hy = 0.98 - 0.42 * c, lz = lean * 0.12;
+  o.fw.set(0, 0, 1);
   o.hB.set(-0.13 + 0.02 * c, hy, 0.02 + lz); o.hF.set(0.1 - 0.02 * c, hy, 0.02 + lz);
   o.fB.set(-0.42, 0.1, 0); o.fF.set(0.34, 0.1, 0);
   o.kB.set(-0.31, 0.54 - 0.18 * c, 0.13 + 0.22 * c + lz * 0.6); o.kF.set(0.24, 0.54 - 0.18 * c, 0.13 + 0.22 * c + lz * 0.6);
@@ -1172,6 +1175,7 @@ function shaka(o) {
   return o;
 }
 function prone(o, ph, power) {
+  o.fw.set(0, -1, 0);
   o.hB.set(-0.28, 0.2, -0.1); o.hF.set(-0.28, 0.2, 0.1);
   o.kB.set(-0.68, 0.17, -0.09); o.kF.set(-0.68, 0.17, 0.09);
   o.fB.set(-1.05, 0.22 + 0.06 * Math.sin(ph * 2), -0.08); o.fF.set(-1.05, 0.22 + 0.06 * Math.cos(ph * 2), 0.08);
@@ -1187,6 +1191,7 @@ function prone(o, ph, power) {
 function bodyRide(o, c, grab, t, lean, twist) {
   lean = lean || 0; c = c || 0;
   const lz = lean * 0.1, kick = Math.sin(t * 6) * 0.05;
+  o.fw.set(0, -1, 0);
   o.hB.set(-0.24, 0.17, -0.1 - lz); o.hF.set(-0.24, 0.17, 0.1 - lz);
   o.kB.set(-0.6, 0.2, -0.13 - lz); o.kF.set(-0.6, 0.2, 0.13 - lz);
   o.fB.set(-0.9, 0.36 + kick, -0.12 - lz); o.fF.set(-0.9, 0.36 - kick, 0.12 - lz);
@@ -1198,7 +1203,7 @@ function bodyRide(o, c, grab, t, lean, twist) {
   return o;
 }
 const SUPERMAN = { hB: [-0.62, 1.04, -0.1], hF: [-0.62, 1.04, 0.1], kB: [-1.0, 1.1, -0.13], kF: [-1.0, 1.1, 0.13], fB: [-1.38, 1.14, -0.15], fF: [-1.38, 1.14, 0.15],
-  ch: [-0.16, 1.02, 0], hd: [0.2, 1.14, 0], sB: [0.04, 1.02, -0.2], sF: [0.04, 1.02, 0.2], eB: [0.22, 0.95, -0.3], eF: [0.22, 0.95, 0.3], aB: [0.36, 0.82, -0.3], aF: [0.36, 0.82, 0.3] };
+  ch: [-0.16, 1.02, 0], hd: [0.2, 1.14, 0], fw: [0.15, -1, 0], sB: [0.04, 1.02, -0.2], sF: [0.04, 1.02, 0.2], eB: [0.22, 0.95, -0.3], eF: [0.22, 0.95, 0.3], aB: [0.36, 0.82, -0.3], aF: [0.36, 0.82, 0.3] };
 function jetRide(o, c, grab, t, lean, twist) {
   lean = lean || 0; c = c || 0; grab = grab || 0; t = t || 0;
   jetSeat(o, c, t, lean);
@@ -1206,6 +1211,7 @@ function jetRide(o, c, grab, t, lean, twist) {
   return o;
 }
 function jetSeat(o, c, t, lean) {
+  o.fw.set(1, 0, 0);
   const up = 0.14 * (1 - c), lz = lean * 0.12, bob = Math.sin(t * 7) * 0.012;
   o.hB.set(-0.38, 0.66 + up, -0.12); o.hF.set(-0.38, 0.66 + up, 0.12);
   o.kB.set(-0.05, 0.66 + up * 0.5, -0.25); o.kF.set(-0.05, 0.66 + up * 0.5, 0.25);
@@ -1221,6 +1227,157 @@ function poseFor(c) { return c.jetski ? jetRide : c.bodyboard ? bodyRide : stanc
 function riderStance(o, c, grab, t, lean, twist) { return poseFor(CH)(o, c, grab, t, lean, twist); }
 function lerpPose(a, b, t, out) { for (const k of KEYS_POSE) out[k].lerpVectors(a[k], b[k], t); return out; }
 const hipC = V3(0, 0, 0);
+// ---------- cuerpo humano realista: modelo con esqueleto que se mueve con nuestras posturas ----------
+// El modelo (cuerpo.glb) tiene huesos de verdad; cada fotograma se ponen en reposo y se orientan hacia las
+// articulaciones que calculan stance/prone/bodyRide/jetRide. La cabeza es la nuestra (foto, pelo, gafas, gorra).
+const BODY_URL = 'cuerpo.glb';
+const HUMAN = { tpl: null, local: null, legLen: 0.888 };
+window.__HUMAN = HUMAN;
+const H_BONES = ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'LeftShoulder', 'RightShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightArm', 'RightForeArm', 'RightHand',
+  'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase', 'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase'];
+function boneCat(n) {
+  n = n.replace(/^mixamorig:?/, '');
+  if (/Hand|Thumb|Index|Middle|Ring|Pinky|Head|Neck|Eye/.test(n)) return 0;   // piel
+  if (/ForeArm/.test(n)) return 1;                                               // antebrazo
+  if (/Arm/.test(n)) return 2;                                                   // brazo
+  if (/Hips|UpLeg/.test(n)) return 4;                                            // bañador / muslos
+  if (/Leg/.test(n)) return 5;                                                   // espinillas
+  if (/Foot|Toe/.test(n)) return 6;                                              // pies
+  return 3;                                                                      // tronco
+}
+function humanColors(c) {
+  const hx = x => new THREE.Color(x);
+  const suit = c.suit, skin = c.skin;
+  return [hx(skin), hx(c.longSuit && !c.sleeveless ? suit : skin), hx(c.upperArm || suit), hx(suit), hx(c.shorts || suit),
+    hx(c.longSuit ? (c.legs || suit) : skin), hx(c.bodyboard ? 0x1f2a22 : skin)];
+}
+function makeHuman(c) {
+  if (!HUMAN.tpl) return null;
+  const sc = THREE.SkeletonUtils.clone(HUMAN.tpl);
+  const root = new THREE.Group(); root.add(sc);
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, skinning: true, roughness: 0.5, metalness: 0.05 });
+  const meshes = [];
+  sc.traverse(o => { if (o.isSkinnedMesh) { o.geometry = o.geometry.clone(); o.material = mat; o.frustumCulled = false; o.castShadow = false; meshes.push(o); } });
+  const b = {};
+  for (const n of H_BONES) b[n] = sc.getObjectByName('mixamorig' + n);
+  const h = { root, sc, b, meshes, mat, rest: {} };
+  for (const n of H_BONES) h.rest[n] = b[n].quaternion.clone();
+  b.Head.scale.setScalar(0.001);                 // la cabeza la ponemos nosotros (con la foto)
+  colorHuman(h, c);
+  return h;
+}
+// lee la componente k del vértice i (r128 no trae getComponent; los pesos pueden venir normalizados en bytes)
+const ATTR_GET = ['getX', 'getY', 'getZ', 'getW'];
+function attrComp(at, i, k) {
+  let v = at[ATTR_GET[k]](i);
+  if (at.normalized) { const arr = at.array; v /= arr instanceof Uint8Array ? 255 : arr instanceof Uint16Array ? 65535 : 1; }
+  return v;
+}
+function colorHuman(h, c) {
+  if (!h) return;
+  const cols = humanColors(c);
+  for (const m of h.meshes) {
+    const g = m.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, n = si.count;
+    if (!m.userData.cat) m.userData.cat = m.skeleton.bones.map(bn => boneCat(bn.name));
+    const cat = m.userData.cat;
+    let col = g.attributes.color;
+    if (!col) { col = new THREE.BufferAttribute(new Float32Array(n * 3), 3); g.setAttribute('color', col); }
+    const a = col.array;
+    for (let i = 0; i < n; i++) {
+      let r = 0, gg = 0, bb = 0;
+      for (let k = 0; k < 4; k++) {
+        const w = attrComp(sw, i, k); if (!w) continue;
+        const cc = cols[cat[attrComp(si, i, k)]] || cols[3];
+        r += cc.r * w; gg += cc.g * w; bb += cc.b * w;
+      }
+      a[i * 3] = r; a[i * 3 + 1] = gg; a[i * 3 + 2] = bb;
+    }
+    col.needsUpdate = true;
+  }
+  h.mat.roughness = c.longSuit || /suit/.test(c.tag || '') ? 0.42 : 0.55;
+}
+// ---- orientar huesos hacia las articulaciones de la postura ----
+// Todo se calcula en el espacio del propio cuerpo (no en el del mundo, que va espejado en X).
+const hv = { a: V3(0, 0, 0), b: V3(0, 0, 0), c: V3(0, 0, 0), d: V3(0, 0, 0), t: V3(0, 0, 0), X: V3(0, 0, 0), Y: V3(0, 0, 0), Z: V3(0, 0, 0), m: new THREE.Matrix4() };
+const hq = { a: new THREE.Quaternion(), b: new THREE.Quaternion(), c: new THREE.Quaternion(), r: new THREE.Quaternion() };
+const hM = { inv: new THREE.Matrix4(), t: new THREE.Matrix4(), s: V3(0, 0, 0) };
+function relPos(obj, out) { return out.setFromMatrixPosition(obj.matrixWorld).applyMatrix4(hM.inv); }
+function relQuat(obj, out) { hM.t.multiplyMatrices(hM.inv, obj.matrixWorld); hM.t.decompose(hv.d, out, hM.s); return out; }
+function setBoneRelQuat(bone, q) { relQuat(bone.parent, hq.c); bone.quaternion.copy(hq.c.invert()).multiply(q); bone.updateMatrixWorld(true); }
+// gira el hueso para que su hijo apunte al punto T
+function aimBone(bone, child, T) {
+  relPos(bone, hv.a); relPos(child, hv.b);
+  hv.b.sub(hv.a); hv.t.copy(T).sub(hv.a);
+  if (hv.b.lengthSq() < 1e-10 || hv.t.lengthSq() < 1e-10) return;
+  hq.a.setFromUnitVectors(hv.b.normalize(), hv.t.normalize());
+  relQuat(bone, hq.b);
+  setBoneRelQuat(bone, hq.a.multiply(hq.b));
+}
+const hw = {}; for (const k of ['hB', 'hF', 'kB', 'kF', 'fB', 'fF', 'ch', 'hd', 'sB', 'sF', 'eB', 'eF', 'aB', 'aF', 'hip', 'sh', 'toeL', 'toeR', 'fw']) hw[k] = V3(0, 0, 0);
+function poseHuman(h, o, par) {
+  if (!h) return;
+  const b = h.b;
+  par.updateMatrix();
+  // articulaciones en el espacio del cuerpo (el cuerpo cuelga del mismo padre que el surfista)
+  for (const k of ['hB', 'hF', 'kB', 'kF', 'fB', 'fF', 'ch', 'hd', 'sB', 'sF', 'eB', 'eF', 'aB', 'aF']) hw[k].copy(o[k]).applyMatrix4(par.matrix);
+  hw.hip.addVectors(hw.hB, hw.hF).multiplyScalar(0.5);
+  hw.sh.addVectors(hw.sB, hw.sF).multiplyScalar(0.5);
+  hw.fw.copy(o.fw || V3(0, 0, 1)).add(o.hB).applyMatrix4(par.matrix).sub(hw.hB).normalize();
+  // base del cuerpo: arriba = cadera → hombros; delante = hacia donde mira el pecho; X = su izquierda
+  hv.Y.subVectors(hw.sh, hw.hip).normalize();
+  hv.Z.copy(hw.fw).addScaledVector(hv.Y, -hw.fw.dot(hv.Y)).normalize();
+  hv.X.crossVectors(hv.Y, hv.Z).normalize();
+  const fLeft = hv.a.subVectors(hw.hF, hw.hB).dot(hv.X) >= 0;
+  const L = fLeft ? 'F' : 'B', R = fLeft ? 'B' : 'F';
+  // todo en reposo
+  for (const n of H_BONES) b[n].quaternion.copy(h.rest[n]);
+  h.root.updateMatrixWorld(true);
+  hM.inv.copy(h.root.matrixWorld).invert();
+  // cadera: posición y orientación (en reposo el modelo mira +Z con la izquierda en +X)
+  hM.t.multiplyMatrices(hM.inv, b.Hips.parent.matrixWorld).invert();
+  b.Hips.position.copy(hw.hip).applyMatrix4(hM.t);
+  b.Hips.updateMatrixWorld(true);
+  relQuat(b.Hips, hq.r);
+  hv.m.makeBasis(hv.X, hv.Y, hv.Z); hq.a.setFromRotationMatrix(hv.m);
+  setBoneRelQuat(b.Hips, hq.a.multiply(hq.r));
+  // columna hacia los hombros y giro para alinear la línea de hombros
+  aimBone(b.Spine, b.Neck, hw.sh);
+  relPos(b.LeftArm, hv.a); relPos(b.RightArm, hv.b);
+  const sp = hv.c.subVectors(hw.sh, hw.hip).normalize();
+  const cur = hv.a.sub(hv.b); cur.addScaledVector(sp, -cur.dot(sp)).normalize();
+  const tgt = hv.t.subVectors(hw['s' + L], hw['s' + R]); tgt.addScaledVector(sp, -tgt.dot(sp)).normalize();
+  if (cur.lengthSq() > 0.5 && tgt.lengthSq() > 0.5) { hq.a.setFromUnitVectors(cur, tgt); relQuat(b.Spine1, hq.b); setBoneRelQuat(b.Spine1, hq.a.multiply(hq.b)); }
+  aimBone(b.Neck, b.Head, hw.hd);
+  // brazos
+  aimBone(b.LeftArm, b.LeftForeArm, hw['e' + L]); aimBone(b.LeftForeArm, b.LeftHand, hw['a' + L]);
+  aimBone(b.RightArm, b.RightForeArm, hw['e' + R]); aimBone(b.RightForeArm, b.RightHand, hw['a' + R]);
+  // piernas y pies (puntas hacia donde mira el cuerpo)
+  aimBone(b.LeftUpLeg, b.LeftLeg, hw['k' + L]); aimBone(b.LeftLeg, b.LeftFoot, hw['f' + L]);
+  aimBone(b.RightUpLeg, b.RightLeg, hw['k' + R]); aimBone(b.RightLeg, b.RightFoot, hw['f' + R]);
+  hw.toeL.copy(hw['f' + L]).addScaledVector(hv.Z, 0.16); hw.toeR.copy(hw['f' + R]).addScaledVector(hv.Z, 0.16);
+  aimBone(b.LeftFoot, b.LeftToeBase, hw.toeL); aimBone(b.RightFoot, b.RightToeBase, hw.toeR);
+}
+// partes del muñeco antiguo que sustituye el cuerpo nuevo
+function useHumanBody(on) {
+  for (const k in L) if (k !== 'pony') L[k].visible = !on;
+  for (const k in J) if (k !== 'head') J[k].visible = !on;
+}
+function loadHuman() {
+  if (!THREE.GLTFLoader || !THREE.SkeletonUtils) return;
+  new THREE.GLTFLoader().load(BODY_URL, g => {
+    const sc = g.scene; sc.updateMatrixWorld(true);
+    const pa = V3(0, 0, 0), pb = V3(0, 0, 0), pc = V3(0, 0, 0);
+    sc.getObjectByName('mixamorigLeftUpLeg').getWorldPosition(pa); sc.getObjectByName('mixamorigLeftLeg').getWorldPosition(pb); sc.getObjectByName('mixamorigLeftFoot').getWorldPosition(pc);
+    HUMAN.legLen = pa.distanceTo(pb) + pb.distanceTo(pc);
+    sc.scale.setScalar(0.96 / HUMAN.legLen);      // misma longitud de pierna que nuestras posturas
+    HUMAN.tpl = sc;
+    HUMAN.local = makeHuman(CH);
+    boardRoot.add(HUMAN.local.root);
+    useHumanBody(true);
+    if (typeof rebuildRigs === 'function') rebuildRigs();
+  }, undefined, () => {});
+}
+
 function applyPose(o) {
   hipC.addVectors(o.hB, o.hF).multiplyScalar(0.5);
   setLimb(L.thB, o.hB, o.kB); setLimb(L.thF, o.hF, o.kF);
@@ -1238,6 +1395,7 @@ function applyPose(o) {
   footB.position.copy(o.fB); footF.position.copy(o.fF);
   updateStrands(o);
   if (L.pony.visible) { ponyA.set(o.hd.x - 0.03, o.hd.y + 0.04, o.hd.z - 0.1); ponyB.set(o.hd.x - 0.07, o.hd.y - 0.2, o.hd.z - 0.27); setLimb(L.pony, ponyA, ponyB); }
+  if (HUMAN.local) poseHuman(HUMAN.local, o, rider);
 }
 const ponyA = V3(0, 0, 0), ponyB = V3(0, 0, 0);
 
@@ -1686,7 +1844,8 @@ function applyChar(c) {
   L.pony.visible = c.style === 'pony';
   spikes.visible = c.style === 'messy'; mane.visible = c.style === 'surfer' || c.style === 'long'; strandG.visible = c.style === 'long';
   glasses.visible = !!c.glasses; beard.visible = !!c.beard; cap.visible = !!c.cap; hair.visible = !c.cap && c.style !== 'bald';
-  for (const ft of [footB, footF]) { ft.material = c.bodyboard ? matFlipper : matSkin; ft.scale.set(c.bodyboard ? 1.3 : 1, 1, c.bodyboard ? 2.6 : 1); }
+  colorHuman(HUMAN.local, c);
+  for (const ft of [footB, footF]) { ft.visible = !HUMAN.local || !!c.bodyboard; ft.material = c.bodyboard ? matFlipper : matSkin; ft.scale.set(c.bodyboard ? 1.3 : 1, 1, c.bodyboard ? 2.6 : 1); }
   if (c.beardFull) beard.scale.set(0.122, 0.135, 0.122); else beard.scale.set(0.108, c.beardColor ? 0.1 : 0.11, c.beardColor ? 0.104 : 0.108);
   const hs = c.style === 'curly' ? [1.28, 1.18, 1.28] : c.style === 'surfer' ? [1.08, 1.12, 1.08] : c.style === 'fade' ? [1.0, 0.82, 1.0] : [1, 1, 1];
   hair.scale.set(hs[0], hs[1], hs[2]);
@@ -2580,8 +2739,10 @@ function texFromCanvas(src) { const c = document.createElement('canvas'); c.widt
 function buildRig(c) {
   const keep = CH, keepVis = boardRoot.visible, keepPos = boardRoot.position.clone(), keepQ = boardRoot.quaternion.clone();
   applyChar(c); boardRoot.visible = true;
+  const myBody = HUMAN.local && HUMAN.local.root; if (myBody) boardRoot.remove(myBody);   // el cuerpo con esqueleto se clona aparte
   const r = boardRoot.clone(true);
   const m = objMap(boardRoot, r, new Map());
+  if (myBody) boardRoot.add(myBody);
   const texMaker = new Map([[deckTex, () => texFromCanvas(deckCv)], [torsoTex, () => texFromCanvas(torsoCv)]]);
   finTex.forEach((t, i) => texMaker.set(t, () => texFromCanvas(finCv[i])));
   const matMap = new Map(), texDone = new Map();
@@ -2601,10 +2762,15 @@ function buildRig(c) {
     strands: strands.map(s => s.map(g)), pony: g(L.pony), pose: mkPose(), faceYaw: new THREE.Quaternion(), mats: [...matMap.values()], texs: [...texDone.values()] };
   for (const k in L) rig.L[k] = g(L[k]);
   for (const k in J) rig.J[k] = g(J[k]);
+  rig.rider = g(rider);
+  rig.human = makeHuman(c); if (rig.human) r.add(rig.human.root);
   r.visible = false; world.add(r);
   return rig;
 }
-function disposeRig(rig) { world.remove(rig.root); rig.mats.forEach(m => m.dispose()); rig.texs.forEach(t => t.dispose()); }
+function disposeRig(rig) { world.remove(rig.root); rig.mats.forEach(m => m.dispose()); rig.texs.forEach(t => t.dispose());
+  if (rig.human) { rig.human.meshes.forEach(m => m.geometry.dispose()); rig.human.mat.dispose(); } }
+// cuando llega el cuerpo realista, se rehacen los surfistas que ya estaban en el agua
+function rebuildRigs() { for (const R of MP.remotes.values()) if (R.rig && R.ch) { disposeRig(R.rig); R.rig = buildRig(R.ch); } }
 const rHip = V3(0, 0, 0), rTv = V3(0, 0, 0), rA = V3(0, 0, 0), rB = V3(0, 0, 0), rD = V3(0, 0, 0);
 function applyPoseRig(R, o, wind, turn, t) {
   const Lr = R.L, Jr = R.J;
@@ -2634,6 +2800,7 @@ function applyPoseRig(R, o, wind, turn, t) {
     }
   }
   if (R.pony.visible) { rA.set(o.hd.x - 0.03, o.hd.y + 0.04, o.hd.z - 0.1); rB.set(o.hd.x - 0.07, o.hd.y - 0.2, o.hd.z - 0.27); setLimb(R.pony, rA, rB); }
+  if (R.human) poseHuman(R.human, o, R.rider);
 }
 
 
@@ -3023,6 +3190,7 @@ micBtn.addEventListener('contextmenu', e => e.preventDefault());
 window.addEventListener('resize', resize);
 if (window.ResizeObserver) new ResizeObserver(resize).observe(wrap);
 resize();
+loadHuman();
 startTitleRide();
 placeBoardOnFace();
 camPos.set(px + 7, 4.5, 17);
