@@ -1,7 +1,7 @@
 // Prueba automática del juego en Chrome/Edge sin ventana (opcional: necesita Node 22+ y Chrome o Edge).
 // Sirve la carpeta, abre el juego, recoge los errores de la consola, ejecuta un guion de pruebas y hace capturas.
 //
-//   node herramientas/probar.mjs [guion.js] [--hash=pruebas] [--espera=8] [--capturas=carpeta] [--jugadores=2] [--emulador] [--online] [--cpu]
+//   node herramientas/probar.mjs [guion.js] [--hash=pruebas] [--espera=8] [--capturas=carpeta] [--jugadores=2] [--emulador] [--online] [--cpu] [--pagina=ruta.html]
 //
 // Sin --online se bloquea Firebase, para no llenar la base de datos real de jugadores y récords de prueba.
 // --emulador conecta el juego al emulador local de Firebase; --jugadores=N abre N pestañas (N jugadores distintos).
@@ -61,7 +61,7 @@ const cdp = (method, params = {}, sessionId) => new Promise((ok, mal) => { const
 
 // --- una pestaña por jugador, cada una con su propio perfil (= su propio login anónimo) ---
 const JUGADORES = Number(args.jugadores ?? 1);
-const URL_JUEGO = `http://127.0.0.1:${PUERTO}/${args.emulador ? '?emulador' : ''}${HASH ? '#' + HASH : ''}`;
+const URL_JUEGO = `http://127.0.0.1:${PUERTO}/${args.pagina || ''}${args.emulador ? '?emulador' : ''}${HASH && !args.pagina ? '#' + HASH : ''}`;
 const paginas = [];
 for (let i = 0; i < JUGADORES; i++) {
   const { browserContextId } = await cdp('Target.createBrowserContext');

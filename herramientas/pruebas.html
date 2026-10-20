@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pruebas del juego</title>
+<style>
+  :root { --fondo: #0a2a3d; --texto: #f7f3ea; --suave: #9fb3c0; --bien: #3ccf8e; --mal: #ff5a4e; --caja: #12384f; }
+  body { margin: 0; background: var(--fondo); color: var(--texto); font: 16px/1.45 system-ui, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 24px 16px 60px; }
+  h1 { margin: 0 0 4px; font-size: 26px; }
+  p { color: var(--suave); margin: 0 0 18px; }
+  button { font: inherit; font-weight: 600; padding: 10px 18px; border: 0; border-radius: 8px; background: var(--bien); color: #062; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  .prueba { background: var(--caja); border-radius: 10px; padding: 12px 14px; margin: 12px 0; }
+  .prueba b { font-size: 17px; }
+  .prueba .est { float: right; font-weight: 700; }
+  .ok .est { color: var(--bien); } .ko .est { color: var(--mal); }
+  .prueba ul { margin: 8px 0 0; padding-left: 20px; color: #ffd0cc; }
+  .prueba small { display: block; color: var(--suave); margin-top: 4px; }
+  .juego { width: 640px; max-width: 100%; aspect-ratio: 16 / 9; border: 1px solid #2b5770; border-radius: 8px; margin-top: 18px; display: block; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🧪 Pruebas del juego</h1>
+  <p>Abre el juego aquí abajo, lo juega solo con cada personaje, con bots y en la Disputa, y comprueba que no falla nada.
+     No se conecta al online (no ensucia el ranking). Tarda unos 2 minutos: no cambies de pestaña mientras tanto.</p>
+  <button id="empezar">Empezar las pruebas</button>
+  <div id="resultados"></div>
+  <iframe id="juego" class="juego" title="El juego, jugando solo"></iframe>
+</main>
+<script>
+// cada prueba: un guion de herramientas/pruebas/ que se ejecuta dentro del juego
+const PRUEBAS = [
+  { nombre: 'Datos de los personajes', guion: 'pruebas/datos.js', sala: 'pruebas', que: 'fotos, diseños de tabla y quillas, vehículos' },
+  { nombre: 'Una ola con cada personaje', guion: 'pruebas/partida.js', sala: 'pruebas', que: 'remar, ponerse de pie, surfear, saltar, caer, menú y récords' },
+  { nombre: 'Bots y Disputa por el Pico', guion: 'pruebas/bots.js', sala: 'bots', que: 'surfear con bots y una pelea entera' },
+];
+const juego = document.getElementById('juego'), lista = document.getElementById('resultados'), boton = document.getElementById('empezar');
+const esperar = ms => new Promise(r => setTimeout(r, ms));
+
+function cargar(sala) {
+  return new Promise(ok => { juego.onload = () => ok(); juego.src = '../index.html?sinred&t=' + Date.now() + '#' + sala; });
+}
+async function correr(p) {
+  const caja = document.createElement('div'); caja.className = 'prueba';
+  caja.innerHTML = '<span class="est">⏳ en marcha…</span><b></b><small></small>';
+  caja.querySelector('b').textContent = p.nombre; caja.querySelector('small').textContent = p.que;
+  lista.appendChild(caja);
+  const problemas = [];
+  try {
+    await cargar(p.sala);
+    const w = juego.contentWindow;
+    for (let i = 0; i < 100 && !w.__surf; i++) await esperar(100);   // espera a que arranque
+    if (!w.__surf) throw new Error('el juego no ha arrancado');
+    await esperar(1500);
+    w.captura = async () => {};                                        // las capturas solo las hace la versión con Node
+    const codigo = await (await fetch(p.guion, { cache: 'no-store' })).text();
+    const res = await new w.Function('return (async () => {' + codigo + '\n})()')();
+    if (res && res.problemas) problemas.push(...res.problemas);
+    if (res && res.errorGuion) problemas.push(res.errorGuion);
+    for (const [k, v] of Object.entries(res || {})) if (v === false) problemas.push(k + ': no');
+    problemas.push(...(w.__errores || []).map(e => 'error: ' + e));
+  } catch (e) { problemas.push('la prueba se ha parado: ' + e.message); }
+  caja.classList.add(problemas.length ? 'ko' : 'ok');
+  caja.querySelector('.est').textContent = problemas.length ? '✗ ' + problemas.length + ' problema' + (problemas.length > 1 ? 's' : '') : '✓ bien';
+  if (problemas.length) { const ul = document.createElement('ul'); problemas.forEach(t => { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); }); caja.appendChild(ul); }
+  return !problemas.length;
+}
+boton.addEventListener('click', async () => {
+  boton.disabled = true; lista.textContent = '';
+  let bien = 0;
+  for (const p of PRUEBAS) if (await correr(p)) bien++;
+  boton.disabled = false; boton.textContent = 'Repetir';
+  document.title = (bien === PRUEBAS.length ? '✓ ' : '✗ ') + 'Pruebas del juego';
+});
+</script>
+</body>
+</html>

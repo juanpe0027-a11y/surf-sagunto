@@ -12,11 +12,13 @@ export const FIREBASE_CONFIG = {"apiKey": "AIzaSyBYEgJnEQxYbgT97giPRuTaRNd5d9vF8
 export const SALA = (location.hash.replace('#', '').replace(/[^a-z0-9_-]/gi, '').slice(0, 24) || 'pantalan').toLowerCase();
 // conexión con Firebase, compartida por el online y los récords: login anónimo (el jugador no ve nada).
 // Con ?emulador en la URL usa el emulador local (firebase emulators:start) en vez de la base de datos real.
+// Con ?sinred no se conecta a nada (lo usan las pruebas, para no llenar el ranking real de partidas de prueba).
 const EMULADOR = new URLSearchParams(location.search).has('emulador');
+const SIN_RED = new URLSearchParams(location.search).has('sinred');
 let fbPromesa = null;
 export function firebaseListo() {
   if (fbPromesa) return fbPromesa;
-  if (!FIREBASE_CONFIG || !window.firebase || !firebase.auth) return (fbPromesa = Promise.reject(new Error('sin Firebase')));
+  if (SIN_RED || !FIREBASE_CONFIG || !window.firebase || !firebase.auth) return (fbPromesa = Promise.reject(new Error('sin Firebase')));
   fbPromesa = new Promise((ok, mal) => {
     if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
     const auth = firebase.auth(), db = firebase.database();
