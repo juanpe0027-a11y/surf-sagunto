@@ -53,18 +53,18 @@ Que nadie pueda borrar a otros jugadores, inventarse récords ni llenar la base 
 
 **Nota:** el ranking empieza vacío en `v2`. Cada jugador vuelve a aparecer en cuanto abre la versión nueva, porque su móvil sube los récords que tiene guardados.
 
-## Fase 2 — Limpieza rápida ⬜
+## Fase 2 — Limpieza rápida ✅
 
 Cambios sin riesgo que hacen el juego bastante más ligero. El juego debe verse y jugarse **exactamente igual**.
 
-- Sacar las 29 fotos en base64 de `index.html` a `img/personajes/<id>/` y quitar las repetidas (`index.html` pasa de ~1 MB a ~100 KB y el navegador guarda las fotos en caché)
-- Mover `cuerpo.glb` a `modelos/` y `musica.mp4` a `audio/`
-- Sacar el CSS a `css/estilo.css`
-- Cambiar la comprobación de versión nueva: ahora descarga el `index.html` entero (1 MB) en cada visita; pasará a leer un `version.json` de pocos bytes
-- Quitar código que no hace nada en GitHub Pages: el botón «Descargar juego» (solo funcionaba dentro de Claude y pide un `descarga.txt` que no existe)
-- Actualizar el README
+- [x] Sacar las 27 fotos en base64 de `index.html` a `img/personajes/<id>/` (no había repetidas): `index.html` pasa de 1.048 KB a 242 KB, y el navegador guarda las fotos en caché
+- [x] Mover `cuerpo.glb` a `modelos/` y `musica.mp4` a `audio/`
+- [x] Sacar el CSS a `css/estilo.css`
+- [x] Comprobación de versión nueva con `version.json` (antes descargaba el `index.html` entero, 1 MB, en cada visita), y `herramientas/nueva-version.mjs` para publicar
+- [x] Quitar el botón «Descargar juego» (solo funcionaba dentro de Claude y pedía un `descarga.txt` que no existe) y los textos que lo mencionaban
+- [x] Actualizar el README
 
-**Hecho cuando:** las pruebas automáticas y la lista de `CLAUDE.md` pasan, y la página pesa mucho menos.
+**Hecho cuando:** las pruebas automáticas y la lista de `CLAUDE.md` pasan, y la página pesa mucho menos. ✅
 
 ## Fase 3 — Estructura sólida (refactor) ⬜
 

@@ -20,10 +20,13 @@ Juego de surf 3D de navegador (three.js + Firebase). Lo mantiene **Juanpe, que n
 
 | Archivo | Qué es |
 |---|---|
-| `index.html` | El juego entero: CSS, HTML y un único script de ~3.500 líneas (+ ~900 KB de fotos en base64 que hay que sacar) |
+| `index.html` | El HTML y un único script de ~3.500 líneas con todo el juego (se partirá en módulos en la fase 3) |
+| `css/estilo.css` | Estilos del menú, HUD y paneles |
+| `img/personajes/<id>/` | `foto.jpg` (ficha del menú), `cara.jpg` (cara del muñeco 3D), `tabla.jpg` (si la tabla sale de una foto) |
 | `vendor.js` | three.js 0.186.1 + GLTFLoader + SkeletonUtils + postprocessing 6.39.5 (expone `window.THREE` y `window.POSTFX`) |
-| `cuerpo.glb` | Cuerpo humano con esqueleto (Xbot de three.js) |
-| `musica.mp4`, `icono.png` | Música e icono |
+| `modelos/cuerpo.glb` | Cuerpo humano con esqueleto (Xbot de three.js) |
+| `audio/musica.mp4`, `icono.png` | Música e icono |
+| `version.json` | Número de la versión publicada |
 | `firebase-reglas.json` | Reglas de la Realtime Database. **Cambiarlas aquí no hace nada**: hay que publicarlas en la consola de Firebase ([docs/FIREBASE.md](docs/FIREBASE.md)) |
 | `firebase.json`, `.firebaserc` | Configuración de la herramienta de Firebase (emulador local y publicar reglas) |
 | `herramientas/` | Pruebas automáticas (no las carga el juego) |
@@ -37,7 +40,7 @@ Secciones del script (buscar el comentario `// ---------- nombre ----------`): u
 - Este repo (`juanpe0027-a11y/surf-sagunto`, público) es el único con el que se trabaja. GitHub Pages publica la rama **`main`** en **https://juanpe0027-a11y.github.io/surf-sagunto/**.
 - ⚠️ **Subir a `main` = publicar al momento para todos los jugadores.** Por eso no se trabaja en `main`: se trabaja en una rama, se prueba, y se une a `main` solo cuando funciona.
 - El repo `surf-sagunto-privado` era una copia; ya no se usa.
-- Al publicar una versión nueva, sube el número de `BUILD_ID` al final de `index.html`: así los móviles que tienen el juego abierto se recargan solos.
+- Al publicar una versión nueva, ejecuta `node herramientas/nueva-version.mjs`: pone el mismo número nuevo en `BUILD_ID` (al final de `index.html`) y en `version.json`, y añade `?v=` a los CSS y JS propios. Así los móviles que tienen el juego abierto se recargan solos y no se quedan con archivos viejos de la caché. Sin Node, cambia a mano el número en esos sitios (el mismo en todos, y mayor que el anterior).
 - El repo es público: no metas aquí contraseñas ni datos personales (la configuración de Firebase sí puede estar, es normal que sea pública).
 
 ## Cómo probar
@@ -86,6 +89,8 @@ y abrir `http://localhost:8000/#pruebas` (**usa siempre una sala de pruebas** co
 - [ ] En móvil (o con el simulador de móvil del navegador, en horizontal): controles táctiles y fps fluidos
 
 ## Estilo del código
+
+- Los archivos del repo tienen finales de línea de Windows (CRLF). Edítalos con la herramienta de edición, **no con `sed -i`**: lo convierte todo a LF y git ve el archivo entero como cambiado, lo que provoca conflictos con los cambios de Juanpe.
 
 - Comentarios y nombres de la interfaz en **español**, explicando el *porqué* en una línea, como el código actual.
 - Personajes: los datos de cada uno van en `CHARS` (y fotos en `img/`); añadir un personaje no debería requerir tocar la física ni el online.
