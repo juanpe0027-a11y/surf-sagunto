@@ -369,6 +369,7 @@ canvas{display:block;width:100%;height:100%}
 <script src="vendor.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 
 <script>
 (() => {
@@ -3019,12 +3020,33 @@ $('hudHome').addEventListener('click', () => {
 })();
 
 // ===================== MODO ONLINE (Firebase) =====================
-// Cada jugador escribe su estado en salas/<sala>/players/<id> unas 8 veces por segundo
+// Cada jugador escribe su estado en v2/salas/<sala>/players/<id> unas 8 veces por segundo
 // (dónde va respecto a la ola: dx = distancia al tubo, h = altura en la cara, giros, saltos...)
 // y escucha los de los demás para dibujarlos en SU ola en ese mismo sitio.
-// Los mensajes (texto y notas de voz) van a salas/<sala>/msgs.
+// Los mensajes (texto y notas de voz) van a v2/salas/<sala>/msgs.
+// <id> es el del login anónimo de Firebase: las reglas (firebase-reglas.json) solo dejan escribir lo tuyo.
 const FIREBASE_CONFIG = {"apiKey": "AIzaSyBYEgJnEQxYbgT97giPRuTaRNd5d9vF8tg", "authDomain": "surf-sagunto.firebaseapp.com", "databaseURL": "https://surf-sagunto-default-rtdb.europe-west1.firebasedatabase.app", "projectId": "surf-sagunto", "storageBucket": "surf-sagunto.firebasestorage.app", "messagingSenderId": "669179228796", "appId": "1:669179228796:web:1e39377632d94fa1c50ff9"};
 const SALA = (location.hash.replace('#', '').replace(/[^a-z0-9_-]/gi, '').slice(0, 24) || 'pantalan').toLowerCase();
+// conexión con Firebase, compartida por el online y los récords: login anónimo (el jugador no ve nada).
+// Con ?emulador en la URL usa el emulador local (firebase emulators:start) en vez de la base de datos real.
+const EMULADOR = new URLSearchParams(location.search).has('emulador');
+let fbPromesa = null;
+function firebaseListo() {
+  if (fbPromesa) return fbPromesa;
+  if (!FIREBASE_CONFIG || !window.firebase || !firebase.auth) return (fbPromesa = Promise.reject(new Error('sin Firebase')));
+  fbPromesa = new Promise((ok, mal) => {
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    const auth = firebase.auth(), db = firebase.database();
+    if (EMULADOR) { auth.useEmulator('http://127.0.0.1:9099', { disableWarnings: true }); db.useEmulator('127.0.0.1', 9000); }
+    // primero se mira si ya había sesión guardada en este móvil; si no, se crea una
+    const off = auth.onAuthStateChanged(u => {
+      if (u) { off(); ok({ db, uid: u.uid }); }
+      else auth.signInAnonymously().catch(e => { off(); mal(e); });
+    });
+  });
+  fbPromesa.catch(() => {});
+  return fbPromesa;
+}
 const MP = { db: null, base: null, meRef: null, myId: 'p' + Math.random().toString(36).slice(2, 10), myName: '',
   remotes: new Map(), sendT: 0, myMsgT: 0, connected: false, startAt: Date.now(), lastSentMenu: 0 };
 const mpLayer = $('mpLayer'), mpCount = $('mpCount'), mpMenu = $('mpMenu'), chatP = $('chatP'), chatLog = $('chatLog');
@@ -3465,6 +3487,7 @@ $('chatClose').addEventListener('click', () => { chatP.hidden = true; });
 // notas de voz: mantener pulsado 🎤, hablar y soltar (máx. 8 s)
 const micBtn = $('hudMic');
 let rec = null, recChunks = [], recTimer = 0, micStream = null, recMime = '';
+const VOZ_MAX = 73000;   // bytes; en base64 ocupa 4/3 y tiene que caber en los 100.000 caracteres de las reglas
 function unlockVoice() { try { voiceEl.muted = true; const p = voiceEl.play(); if (p && p.then) p.then(() => { voiceEl.pause(); voiceEl.muted = false; }).catch(() => { voiceEl.muted = false; }); } catch (e) {} }
 window.addEventListener('pointerdown', unlockVoice, { once: true, capture: true });
 async function startRec(e) {
@@ -3475,18 +3498,21 @@ async function startRec(e) {
   catch (err) { say('Sin permiso para el micrófono', 2.5); return; }
   recMime = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';
   recChunks = [];
-  rec = new MediaRecorder(micStream, recMime ? { mimeType: recMime, audioBitsPerSecond: 32000 } : undefined);
-  rec.ondataavailable = ev => { if (ev.data && ev.data.size) recChunks.push(ev.data); };
+  rec = new MediaRecorder(micStream, recMime ? { mimeType: recMime, audioBitsPerSecond: 16000 } : undefined);
+  // las reglas de Firebase no admiten notas de más de ~73 KB: si el móvil graba con más calidad
+  // de la pedida (el iPhone lo hace), se corta antes de los 8 s
+  let recBytes = 0;
+  rec.ondataavailable = ev => { if (ev.data && ev.data.size) { recChunks.push(ev.data); recBytes += ev.data.size; if (recBytes > VOZ_MAX - 6000) stopRec(); } };
   rec.onstop = () => {
     const blob = new Blob(recChunks, { type: rec.mimeType || recMime || 'audio/webm' });
     rec = null; micBtn.classList.remove('rec');
     if (blob.size < 1500) return;                       // pulsación demasiado corta
-    if (blob.size > 280000) { say('Nota de voz demasiado larga', 2); return; }
+    if (blob.size > VOZ_MAX) { say('Nota de voz demasiado larga', 2); return; }
     const fr = new FileReader();
     fr.onload = () => { pushMsg({ au: String(fr.result) }); showMine('🎤 Nota de voz'); logMsg('Tú', '🎤 nota de voz'); };
     fr.readAsDataURL(blob);
   };
-  rec.start(); micBtn.classList.add('rec');
+  rec.start(500); micBtn.classList.add('rec');
   clearTimeout(recTimer); recTimer = setTimeout(stopRec, 8000);
 }
 function stopRec() { clearTimeout(recTimer); if (rec && rec.state === 'recording') rec.stop(); }
@@ -3531,10 +3557,11 @@ function checkIdle() {
   }
   bb.textContent = '🤖 Jugar con bots'; bb.onclick = () => { location.hash = 'bots'; location.reload(); };
   if (!FIREBASE_CONFIG || !window.firebase) { mpMenu.textContent = 'Modo online sin configurar: juegas solo'; return; }
-  try {
-    firebase.initializeApp(FIREBASE_CONFIG);
-    MP.db = firebase.database();
-    MP.base = MP.db.ref('salas/' + SALA);
+  mpMenu.textContent = '🌊 Conectando…';
+  firebaseListo().then(({ db, uid }) => {
+    MP.myId = uid;
+    MP.db = db;
+    MP.base = MP.db.ref('v2/salas/' + SALA);
     MP.meRef = MP.base.child('players/' + MP.myId);
     MP.db.ref('.info/connected').on('value', s => {
       MP.connected = !!s.val();
@@ -3547,8 +3574,7 @@ function checkIdle() {
     pl.on('child_removed', s => removePeer(s.key));
     MP.base.child('msgs').orderByChild('at').startAt(Date.now() - 5000).on('child_added', s => onMsg(s.val()));
     window.addEventListener('pagehide', () => { try { MP.meRef.remove(); } catch (e) {} });
-    mpMenu.textContent = '🌊 Conectando…';
-  } catch (e) { mpMenu.textContent = 'No se ha podido conectar al modo online'; }
+  }).catch(() => { mpMenu.textContent = 'No se ha podido conectar al modo online'; });
 })();
 
 
@@ -3910,30 +3936,31 @@ function duelCam(dp, dl, far) {
 
 
 // ===================== RÉCORDS: trucos y puntuaciones =====================
-// Cada móvil tiene su número propio (sin cuentas ni contraseñas). Se guarda en el móvil y en Firebase
-// (stats/<móvil>) para el ranking de todos: mejor sesión, mejor ola, mejor tubo, LOCAL LEGEND y cada truco.
+// Cada móvil tiene su número propio, el del login anónimo (sin cuentas ni contraseñas). Se guarda en el móvil
+// y en Firebase (v2/records/<temporada>/<móvil>) para el ranking de todos: mejor sesión, mejor ola, mejor tubo,
+// LOCAL LEGEND y cada truco.
 const ST_KEY = 'surf-sagunto-stats';
-const DEV_ID = (() => {
-  try {
-    let d = localStorage.getItem('surf-dev');
-    if (!d || !/^[a-z0-9]{12,24}$/.test(d)) { d = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => (b % 36).toString(36)).join(''); localStorage.setItem('surf-dev', d); }
-    return d;
-  } catch (e) { return 'tmp' + Math.random().toString(36).slice(2, 14); }
-})();
-let ST = { best: 0, bestWave: 0, bestTube: 0, legends: 0, sessions: 0, total: 0, tricks: {}, tbest: {} };
+let ST ={ best: 0, bestWave: 0, bestTube: 0, legends: 0, sessions: 0, total: 0, tricks: {}, tbest: {} };
 // temporada: al cambiarla, todos los récords (los del móvil y el ranking) empiezan de cero
 const ST_SEASON = 2;
 try { const o = JSON.parse(localStorage.getItem(ST_KEY) || 'null'); if (o && typeof o === 'object' && o.season === ST_SEASON) ST = Object.assign(ST, o); } catch (e) {}
 try { if (localStorage.getItem('surf-sagunto-season') !== String(ST_SEASON)) { localStorage.setItem('surf-sagunto-season', String(ST_SEASON)); localStorage.setItem('surf-sagunto-best3d', '0'); best = 0; } } catch (e) {}
 ST.season = ST_SEASON;
 ST.best = Math.max(ST.best || 0, best || 0);
-let stDirty = true, stSaveT = 4, stDb = null;
-function statsDb() {
-  if (stDb) return stDb;
-  if (!FIREBASE_CONFIG || !window.firebase) return null;
-  try { if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG); stDb = firebase.database(); } catch (e) { stDb = null; }
-  return stDb;
-}
+let stDirty = true, stSaveT = 4, stUid = null;
+const recRef = (db, uid) => db.ref('v2/records/' + ST_SEASON + (uid ? '/' + uid : ''));
+// al conectar, se recupera lo que hubiera en la nube (por si se borraron los datos del navegador):
+// las reglas no dejan bajar un récord, así que el móvil tiene que partir del valor guardado
+firebaseListo().then(({ db, uid }) => recRef(db, uid).once('value').then(s => {
+  stUid = uid;
+  const v = s.val();
+  if (v && typeof v === 'object') {
+    for (const k of ['best', 'bestWave', 'bestTube', 'legends', 'sessions', 'total']) ST[k] = Math.max(Number(ST[k]) || 0, Number(v[k]) || 0);
+    if (v.tricks && typeof v.tricks === 'object') for (const k in v.tricks) ST.tricks[k] = Math.max(ST.tricks[k] || 0, Number(v.tricks[k]) || 0);
+    if (ST.best > best) best = ST.best;
+  }
+  stDirty = true;
+})).catch(() => {});
 // «Tubo 1.8 s» → Tubo, «Re-entry 165°» → Re-entry, «Empujón a Gutty» → Empujón, «Indy largo» → Indy
 function trickKey(name) {
   return String(name).replace(/^👑\s*/, '').replace(/\s+\d+(\.\d+)?\s*(s|°)$/, '').replace(/\s+(a|de)\s+.+$/, '')
@@ -3965,10 +3992,10 @@ function statsTick(dt) {
 function statsSave() {
   if (!stDirty) return; stDirty = false;
   try { localStorage.setItem(ST_KEY, JSON.stringify(ST)); } catch (e) {}
-  const db = statsDb(); if (!db) return;
-  try { db.ref('stats/' + DEV_ID).set({ nm: (MP.myName || CH.name || 'Surfista').slice(0, 20), ch: CH.id, best: Math.floor(ST.best), bestWave: Math.floor(ST.bestWave),
-    bestTube: Math.round(ST.bestTube * 10) / 10, season: ST_SEASON, legends: ST.legends, sessions: ST.sessions, total: ST.total, tricks: ST.tricks,
-    at: firebase.database.ServerValue.TIMESTAMP }).catch(() => { stDirty = true; }); } catch (e) { stDirty = true; }   // un fallo aquí nunca para el juego
+  if (!stUid) { stDirty = true; return; }   // todavía sin conectar: se guarda en cuanto haya conexión
+  firebaseListo().then(({ db }) => recRef(db, stUid).set({ nm: (MP.myName || CH.name || 'Surfista').slice(0, 20), ch: CH.id, best: Math.floor(ST.best), bestWave: Math.floor(ST.bestWave),
+    bestTube: Math.round(ST.bestTube * 10) / 10, legends: ST.legends, sessions: ST.sessions, total: ST.total, tricks: ST.tricks,
+    at: firebase.database.ServerValue.TIMESTAMP })).catch(() => { stDirty = true; });   // un fallo aquí nunca para el juego
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) statsSave(); });
 
@@ -4002,19 +4029,20 @@ function renderRecords() {
     return;
   }
   recList.className = 'rlist rank';
-  const db = statsDb(); if (!db) { recRow(['', 'Sin conexión', '', '']); return; }
   recRow(['', 'Cargando…', '', '']);
   const field = recTab;
-  db.ref('stats').orderByChild('season').equalTo(ST_SEASON).once('value', snap => {
+  const fallo = () => { if (recTab !== field) return; recList.textContent = ''; recRow(['', 'No se ha podido cargar el ranking', '', '']); };
+  // solo se descargan los 20 mejores (no todo el ranking)
+  firebaseListo().then(({ db }) => recRef(db).orderByChild(field).limitToLast(20).once('value')).then(snap => {
     if (recTab !== field) return;
     let list = [];
     snap.forEach(c => { const v = c.val() || {}; list.push({ id: c.key, nm: String(v.nm || 'Surfista').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 20), ch: v.ch, val: Math.floor(Number(v[field]) || 0) }); });
     list = list.filter(r => r.val > 0).sort((a, b) => b.val - a.val).slice(0, 20);
     recList.textContent = '';
     recRow(['#', 'Surfista', 'Personaje', field === 'best' ? 'Sesión' : 'Ola'], 'head');
-    list.forEach((r, i) => { const c = CHARS.find(x => x.id === r.ch); recRow([i + 1, r.nm, c ? c.name : '', r.val], r.id === DEV_ID ? 'me' : ''); });
+    list.forEach((r, i) => { const c = CHARS.find(x => x.id === r.ch); recRow([i + 1, r.nm, c ? c.name : '', r.val], r.id === stUid ? 'me' : ''); });
     if (!list.length) recRow(['', 'Todavía no hay récords. ¡Sé el primero!', '', '']);
-  }, () => { recList.textContent = ''; recRow(['', 'No se ha podido cargar el ranking', '', '']); });
+  }).catch(fallo);
 }
 
 window.addEventListener('resize', resize);
