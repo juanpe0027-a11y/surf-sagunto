@@ -2050,6 +2050,7 @@ try { best = +localStorage.getItem('surf-sagunto-best3d') || 0; } catch (e) {}
 let px = 0, h = 0.5, vh = 0, s = 1.3, air = false, airT = 0, spin = 0, flip = 0, aVy = 0, airTop = 0, launchY = 0, pxStart = 0;
 let rideAngle = 0, lastVh = 0, snapCD = 0;
 // la tabla tiene rumbo (theta: 0 = paralela a la orilla, + sube la ola, - baja) y velocidad v en m/s
+let turnW = 0, airBack = false, airSteer = 0;
 let theta = 0, v = 10, omega = 0, crouch = 0.3, bank = 0, airVx = 10, twistAmt = 0, backT = 0, turnLock = 0;
 // aéreos: giros pedidos (spinT/flipT) que se completan solos, grab y recepción guiada sobre la ola
 let spinT = 0, flipT = 0, grab = 0, grabT = 0, airDur = 1, airHold = 0, launchZ = 0, landZ = 0, landT = 1, lastTrick = '', airHintShown = false;
@@ -2301,20 +2302,29 @@ function missTakeoff(why) {
   say(why, 2); splash(boardRoot.position, 60, 1.2); boardRoot.visible = false;
 }
 const LAND_H = 0.8;
+// velocidad mínima en el aire para no caer dentro del tubo (la ola sigue avanzando mientras saltas)
+function airMinVx(left) { return curlSpeed - (px - curlX - 2.5) / Math.max(left, 0.25); }
+// cómo cae: más abajo en la cara, con la tabla hacia abajo y hacia delante, o hacia el tubo si saltaste hacia él
+function setLandPose() {
+  faceAt(px, LAND_H);
+  const a = airBack ? -Math.PI + 0.5 : -0.5;
+  vT.set(0, face.ty, face.tz);
+  vF.set(Math.cos(a), 0, 0).addScaledVector(vT, Math.sin(a)).normalize();
+  basisQuat(vF, V3(0, -face.tz, face.ty), qLandPose);
+}
 function launch() {
   air = true; airT = 0; spin = 0; flip = 0; spinT = 0; flipT = 0; grab = 0; grabT = 0; airHold = 0; supT = 0;
   faceAt(px, 1);
   aPos.set(px, face.y + 0.05, face.z); launchY = aPos.y; launchZ = face.z; airTop = 0;
   // arco estable: siempre hay tiempo para un truco y la ola no te adelanta en el aire
   aVy = clamp(v * Math.sin(theta) * 0.9 + 1.6 + (CH.air - 3) * 0.45, 4.6, 10);
-  airVx = Math.max(v * Math.cos(theta), curlSpeed * 1.02);
   airDur = 2 * aVy / 9.8 + 0.15;
-  // dónde y cómo va a caer: más abajo en la cara, con la tabla mirando hacia abajo de la ola
+  // el salto sigue a la tabla: hacia delante, recto hacia arriba o de punta hacia el tubo (sin caer dentro)
+  airBack = Math.cos(theta) < -0.15; airSteer = 0;
+  airVx = clamp(v * Math.cos(theta), airMinVx(airDur), v + 3);
   faceAt(px + airVx * airDur, LAND_H);
   landZ = face.z;
-  vT.set(0, face.ty, face.tz);
-  vF.set(Math.cos(-0.5), 0, 0).addScaledVector(vT, Math.sin(-0.5)).normalize();
-  basisQuat(vF, V3(0, -face.tz, face.ty), qLandPose);
+  setLandPose();
   qLaunch.copy(qRide);
   splash(aPos, 25, 0.8);
   ptr.ax = ptr.x; ptr.ay = ptr.y; ptr.moved = false;
@@ -2355,7 +2365,7 @@ function trickTap() {
   trickTaps++; trickWin = 0.2;
 }
 function land() {
-  air = false; h = LAND_H; theta = -0.5; omega = 0; backT = 0; fs = null; crouch = 1; v = Math.max(v, 9.5);
+  air = false; h = LAND_H; theta = airBack ? -Math.PI + 0.5 : -0.5; omega = 0; turnW = 0; backT = 0; fs = null; crouch = 1; v = Math.max(v, 9.5);
   const sErr = Math.abs(spinT - spin), fErr = Math.abs(flipT - flip);
   faceAt(px, LAND_H); splash(V3(px, face.y, face.z), 34, 0.9);
   qLand.copy(boardRoot.quaternion); landT = 0;
@@ -2524,14 +2534,20 @@ function rideStep(dt, hT) {
         if (!turnLock) {
           // abajo del todo: bottom turn subiendo. En el labio, si vuelves hacia el tubo: re-entry, la tabla
           // pivota por encima de la cresta sin salir de la ola. En medio de la cara: cutback bajando.
-          const wantUp = h < 0.22 || (h > 0.72 && Math.cos(hT) < 0);
-          turnLock = (Math.sin(theta + d / 2) > 0) === wantUp ? Math.sign(d) : -Math.sign(d);
+          // en medio de la cara: por el camino más corto (giro libre)
+          if (h >= 0.2 && h <= 0.72) turnLock = Math.sign(d);
+          else {
+            const wantUp = h < 0.2 || (h > 0.72 && Math.cos(hT) < 0);
+            turnLock = (Math.sin(theta + d / 2) > 0) === wantUp ? Math.sign(d) : -Math.sign(d);
+          }
         }
         if (Math.sign(d) !== turnLock) d -= Math.sign(d) * TAU;   // mantiene el sentido del giro empezado
       } else turnLock = 0;
       const rate = (6.2 + 0.18 * v) * (btnTurn !== null ? 1.35 : 1);   // más velocidad = giros más rápidos; TRUCO pivota aún más rápido
-      theta += clamp(d * 9, -rate, rate) * dt;
-    }
+      // la velocidad de giro arranca y frena suave (sin tirones)
+      turnW = lerp(turnW, clamp(d * 8, -rate, rate), 1 - Math.exp(-dt * 14));
+      theta += turnW * dt;
+    } else { turnW *= Math.exp(-dt * 10); theta += turnW * dt; }
     theta = angDiff(theta, 0);
     omega = lerp(omega, angDiff(theta, prev) / Math.max(dt, 1e-3), 1 - Math.exp(-dt * 10));
     faceAt(px, h);
@@ -2622,11 +2638,18 @@ function rideStep(dt, hT) {
     if (grabbing) grabT += dt;
   }
   if (air) {
+    // en el aire se puede dirigir el salto: círculo a la derecha = hacia el tubo, a la izquierda = adelante
+    let st = 0;
+    if (stick.id !== null && Math.abs(stick.x) > 0.2) st = -stick.x;
+    if (state === 'title') st = 0;                         // (con teclado, las flechas en el aire son trucos)
+    airSteer = lerp(airSteer, st, 1 - Math.exp(-dt * 6));
+    airVx = clamp(airVx + airSteer * 13 * dt, airMinVx(airDur - airT), v + 4);
+    if (state !== 'title' && Math.abs(st) > 0.5 && (st < 0) !== airBack && airT < airDur * 0.7) { airBack = st < 0; setLandPose(); }
     px += airVx * dt;
     crouch = lerp(crouch, 0.95, 1 - Math.exp(-dt * 6));
     aPos.x = px;
-    aPos.z = lerp(launchZ, landZ, sm(0, airDur, airT));
     faceAt(px, LAND_H);
+    aPos.z = lerp(launchZ, face.z, sm(0, airDur, airT));
     if (aVy < 0 && aPos.y <= face.y + 0.1) land();
   }
 }
@@ -3781,8 +3804,12 @@ const DEV_ID = (() => {
   } catch (e) { return 'tmp' + Math.random().toString(36).slice(2, 14); }
 })();
 let ST = { best: 0, bestWave: 0, bestTube: 0, legends: 0, sessions: 0, total: 0, tricks: {}, tbest: {} };
-try { const o = JSON.parse(localStorage.getItem(ST_KEY) || 'null'); if (o && typeof o === 'object') ST = Object.assign(ST, o); } catch (e) {}
-ST.best = Math.max(ST.best || 0, best || 0);                       // el récord que ya tenías en este móvil
+// temporada: al cambiarla, todos los récords (los del móvil y el ranking) empiezan de cero
+const ST_SEASON = 2;
+try { const o = JSON.parse(localStorage.getItem(ST_KEY) || 'null'); if (o && typeof o === 'object' && o.season === ST_SEASON) ST = Object.assign(ST, o); } catch (e) {}
+try { if (localStorage.getItem('surf-sagunto-season') !== String(ST_SEASON)) { localStorage.setItem('surf-sagunto-season', String(ST_SEASON)); localStorage.setItem('surf-sagunto-best3d', '0'); best = 0; } } catch (e) {}
+ST.season = ST_SEASON;
+ST.best = Math.max(ST.best || 0, best || 0);
 let stDirty = true, stSaveT = 4, stDb = null;
 function statsDb() {
   if (stDb) return stDb;
@@ -3822,9 +3849,9 @@ function statsSave() {
   if (!stDirty) return; stDirty = false;
   try { localStorage.setItem(ST_KEY, JSON.stringify(ST)); } catch (e) {}
   const db = statsDb(); if (!db) return;
-  db.ref('stats/' + DEV_ID).set({ nm: (MP.myName || CH.name || 'Surfista').slice(0, 20), ch: CH.id, best: Math.floor(ST.best), bestWave: Math.floor(ST.bestWave),
-    bestTube: Math.round(ST.bestTube * 10) / 10, legends: ST.legends, sessions: ST.sessions, total: ST.total, tricks: ST.tricks,
-    at: firebase.database.ServerValue.TIMESTAMP }).catch(() => { stDirty = true; });
+  try { db.ref('stats/' + DEV_ID).set({ nm: (MP.myName || CH.name || 'Surfista').slice(0, 20), ch: CH.id, best: Math.floor(ST.best), bestWave: Math.floor(ST.bestWave),
+    bestTube: Math.round(ST.bestTube * 10) / 10, season: ST_SEASON, legends: ST.legends, sessions: ST.sessions, total: ST.total, tricks: ST.tricks,
+    at: firebase.database.ServerValue.TIMESTAMP }).catch(() => { stDirty = true; }); } catch (e) { stDirty = true; }   // un fallo aquí nunca para el juego
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) statsSave(); });
 
@@ -3861,11 +3888,11 @@ function renderRecords() {
   const db = statsDb(); if (!db) { recRow(['', 'Sin conexión', '', '']); return; }
   recRow(['', 'Cargando…', '', '']);
   const field = recTab;
-  db.ref('stats').orderByChild(field).limitToLast(20).once('value', snap => {
+  db.ref('stats').orderByChild('season').equalTo(ST_SEASON).once('value', snap => {
     if (recTab !== field) return;
-    const list = [];
+    let list = [];
     snap.forEach(c => { const v = c.val() || {}; list.push({ id: c.key, nm: String(v.nm || 'Surfista').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 20), ch: v.ch, val: Math.floor(Number(v[field]) || 0) }); });
-    list.reverse();
+    list = list.filter(r => r.val > 0).sort((a, b) => b.val - a.val).slice(0, 20);
     recList.textContent = '';
     recRow(['#', 'Surfista', 'Personaje', field === 'best' ? 'Sesión' : 'Ola'], 'head');
     list.forEach((r, i) => { const c = CHARS.find(x => x.id === r.ch); recRow([i + 1, r.nm, c ? c.name : '', r.val], r.id === DEV_ID ? 'me' : ''); });
@@ -3888,7 +3915,7 @@ window.__surf = { spawnDolphins, upsertPeer, onMsg, MP, startDuel, DUEL, duelSwi
 </script>
 
 <script>
-const BUILD_ID = '1792498926';
+const BUILD_ID = '1792513354';
 (function () {
   try {
     fetch(location.pathname + '?b=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => {
