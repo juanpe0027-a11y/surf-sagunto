@@ -35,9 +35,10 @@ body{margin:0;background:var(--deep);color:var(--paper);font-family:var(--body);
 #wrap{position:relative;width:100%;height:100%;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;overflow:hidden}
 canvas{display:block;width:100%;height:100%}
 
-.pad{position:absolute;bottom:calc(22px + env(safe-area-inset-bottom, 0px));width:150px;height:150px;border-radius:50%;border:2px solid rgba(255,255,255,.55);background:rgba(255,255,255,.08);pointer-events:none;box-shadow:0 0 0 1px rgba(0,0,0,.15) inset}
+.pad{position:absolute;bottom:calc(22px + env(safe-area-inset-bottom, 0px));width:150px;height:150px;border-radius:50%;border:2px solid rgba(255,255,255,.55);background:rgba(255,255,255,.05);pointer-events:none;box-shadow:0 0 0 1px rgba(0,0,0,.15) inset}
 @media (max-aspect-ratio: 1/1){.dial{bottom:calc(14px + min(150px, 34vw) + env(safe-area-inset-bottom, 0px))}}
 .pad{width:min(150px, 34vw);height:min(150px, 34vw)}
+@media (min-aspect-ratio: 1/1){.pad{width:min(118px, 27vh);height:min(118px, 27vh);bottom:calc(14px + env(safe-area-inset-bottom, 0px))}.pad .lab.big{font-size:18px}.pad .knob{width:44px;height:44px;margin:-22px 0 0 -22px}}
 .pad.stick{right:max(22px, env(safe-area-inset-right, 0px))}
 .pad.tricks{left:max(22px, env(safe-area-inset-left, 0px))}
 .pad .knob{position:absolute;left:50%;top:50%;width:58px;height:58px;margin:-29px 0 0 -29px;border-radius:50%;background:rgba(255,255,255,.42);border:2px solid rgba(255,255,255,.85);will-change:transform}
@@ -74,7 +75,7 @@ canvas{display:block;width:100%;height:100%}
 /* marcadores de la ola: anillos blancos translúcidos como en el vídeo de referencia */
 .clock{font-family:var(--display);font-size:16px;letter-spacing:.04em;background:rgba(13,22,32,.45);padding:1px 8px;border-radius:4px;align-self:flex-start;font-variant-numeric:tabular-nums}
 .tricks{flex:1;display:flex;justify-content:center;flex-wrap:wrap;gap:6px;min-width:0;padding-top:4px}
-.tricks span{font-family:var(--body);font-weight:700;font-size:14px;background:rgba(13,22,32,.42);padding:2px 8px;border-radius:999px;white-space:nowrap;animation:chip .4s ease-out}
+.tricks span{font-family:var(--body);font-weight:700;font-size:13px;background:rgba(13,22,32,.32);padding:2px 8px;border-radius:999px;white-space:nowrap;animation:chip .4s ease-out}
 @keyframes chip{from{transform:scale(.6);opacity:0}}
 .multc,.dial,.ringbox{position:relative}
 .multc{width:84px;height:84px;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center}
@@ -166,7 +167,7 @@ canvas{display:block;width:100%;height:100%}
 .mplayer{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 .mplabel,#myBub{position:absolute;left:0;top:0;pointer-events:none;will-change:transform}
 .mplabel{display:flex;flex-direction:column-reverse;align-items:center;gap:3px}
-.mplabel b{font-family:var(--body);font-weight:700;font-size:13px;background:rgba(13,22,32,.62);color:var(--paper);padding:1px 8px;border-radius:999px;white-space:nowrap}
+.mplabel b{font-family:var(--body);font-weight:700;font-size:11px;background:rgba(13,22,32,.4);color:var(--paper);padding:1px 8px;border-radius:999px;white-space:nowrap}
 .mpbub,#myBub{font-family:var(--body);font-size:15px;font-weight:700;background:var(--paper);color:var(--ink);padding:4px 10px;border-radius:12px;max-width:210px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.35)}
 .chatlog{position:absolute;left:max(16px, env(safe-area-inset-left, 0px));top:150px;display:flex;flex-direction:column;gap:4px;pointer-events:none;max-width:min(60vw,320px)}
 .chatlog div{font-size:14px;background:rgba(13,22,32,.55);padding:2px 8px;border-radius:6px;transition:opacity 1.2s}
@@ -189,15 +190,21 @@ canvas{display:block;width:100%;height:100%}
 #chars .card.taken{opacity:.45;position:relative}
 #chars .card.taken::after{content:attr(data-who);position:absolute;left:6px;right:6px;top:40%;background:rgba(13,22,32,.85);color:#fff;font:700 13px var(--body);padding:4px;border-radius:6px;text-align:center}
 #botsBtn{align-self:flex-start;font-size:18px}
-.mpboard{max-height:34vh;overflow-y:auto;margin-top:6px;font-family:var(--body);font-size:13px;font-weight:700;background:rgba(13,22,32,.5);padding:4px 8px;border-radius:6px;line-height:1.45}
+.mpboard{margin-top:4px;font-family:var(--body);font-size:11px;font-weight:700;background:rgba(13,22,32,.28);padding:2px 7px;border-radius:6px;line-height:1.35;max-width:150px;pointer-events:none}
 .mpboard .me{color:var(--sun)}
-#padTricks.push{background:rgba(255,90,78,.45);border-color:#fff}
-#padTricks.push .lab{font-size:22px}
+#padTricks.push{background:rgba(255,90,78,.2);border-color:rgba(255,255,255,.8)}
+#padTricks.push .lab{font-size:16px}
 .big{font-family:var(--display);font-size:56px;line-height:1;font-variant-numeric:tabular-nums}
 .stats{display:flex;gap:28px;align-items:flex-end}
 .newbest{font-family:var(--stamp);color:var(--sun);font-size:18px}
 .iosguide{position:fixed;inset:0;z-index:60;background:rgba(5,14,22,.82);display:flex;align-items:center;justify-content:center;padding:16px}
 .iosguide[hidden]{display:none!important}
+.rotate{position:fixed;inset:0;z-index:70;background:#0a2a3d;color:#fff;display:none;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px;text-align:center;font-family:var(--body)}
+.rotate .rphone{font-size:72px;animation:rturn 1.6s ease-in-out infinite}
+@keyframes rturn{0%,20%{transform:rotate(0)}60%,100%{transform:rotate(-90deg)}}
+.rotate b{font:900 26px var(--display);letter-spacing:.03em}
+.rotate p{margin:0;font-size:16px;max-width:300px;line-height:1.4}
+@media (orientation: portrait) and (pointer: coarse){.rotate{display:flex}}
 .ig-box{background:var(--paper);color:var(--ink);border-radius:14px;padding:18px 18px 16px;max-width:380px;width:100%;font-family:var(--body);box-shadow:0 10px 30px rgba(0,0,0,.5)}
 .ig-box b{display:block;font-family:var(--display);font-size:26px;line-height:1.1}
 .ig-sub{display:block;margin:4px 0 8px;font-size:15px;opacity:.8}
@@ -311,6 +318,7 @@ canvas{display:block;width:100%;height:100%}
       <div class="actions"><button class="btn" id="again">Otra sesión</button><button class="mbtn" id="toMenu">Menú</button></div>
     </div>
   </div>
+  <div class="rotate" id="rotateMsg"><div class="rphone">📱</div><b>Gira el móvil</b><p id="rotateTxt">El juego se ve en horizontal y a pantalla completa.</p></div>
   <div class="iosguide" id="iosGuide" hidden>
     <div class="ig-box">
       <b>Pantalla completa en el iPhone</b>
@@ -2207,6 +2215,22 @@ async function toggleFull() {
   } catch (e) { fsFailed(); }
 }
 fsBtn.addEventListener('click', toggleFull);
+// móviles: al primer toque, pantalla completa y en horizontal (Android); en iPhone, aviso para girarlo
+const TOUCH = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+let fsByUser = false;
+fsBtn.addEventListener('click', () => { fsByUser = true; }, true);
+$('hudFs').addEventListener('click', () => { fsByUser = true; }, true);
+async function autoFull() {
+  if (!TOUCH || IS_IOS || IS_APP || isFull() || fsByUser) return;
+  const el = document.documentElement, req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!req) return;
+  try { await req.call(el, { navigationUI: 'hide' }); } catch (e) { return; }
+  try { await screen.orientation.lock('landscape'); } catch (e) {}
+}
+window.addEventListener('pointerdown', autoFull, true);
+$('rotateTxt').textContent = IS_IOS
+  ? (IS_APP ? 'El juego se ve en horizontal.' : 'El juego se ve en horizontal. Para verlo sin barras: Compartir → «Añadir a pantalla de inicio».')
+  : 'Toca la pantalla y se pondrá en horizontal y a pantalla completa.';
 $('hudFs').addEventListener('click', toggleFull);
 document.addEventListener('fullscreenchange', () => { setFsLabel(); resize(); });
 document.addEventListener('webkitfullscreenchange', () => { setFsLabel(); resize(); });
@@ -2222,7 +2246,8 @@ function showTrick(name, pts) {
 function say(t, dur) { msgEl.textContent = t; promptEl.hidden = false; msgTimer = dur || 1.8; }
 function chip(t) {
   const c = document.createElement('span'); c.textContent = t; tricksEl.prepend(c);
-  while (tricksEl.children.length > 5) tricksEl.lastChild.remove();
+  while (tricksEl.children.length > 2) tricksEl.lastChild.remove();
+  setTimeout(() => c.remove(), 3500);
 }
 function bump(a) { mult = Math.min(3, mult + a); }
 function addPts(p) { const q = p * mult; score += q; wavePts += q; return Math.round(q); }
@@ -2590,6 +2615,7 @@ function rideStep(dt, hT) {
 }
 
 // ---------- bucle principal ----------
+let camFast = 0;
 const camPos = V3(8, 5, 20), camLook = V3(0, 1, 0), desPos = V3(0, 0, 0), desLook = V3(0, 0, 0);
 let clock = 0;
 
@@ -2808,10 +2834,12 @@ function update(dt) {
     const yy = air ? aPos.y : sp.y, still = state === 'wipe' || state === 'over' || state === 'between';
     // la cámara va con la ola (no pegada al surfista): si frenas, el surfista se va hacia la derecha y se mete
     // bajo el tubo; si aceleras, se adelanta hacia la izquierda. Siempre queda dentro de la pantalla.
-    const half = aspect < 0.9 ? 2.8 : 8;
+    // cuando va rápido, la cámara se acerca y lo mantiene más centrado (que no se meta detrás de los botones)
+    camFast = lerp(camFast, still ? 0 : Math.max(sm(7, 14, v), sm(10, 30, sp.x - curlX)), 1 - Math.exp(-dt * 1.6));
+    const half = aspect < 0.9 ? lerp(2.4, 1.4, camFast) : lerp(5, 2.5, camFast);
     let cx = still ? sp.x - 3 : curlX + 6 + 0.4 * (sp.x - curlX - 9);
     cx = clamp(cx, sp.x - half, sp.x + half);
-    desPos.set(cx, Math.max(2.8, yy * 0.4 + 2.8), still ? 20 * far : sp.z + 19 * far);
+    desPos.set(cx, Math.max(2.4, yy * 0.4 + lerp(2.8, 2.2, camFast)), still ? 20 * far : sp.z + lerp(19, 12.5, camFast) * far);
     desLook.set(cx, yy * 0.55 + 1.0, sp.z - 6);
   }
   const f = 1 - Math.exp(-dt * k);
@@ -3339,7 +3367,8 @@ function updateBoard(dt) {
   if (boardEl.hidden) return;
   rows.sort((a, b) => b.s - a.s);
   boardEl.textContent = '';
-  rows.forEach((r, i) => { const d = document.createElement('div'); if (r.me) d.className = 'me'; d.textContent = (i + 1) + '. ' + r.n + '  ' + r.s; boardEl.appendChild(d); });
+  // solo los 3 primeros y tú (para no tapar la ola)
+  rows.forEach((r, i) => { if (i > 2 && !r.me) return; const d = document.createElement('div'); if (r.me) d.className = 'me'; d.textContent = (i + 1) + '. ' + r.n + '  ' + r.s; boardEl.appendChild(d); });
 }
 
 // --- mensajes: frases rápidas, texto y notas de voz ---
@@ -3703,7 +3732,7 @@ window.__surf = { spawnDolphins, upsertPeer, onMsg, MP, startDuel, DUEL, duelSwi
 </script>
 
 <script>
-const BUILD_ID = '1792482733';
+const BUILD_ID = '1792495772';
 (function () {
   try {
     fetch(location.pathname + '?b=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => {
