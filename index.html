@@ -2303,8 +2303,6 @@ function missTakeoff(why) {
   say(why, 2); splash(boardRoot.position, 60, 1.2); boardRoot.visible = false;
 }
 const LAND_H = 0.8;
-// velocidad mínima en el aire para no caer dentro del tubo (la ola sigue avanzando mientras saltas)
-function airMinVx(left) { return curlSpeed - (px - curlX - 2.5) / Math.max(left, 0.25); }
 // cómo cae: más abajo en la cara, con la tabla hacia abajo y hacia delante, o hacia el tubo si saltaste hacia él
 function setLandPose() {
   faceAt(px, LAND_H);
@@ -2320,9 +2318,9 @@ function launch() {
   // arco estable: siempre hay tiempo para un truco y la ola no te adelanta en el aire
   aVy = clamp(v * Math.sin(theta) * 0.9 + 1.6 + (CH.air - 3) * 0.45, 4.6, 10);
   airDur = 2 * aVy / 9.8 + 0.15;
-  // el salto sigue a la tabla: hacia delante, recto hacia arriba o de punta hacia el tubo (sin caer dentro)
-  airBack = Math.cos(theta) < -0.15; airSteer = 0;
-  airVx = clamp(v * Math.cos(theta), airMinVx(airDur), v + 3);
+  // el salto va siempre hacia delante, con la ola
+  airBack = false; airSteer = 0;
+  airVx = Math.max(v * Math.cos(theta), curlSpeed * 1.02);
   faceAt(px + airVx * airDur, LAND_H);
   landZ = face.z;
   setLandPose();
@@ -2645,13 +2643,6 @@ function rideStep(dt, hT) {
     if (grabbing) grabT += dt;
   }
   if (air) {
-    // en el aire se puede dirigir el salto: círculo a la derecha = hacia el tubo, a la izquierda = adelante
-    let st = 0;
-    if (stick.id !== null && Math.abs(stick.x) > 0.2) st = -stick.x;
-    if (state === 'title') st = 0;                         // (con teclado, las flechas en el aire son trucos)
-    airSteer = lerp(airSteer, st, 1 - Math.exp(-dt * 6));
-    airVx = clamp(airVx + airSteer * 13 * dt, airMinVx(airDur - airT), v + 4);
-    if (state !== 'title' && Math.abs(st) > 0.5 && (st < 0) !== airBack && airT < airDur * 0.7) { airBack = st < 0; setLandPose(); }
     px += airVx * dt;
     crouch = lerp(crouch, 0.95, 1 - Math.exp(-dt * 6));
     aPos.x = px;
@@ -3922,7 +3913,7 @@ window.__surf = { spawnDolphins, upsertPeer, onMsg, MP, startDuel, DUEL, duelSwi
 </script>
 
 <script>
-const BUILD_ID = '1792513822';
+const BUILD_ID = '1792514165';
 (function () {
   try {
     fetch(location.pathname + '?b=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => {
