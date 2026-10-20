@@ -12,6 +12,10 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const rnd = (a, b) => a + Math.random() * (b - a);
 const TAU = Math.PI * 2;
 const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+// avisos entre partes del juego: escuchar('truco', fn) para enterarse, avisar('truco', datos) para contarlo
+const oyentes = {};
+function escuchar(ev, fn) { (oyentes[ev] = oyentes[ev] || []).push(fn); }
+function avisar(ev, ...datos) { for (const fn of oyentes[ev] || []) fn(...datos); }
 
 // ---------- motor ----------
 let renderer;
@@ -62,8 +66,8 @@ function resize() {
   camera.fov = aspect < 0.9 ? 68 : 50;
   camera.updateProjectionMatrix();
   pxScale = renderer.domElement.height / (2 * Math.tan(camera.fov * Math.PI / 360));
-  if (partMat) partMat.uniforms.uScale.value = pxScale;
   if (FX.composer) FX.composer.setSize(w, h, false);
+  avisar('tamano', pxScale);
 }
 
 // ---------- efectos de cámara de cine (librería postprocessing) ----------
@@ -389,7 +393,7 @@ const partGeo = new THREE.BufferGeometry();
 partGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
 partGeo.setAttribute('size', new THREE.BufferAttribute(pSize, 1));
 partGeo.setAttribute('alpha', new THREE.BufferAttribute(pAlpha, 1));
-var partMat = new THREE.ShaderMaterial({
+const partMat = new THREE.ShaderMaterial({
   uniforms: Object.assign(commonUniforms(), { uScale: { value: pxScale } }),
   transparent: true, depthWrite: false, fog: false,
   vertexShader: `attribute float size; attribute float alpha; uniform float uScale; varying float vA; varying vec3 vPos;
@@ -402,6 +406,7 @@ var partMat = new THREE.ShaderMaterial({
       col = applyFog(col, vPos);
       gl_FragColor = vec4(tone(col), a); }`
 });
+escuchar('tamano', s => { partMat.uniforms.uScale.value = s; });   // el tamaño de las gotas depende de la resolución
 const particles = new THREE.Points(partGeo, partMat);
 particles.frustumCulled = false; particles.renderOrder = 5; world.add(particles);
 let pHead = 0;
@@ -526,7 +531,7 @@ const BOARD_PHOTOS = {
 const boardImg = {};
 for (const k in BOARD_PHOTOS) {
   const im = new Image();
-  im.onload = () => { if (typeof deckPrev !== 'undefined') delete deckPrev[k]; if (typeof CH !== 'undefined' && CH.id === k) paintBoard(CH); };
+  im.onload = () => avisar('foto-tabla', k);
   im.src = BOARD_PHOTOS[k]; boardImg[k] = im;
 }
 const DECKS = {
@@ -1227,7 +1232,7 @@ function loadHuman() {
     HUMAN.local = makeHuman(CH);
     boardRoot.add(HUMAN.local.root);
     useHumanBody(true);
-    if (typeof rebuildRigs === 'function') rebuildRigs();
+    avisar('cuerpo-listo');
   };
   // si el servidor no sirve .glb (enlaces de Claude), el modelo va como texto en base64
   const fromText = () => fetch('cuerpo.txt').then(r => r.ok ? r.text() : Promise.reject()).then(t => {
@@ -1726,9 +1731,10 @@ function applyChar(c) {
   if (c.beardFull) beard.scale.set(0.122, 0.135, 0.122); else beard.scale.set(0.108, c.beardColor ? 0.1 : 0.11, c.beardColor ? 0.104 : 0.108);
   const hs = c.style === 'curly' ? [1.28, 1.18, 1.28] : c.style === 'surfer' ? [1.08, 1.12, 1.08] : c.style === 'fade' ? [1.0, 0.82, 1.0] : [1, 1, 1];
   hair.scale.set(hs[0], hs[1], hs[2]);
-  $('whoName').textContent = c.name;
-  $('whoSw').innerHTML = c.sw.map(x => '<i style="background:' + hex(x) + '"></i>').join('');
+  avisar('personaje', c);
 }
+// cuando carga la foto de una tabla, se repinta si es la del surfista elegido
+escuchar('foto-tabla', k => { if (CH.id === k) paintBoard(CH); });
 function pips(n) { let s = ''; for (let i = 1; i <= 5; i++) s += '<i class="' + (i <= n ? 'on' : '') + '"></i>'; return s; }
 // retratos de cada surfista: se renderizan con el propio motor 3D, posando con el shaka
 const portraits = {};
@@ -1763,6 +1769,7 @@ function makePortraits() {
 }
 // vista de la tabla de cada surfista para su ficha (el mismo diseño que lleva en el 3D)
 const deckPrev = {};
+escuchar('foto-tabla', k => { delete deckPrev[k]; });
 function makeDeckPreviews() {
   const x = deckCv.getContext('2d');
   for (const c of CHARS) { (DECKS[c.deck] || DECKS.plain)(x, deckCv.width, deckCv.height, c); deckPrev[c.id] = deckCv.toDataURL('image/jpeg', 0.82); }
@@ -1792,11 +1799,17 @@ function showMenu(view) {
   menuP.hidden = view !== 'main'; charsP.hidden = view !== 'chars'; controlsP.hidden = view !== 'controls'; overP.hidden = true;
   if (view === 'chars') { renderCards(); const s = cardsEl.querySelector('.sel'); if (s) s.focus({ preventScroll: true }); }
   if (view === 'main') $('start').focus({ preventScroll: true });
+  avisar('menu', view);
 }
 $('toChars').addEventListener('click', () => showMenu('chars'));
 $('toControls').addEventListener('click', () => showMenu('controls'));
 $('charsOk').addEventListener('click', () => showMenu('main'));
 $('controlsOk').addEventListener('click', () => showMenu('main'));
+// «Surfeas con …» del menú
+escuchar('personaje', c => {
+  $('whoName').textContent = c.name;
+  $('whoSw').innerHTML = c.sw.map(x => '<i style="background:' + hex(x) + '"></i>').join('');
+});
 for (const c of CHARS) if (FACES[c.id] && !faceTex[c.id]) faceTex[c.id] = new THREE.TextureLoader().load(FACES[c.id]);
 applyChar(CH);
 
@@ -1889,6 +1902,7 @@ setMusicBtn();
 function showTrick(name, pts) {
   $('trickName').textContent = name; $('trickPts').textContent = pts ? '+' + pts : '';
   trickEl.classList.remove('show'); void trickEl.offsetWidth; trickEl.classList.add('show');
+  avisar('truco', name, pts);
 }
 function say(t, dur) { msgEl.textContent = t; promptEl.hidden = false; msgTimer = dur || 1.8; }
 function chip(t) {
@@ -1980,9 +1994,9 @@ function doTrick(n) {
 // en la ola, TRUCO gira la tabla 180°: hacia el tubo (en contra de la ola) y, otra vez, hacia fuera
 let btnTurn = null, fs = null;
 function trickTap() {
-  if (state === 'duel') { if (typeof duelSwing === 'function') duelSwing(); return; }
+  if (state === 'duel') { duelSwing(); return; }
   if (state === 'ride' && !air) {
-    if (typeof tryPush === 'function' && tryPush()) return;     // modo online: pegado a otro surfista, TRUCO lo empuja
+    if (tryPush()) return;     // modo online: pegado a otro surfista, TRUCO lo empuja
     if (fs) return;
     if (Math.cos(theta) >= 0) { fs = { ph: 1, t: 0, v0: Math.max(v, 8) }; theta = Math.min(theta, 0.4); btnTurn = null; }
     else btnTurn = -0.35;                                     // si ya vas hacia el tubo, TRUCO te devuelve hacia fuera
@@ -2073,6 +2087,7 @@ function endSession() {
   overlay.hidden = false; menuP.hidden = true; overP.hidden = false;
   hud.hidden = true; dial.hidden = true; bubble.hidden = true; ringbox.hidden = true; promptEl.hidden = true;
   $('again').focus({ preventScroll: true });
+  avisar('fin-sesion');
 }
 
 // orientación de la tabla sobre la cara de la ola
@@ -2340,13 +2355,9 @@ function updateDolphins(dt) {
   }
 }
 
-function update(dt) {
-  clock += dt; gtime += dt;
-  for (const m of [skyMat, oceanMat, waveMat, partMat]) m.uniforms.time.value = clock;
-  if (msgTimer > 0) { msgTimer -= dt; if (msgTimer <= 0) promptEl.hidden = true; }
-  if (state !== 'title' && state !== 'over' && state !== 'duel') { sessionT -= dt; clockEl.textContent = fmtClock(sessionT); }
+// lo que hace la partida en cada estado (menú, remar, ponerse de pie, surfear, caída…); devuelve la postura del surfista
+function pasoSesion(dt) {
   let pose = null;
-
   if (state === 'title' && menuView === 'chars') {
     // escaparate del personaje: posando sobre la tabla delante de la ola
     showT += dt; air = false; curlX += 0;
@@ -2414,9 +2425,6 @@ function update(dt) {
     }
     landT += dt;
     pose = riderStance(poseA, crouch, air ? grab : 0, clock, air ? 0 : -bank * 0.8, air ? 0 : twistAmt);
-  } else if (state === 'duel') {
-    boardRoot.visible = false;
-    if (typeof duelUpdate === 'function') duelUpdate(dt);
   } else if (state === 'wipe' || state === 'over') {
     wipeT += dt; curlX += curlSpeed * dt;
     if (boardRoot.visible) {
@@ -2431,20 +2439,20 @@ function update(dt) {
       fade(startPaddle);
     }
   }
-
+  return pose;
+}
+// la tabla en el aire pasa de la postura de salida a la de recepción mientras gira
+function tablaEnElAire() {
   if (air && (state === 'ride' || state === 'title')) {
-    // la tabla pasa de la postura de salida a la de recepción mientras gira
     THREE.Quaternion.slerp(qLaunch, qLandPose, qAirBase, sm(0.15, 0.95, airT / airDur));
     qTmp.setFromAxisAngle(UP, spin);
     qTmp2.setFromAxisAngle(V3(0, 0, 1), flip);
     boardRoot.quaternion.copy(qTmp).multiply(qAirBase).multiply(qTmp2);
     boardRoot.position.copy(aPos);
   }
-  const calm = (state === 'title' && menuView === 'chars') || state === 'paddle' || state === 'miss';
-  windAmt = lerp(windAmt, calm ? 0.06 : air ? 1 : clamp(v / 13, 0.25, 1), 1 - Math.exp(-dt * 4));
-  if (pose) applyPose(pose);
-
-  // spray de la tabla al cortar
+}
+// spray de la tabla al cortar y estela de la moto de agua y la zodiac
+function estelaTabla(dt) {
   if (!air && (state === 'ride' || state === 'title' || state === 'popup') && Math.abs(omega * v) > 1.2) {
     acc.board += dt * 34 * Math.abs(omega * v);
     vF.set(1, 0, 0).applyQuaternion(boardRoot.quaternion);
@@ -2466,13 +2474,9 @@ function update(dt) {
   if (state === 'paddle' && Math.random() < dt * 8) {
     emit(boardRoot.position.x + rnd(-0.3, 0.3), boardRoot.position.y, boardRoot.position.z + rnd(-0.5, 0.5), rnd(-0.5, 0.5), rnd(0.5, 1.5), rnd(0, 1), 0.5, rnd(0.15, 0.35), 0.7, 1);
   }
-
-  emitWave(dt);
-  updateDolphins(dt);
-  updateWave();
-  updateParticles(dt);
-
-  // cámara (coordenadas internas; el mundo está espejado en X)
+}
+// la cámara sigue a la ola (o a la disputa)
+function actualizarCamara(dt) {
   const sp = boardRoot.position, far = aspect < 0.9 ? 1.6 : 1;
   let k = 3.5;
   if (state === 'title') {
@@ -2487,7 +2491,7 @@ function update(dt) {
       desLook.set(desPos.x + Math.sin(yaw) * 60, 6 + 6 * sm(1.4, 2.6, yaw), desPos.z - Math.cos(yaw) * 60);
       k = 1.5;
     }
-  } else if (state === 'duel' && typeof duelCam === 'function') {
+  } else if (state === 'duel') {
     duelCam(desPos, desLook, far); k = 3;
   } else if (state === 'miss') {
     desPos.set(sp.x - 3, 4.5, sp.z + 18 * far);
@@ -2514,9 +2518,11 @@ function update(dt) {
   camera.lookAt(-camLook.x, camLook.y, camLook.z);  sky.position.copy(camPos);
   ocean.position.x = camPos.x; ocean.position.z = camPos.z;
   coast.position.x = camPos.x * 0.92;
-  north.position.x = state === 'duel' && typeof DUEL !== 'undefined' && DUEL.on ? DUEL.ax + DUEL.pOff : camPos.x;   // en la disputa, el Pantalán se queda al lado
-
-  // marcadores
+  north.position.x = state === 'duel' && DUEL.on ? DUEL.ax + DUEL.pOff : camPos.x;   // en la disputa, el Pantalán se queda al lado
+}
+// marcadores: puntos, multiplicador, velocímetro y bocadillo de altura o tiempo en el tubo
+function actualizarHud() {
+  const sp = boardRoot.position;
   if (state !== 'title' && state !== 'over') {
     scoreEl.textContent = Math.floor(score);
     multv.textContent = 'x' + mult.toFixed(2);
@@ -2542,12 +2548,32 @@ function update(dt) {
     else { bubV.textContent = tubeT.toFixed(1); bubL.textContent = 'seg'; }
   } else bubble.hidden = true;
 }
+function update(dt) {
+  clock += dt; gtime += dt;
+  for (const m of [skyMat, oceanMat, waveMat, partMat]) m.uniforms.time.value = clock;
+  if (msgTimer > 0) { msgTimer -= dt; if (msgTimer <= 0) promptEl.hidden = true; }
+  if (state !== 'title' && state !== 'over' && state !== 'duel') { sessionT -= dt; clockEl.textContent = fmtClock(sessionT); }
+  let pose;
+  if (state === 'duel') { boardRoot.visible = false; duelUpdate(dt); pose = null; }
+  else pose = pasoSesion(dt);
+  tablaEnElAire();
+  const calm = (state === 'title' && menuView === 'chars') || state === 'paddle' || state === 'miss';
+  windAmt = lerp(windAmt, calm ? 0.06 : air ? 1 : clamp(v / 13, 0.25, 1), 1 - Math.exp(-dt * 4));
+  if (pose) applyPose(pose);
+  estelaTabla(dt);
+  emitWave(dt);
+  updateDolphins(dt);
+  updateWave();
+  updateParticles(dt);
+  actualizarCamara(dt);
+  actualizarHud();
+}
 
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   adaptQuality(now);
-  if (!document.hidden) { update(dt); mpUpdate(dt); $('hudMic').hidden = hud.hidden; renderFrame(dt); }
+  if (!document.hidden) { update(dt); mpUpdate(dt); statsTick(dt); $('hudMic').hidden = hud.hidden; renderFrame(dt); }
   requestAnimationFrame(frame);
 }
 
@@ -2705,6 +2731,7 @@ function disposeRig(rig) { world.remove(rig.root); rig.mats.forEach(m => m.dispo
   if (rig.human) { rig.human.meshes.forEach(m => m.geometry.dispose()); rig.human.mat.dispose(); } }
 // cuando llega el cuerpo realista, se rehacen los surfistas que ya estaban en el agua
 function rebuildRigs() { for (const R of MP.remotes.values()) if (R.rig && R.ch) { disposeRig(R.rig); R.rig = buildRig(R.ch); } }
+escuchar('cuerpo-listo', rebuildRigs);
 const rHip = V3(0, 0, 0), rTv = V3(0, 0, 0), rA = V3(0, 0, 0), rB = V3(0, 0, 0), rD = V3(0, 0, 0);
 function applyPoseRig(R, o, wind, turn, t) {
   const Lr = R.L, Jr = R.J;
@@ -2908,7 +2935,7 @@ function remoteFaceQuat(th, bk, out) {
   return out;
 }
 function mpUpdate(dt) {
-  checkIdle(); statsTick(dt);
+  checkIdle();
   mpSend(dt);
   if (MP.sim) updateBots(dt);
   updateBoard(dt); waveLength(dt); updatePushHint();
@@ -3291,31 +3318,9 @@ function drawFighter(F, f, oU, t) {
 }
 
 // --- marcador de la disputa y botón SALTAR ---
-const duelCss = document.createElement('style');
-duelCss.textContent = '#duelHud{position:absolute;left:50%;top:calc(118px + env(safe-area-inset-top, 0px));transform:translateX(-50%);width:min(560px,calc(100% - 32px));z-index:40;pointer-events:none;text-align:center;font-family:var(--body);color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.7)}' +
-  '#duelHud .dt{font:900 22px var(--display);letter-spacing:.04em;color:var(--sun)}' +
-  '#duelHud .dbars{display:flex;align-items:center;gap:10px;margin-top:6px}' +
-  '#duelHud .db{flex:1;text-align:left}#duelHud .db.r{text-align:right}' +
-  '#duelHud .db b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
-  '#duelHud .db i{display:block;height:14px;border:2px solid #fff;border-radius:8px;background:rgba(13,22,32,.6);overflow:hidden}' +
-  '#duelHud .db span{display:block;height:100%;background:linear-gradient(90deg,#ff5a4e,#ffc94a);transition:width .25s}' +
-  '#duelHud .db.r span{margin-left:auto}' +
-  '#duelHud .dclk{font:900 20px var(--display);min-width:38px}' +
-  '#duelHud .dres{margin-top:10px;font:900 30px var(--display);color:var(--sun)}' +
-  '#duelJump{position:absolute;left:max(30px, env(safe-area-inset-left, 0px));bottom:calc(36px + min(150px, 34vw) + env(safe-area-inset-bottom, 0px));width:72px;height:72px;border-radius:50%;border:2px solid rgba(255,255,255,.75);background:rgba(255,255,255,.1);color:#fff;font:900 13px var(--display);line-height:1.1;text-shadow:0 1px 3px rgba(0,0,0,.6);touch-action:none;-webkit-user-select:none;user-select:none;z-index:30}' +
-  '#duelJump:active{background:rgba(255,255,255,.3)}' +
-  // en horizontal: arriba del todo, entre los botones de la izquierda y el multiplicador, sin tapar a los que pelean
-  '@media (min-aspect-ratio: 1/1){#duelHud{top:max(8px, env(safe-area-inset-top, 0px));width:min(440px,calc(100% - 460px));min-width:240px}' +
-  '#duelHud .dt{font-size:15px}#duelHud .dbars{margin-top:2px;gap:8px}#duelHud .db b{font-size:12px}#duelHud .db i{height:10px}#duelHud .dclk{font-size:16px;min-width:28px}#duelHud .dres{margin-top:4px;font-size:20px}' +
-  '#duelJump{width:58px;height:58px;font-size:11px;left:calc(max(14px, env(safe-area-inset-left, 0px)) + min(118px, 27vh) + 10px);bottom:calc(20px + env(safe-area-inset-bottom, 0px))}}';
-document.head.appendChild(duelCss);
-const duelHud = document.createElement('div'); duelHud.id = 'duelHud'; duelHud.hidden = true;
-duelHud.innerHTML = '<div class="dt">⚔️ DISPUTA POR EL PICO</div><div class="dbars"><div class="db"><b></b><i><span></span></i></div><div class="dclk">60</div><div class="db r"><b></b><i><span></span></i></div></div><div class="dres" hidden></div>';
-toastEl.parentNode.appendChild(duelHud);
-const jumpBtn = document.createElement('button'); jumpBtn.id = 'duelJump'; jumpBtn.type = 'button'; jumpBtn.hidden = true;
-jumpBtn.innerHTML = '⤴<br>SALTAR'; jumpBtn.setAttribute('aria-label', 'Saltar');
+// el marcador y el botón están en index.html y su aspecto en css/estilo.css
+const duelHud = $('duelHud'), jumpBtn = $('duelJump');
 jumpBtn.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); duelJump(); });
-toastEl.parentNode.appendChild(jumpBtn);
 const dBars = duelHud.querySelectorAll('.db'), dClk = duelHud.querySelector('.dclk'), dRes = duelHud.querySelector('.dres');
 function duelHudUpdate() {
   const D = DUEL, meLeft = D.A.u >= D.B.u;
@@ -3574,9 +3579,7 @@ function trickKey(name) {
   return String(name).replace(/^👑\s*/, '').replace(/\s+\d+(\.\d+)?\s*(s|°)$/, '').replace(/\s+(a|de)\s+.+$/, '')
     .replace(/\s+largo$/, '').replace(/[.#$\[\]\/]/g, '').trim().slice(0, 30);
 }
-const _showTrick = showTrick;
-showTrick = function (name, pts) {
-  _showTrick(name, pts);
+escuchar('truco', (name, pts) => {
   if (state === 'title' || state === 'over') return;
   const parts = String(name).split(' + ');
   for (const p of parts) { const k = trickKey(p); if (k) { ST.tricks[k] = (ST.tricks[k] || 0) + 1; ST.total++; } }
@@ -3584,12 +3587,10 @@ showTrick = function (name, pts) {
   const m = /^Tubo (\d+(\.\d+)?) s/.exec(name); if (m) ST.bestTube = Math.max(ST.bestTube, +m[1]);
   if (/LOCAL LEGEND/.test(name)) ST.legends++;
   stDirty = true;
-};
-const _endSession = endSession;
-endSession = function () {
-  _endSession();
+});
+escuchar('fin-sesion', () => {
   ST.sessions++; ST.best = Math.max(ST.best, Math.floor(score)); stDirty = true; statsSave();
-};
+});
 function statsTick(dt) {
   if (state !== 'title' && state !== 'over') {
     if (bestWave > ST.bestWave) { ST.bestWave = Math.floor(bestWave); stDirty = true; }
@@ -3610,8 +3611,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) stats
 // --- pantalla 🏆 Récords ---
 const recP = $('records'), recList = $('recList');
 let recTab = 'best';
-const _showMenu = showMenu;
-showMenu = function (view) { _showMenu(view); recP.hidden = view !== 'records'; if (view === 'records') renderRecords(); };
+escuchar('menu', view => { recP.hidden = view !== 'records'; if (view === 'records') renderRecords(); });
 $('toRecords').addEventListener('click', () => showMenu('records'));
 $('recordsOk').addEventListener('click', () => showMenu('main'));
 recP.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => {

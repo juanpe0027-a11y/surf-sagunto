@@ -210,3 +210,29 @@ canvas{display:block;width:100%;height:100%}
 @keyframes igb{to{margin-bottom:-12px;margin-top:-12px}}
 .fade{position:absolute;inset:0;background:var(--foam);opacity:0;pointer-events:none;transition:opacity .28s}
 .err{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;font-size:20px}
+
+/* ---------- Disputa por el Pico: marcador arriba y botón SALTAR ---------- */
+#duelHud{position:absolute;left:50%;top:calc(118px + env(safe-area-inset-top, 0px));transform:translateX(-50%);width:min(560px,calc(100% - 32px));z-index:40;pointer-events:none;text-align:center;font-family:var(--body);color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.7)}
+#duelHud .dt{font:900 22px var(--display);letter-spacing:.04em;color:var(--sun)}
+#duelHud .dbars{display:flex;align-items:center;gap:10px;margin-top:6px}
+#duelHud .db{flex:1;text-align:left}
+#duelHud .db.r{text-align:right}
+#duelHud .db b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#duelHud .db i{display:block;height:14px;border:2px solid #fff;border-radius:8px;background:rgba(13,22,32,.6);overflow:hidden}
+#duelHud .db span{display:block;height:100%;background:linear-gradient(90deg,#ff5a4e,#ffc94a);transition:width .25s}
+#duelHud .db.r span{margin-left:auto}
+#duelHud .dclk{font:900 20px var(--display);min-width:38px}
+#duelHud .dres{margin-top:10px;font:900 30px var(--display);color:var(--sun)}
+#duelJump{position:absolute;left:max(30px, env(safe-area-inset-left, 0px));bottom:calc(36px + min(150px, 34vw) + env(safe-area-inset-bottom, 0px));width:72px;height:72px;border-radius:50%;border:2px solid rgba(255,255,255,.75);background:rgba(255,255,255,.1);color:#fff;font:900 13px var(--display);line-height:1.1;text-shadow:0 1px 3px rgba(0,0,0,.6);touch-action:none;-webkit-user-select:none;user-select:none;z-index:30}
+#duelJump:active{background:rgba(255,255,255,.3)}
+/* en horizontal: arriba del todo, entre los botones de la izquierda y el multiplicador, sin tapar a los que pelean */
+@media (min-aspect-ratio: 1/1){
+  #duelHud{top:max(8px, env(safe-area-inset-top, 0px));width:min(440px,calc(100% - 460px));min-width:240px}
+  #duelHud .dt{font-size:15px}
+  #duelHud .dbars{margin-top:2px;gap:8px}
+  #duelHud .db b{font-size:12px}
+  #duelHud .db i{height:10px}
+  #duelHud .dclk{font-size:16px;min-width:28px}
+  #duelHud .dres{margin-top:4px;font-size:20px}
+  #duelJump{width:58px;height:58px;font-size:11px;left:calc(max(14px, env(safe-area-inset-left, 0px)) + min(118px, 27vh) + 10px);bottom:calc(20px + env(safe-area-inset-bottom, 0px))}
+}
