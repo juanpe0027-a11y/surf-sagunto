@@ -3605,7 +3605,10 @@ duelCss.textContent = '#duelHud{position:absolute;left:50%;top:calc(118px + env(
   '#duelHud .db span{display:block;height:100%;background:linear-gradient(90deg,#ff5a4e,#ffc94a);transition:width .25s}' +
   '#duelHud .db.r span{margin-left:auto}' +
   '#duelHud .dclk{font:900 20px var(--display);min-width:38px}' +
-  '#duelHud .dres{margin-top:10px;font:900 30px var(--display);color:var(--sun)}';
+  '#duelHud .dres{margin-top:10px;font:900 30px var(--display);color:var(--sun)}' +
+  // en horizontal: arriba del todo, entre los botones de la izquierda y el multiplicador, sin tapar a los que pelean
+  '@media (min-aspect-ratio: 1/1){#duelHud{top:max(8px, env(safe-area-inset-top, 0px));width:min(440px,calc(100% - 460px));min-width:240px}' +
+  '#duelHud .dt{font-size:15px}#duelHud .dbars{margin-top:2px;gap:8px}#duelHud .db b{font-size:12px}#duelHud .db i{height:10px}#duelHud .dclk{font-size:16px;min-width:28px}#duelHud .dres{margin-top:4px;font-size:20px}}';
 document.head.appendChild(duelCss);
 const duelHud = document.createElement('div'); duelHud.id = 'duelHud'; duelHud.hidden = true;
 duelHud.innerHTML = '<div class="dt">⚔️ DISPUTA POR EL PICO</div><div class="dbars"><div class="db"><b></b><i><span></span></i></div><div class="dclk">60</div><div class="db r"><b></b><i><span></span></i></div></div><div class="dres" hidden></div>';
@@ -3885,7 +3888,7 @@ window.__surf = { spawnDolphins, upsertPeer, onMsg, MP, startDuel, DUEL, duelSwi
 </script>
 
 <script>
-const BUILD_ID = '1792498382';
+const BUILD_ID = '1792498926';
 (function () {
   try {
     fetch(location.pathname + '?b=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => {
