@@ -4,13 +4,15 @@ Juego de surf 3D de navegador (three.js + Firebase). Lo mantiene **Juanpe, que n
 
 **Antes de hacer cualquier cambio, lee [docs/PLAN.md](docs/PLAN.md)**: ahí están las fases de mejora, en cuál estamos y qué falta. Si terminas una tarea del plan, márcala como hecha en ese archivo.
 
+**Para saber dónde va cada cosa en el código, lee [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md).** Describe la estructura a la que estamos migrando; mientras la migración no termine, el código viejo sigue en `index.html`.
+
 ## Reglas que no se rompen
 
 1. **Todo gratis.** Firebase se queda en el plan **Spark** (gratuito); nunca propongas pasar a Blaze ni usar servicios de pago. Hosting: GitHub Pages. Cloud Storage de Firebase **no** está disponible en Spark: no lo uses.
 2. **Sin paso de compilación.** Nada de npm, Vite, webpack ni TypeScript. Archivos que el navegador carga tal cual. `vendor.js` es la única excepción (ya viene empaquetado; no se regenera salvo para actualizar three.js).
 3. **Nada de imágenes o audio en base64 dentro del código.** Van como archivos en `img/` (o `audio/`) y se cargan por URL.
 4. **No hagas crecer `index.html`.** Mientras dure la fase 2 del plan, el código nuevo va en su módulo de `js/`, no en el script gigante.
-5. **Trabaja en una rama, no en `main`.** `main` es lo que juega la gente. Las mejoras grandes van en la rama `mejoras` (o una rama nueva por tarea) y se unen a `main` solo cuando se han probado.
+5. **Trabaja en una rama, nunca directamente en `main`.** `main` se publica sola en GitHub Pages: lo que se sube ahí lo juega la gente al momento. Las mejoras van en la rama `mejoras` (o una rama nueva por tarea) y se unen a `main` solo cuando se han probado.
 6. **Un cambio cada vez, y probado.** Después de cada cambio, pasa la lista de pruebas de abajo antes de seguir.
 
 ## Cómo está montado (a día de hoy)
@@ -29,9 +31,11 @@ Secciones del script (buscar el comentario `// ---------- nombre ----------`): u
 
 ## Publicación
 
-- El juego en vivo es **https://juanpe0027-a11y.github.io/surf-sagunto/**, servido por GitHub Pages desde el repo **público** `juanpe0027-a11y/surf-sagunto` (rama `main`).
-- Este repo (`surf-sagunto-privado`) es donde se desarrolla. Lo que se cambie aquí **no llega al juego en vivo** hasta que se copia al repo público.
+- Este repo (`juanpe0027-a11y/surf-sagunto`, público) es el único con el que se trabaja. GitHub Pages publica la rama **`main`** en **https://juanpe0027-a11y.github.io/surf-sagunto/**.
+- ⚠️ **Subir a `main` = publicar al momento para todos los jugadores.** Por eso no se trabaja en `main`: se trabaja en una rama, se prueba, y se une a `main` solo cuando funciona.
+- El repo `surf-sagunto-privado` era una copia; ya no se usa.
 - Al publicar una versión nueva, sube el número de `BUILD_ID` al final de `index.html`: así los móviles que tienen el juego abierto se recargan solos.
+- El repo es público: no metas aquí contraseñas ni datos personales (la configuración de Firebase sí puede estar, es normal que sea pública).
 
 ## Cómo probar
 

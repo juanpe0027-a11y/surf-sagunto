@@ -30,55 +30,59 @@ Consumo estimado ahora (cada jugador recibe ~8 actualizaciones/s de cada uno de 
 
 Dejar el terreno listo para trabajar sin miedo a romper el juego.
 
-- [x] Rama `mejoras` para todo el trabajo (el juego en vivo no se toca hasta que esté probado)
-- [x] `CLAUDE.md` con las reglas del proyecto y este plan
-- [ ] Aclarar cómo se pasa el juego del repo privado al público (`surf-sagunto`, el que publica GitHub Pages)
+- [x] Trabajar sobre el repo público `surf-sagunto` (el que publica GitHub Pages); el privado era una copia
+- [x] Rama `mejoras` para todo el trabajo (`main` es el juego en vivo y no se toca hasta que esté probado)
+- [x] `CLAUDE.md`, este plan y [ARQUITECTURA.md](ARQUITECTURA.md)
 - [ ] Medir el punto de partida: peso de la página, tiempo de carga y fps en un móvil y en un ordenador, para comparar después
 
-**Hecho cuando:** Juanpe sabe en qué rama trabajar y cómo publicar, y tenemos las medidas iniciales apuntadas aquí.
+**Hecho cuando:** tenemos las medidas iniciales apuntadas aquí.
 
 ## Fase 1 — Limpieza rápida ⬜
 
 Cambios sin riesgo que hacen el juego bastante más ligero. El juego debe verse y jugarse **exactamente igual**.
 
-- Sacar las 29 fotos en base64 de `index.html` a la carpeta `img/` y quitar las repetidas (`index.html` pasa de ~1 MB a ~100 KB y el navegador guarda las fotos en caché)
+- Sacar las 29 fotos en base64 de `index.html` a `img/personajes/<id>/` y quitar las repetidas (`index.html` pasa de ~1 MB a ~100 KB y el navegador guarda las fotos en caché)
+- Mover `cuerpo.glb` a `modelos/` y `musica.mp4` a `audio/`
 - Sacar el CSS a `css/estilo.css`
 - Cambiar la comprobación de versión nueva: ahora descarga el `index.html` entero (1 MB) en cada visita; pasará a leer un `version.json` de pocos bytes
+- Quitar código que no hace nada en GitHub Pages: el botón «Descargar juego» (solo funcionaba dentro de Claude y pide un `descarga.txt` que no existe)
 - Actualizar el README
 
 **Hecho cuando:** la lista de pruebas de `CLAUDE.md` pasa entera y la página pesa mucho menos.
 
-## Fase 2 — Separar el código en módulos ⬜
+## Fase 2 — Estructura sólida (refactor) ⬜
 
-Partir el script de ~3.500 líneas en archivos pequeños usando módulos nativos del navegador (`<script type="module">`), **sin herramientas de compilación**. Es la fase más importante: después de ella, cada cambio toca un archivo de 200–400 líneas en vez del archivo gigante, y Claude se equivoca mucho menos.
+Pasar del script único de ~3.500 líneas a la estructura descrita en **[ARQUITECTURA.md](ARQUITECTURA.md)**: módulos nativos del navegador, sin compilación, organizados en capas, con eventos en vez de parches, una máquina de estados y los vehículos y personajes como datos.
 
-Estructura objetivo:
+Es la fase más importante. Después de ella:
+- cada cambio toca un archivo de 100–400 líneas, y Claude se equivoca mucho menos;
+- añadir un personaje es añadir una ficha y unas fotos; un vehículo o un modo de juego, un archivo nuevo;
+- las fases 3 y 4 se hacen sobre módulos concretos (`online/`, `mundo/`) sin riesgo de romper el resto.
 
-```
-index.html          solo el HTML
-css/estilo.css
-img/                fotos de caras y tablas
-js/
-  main.js           arranque y bucle principal
-  estado.js         estado compartido del juego (puntos, posición, modo…)
-  util.js           clamp, lerp, rnd…
-  motor.js          renderer, cámara, luces, efectos, calidad automática
-  cielo.js  mar.js  ola.js  particulas.js  costa.js  delfines.js
-  surfista.js       cuerpo, posturas, tablas
-  personajes.js     la lista CHARS (solo datos)
-  fisica.js         remar, coger la ola, giros, saltos, trucos, caídas
-  controles.js      táctil y teclado
-  ui.js             menú, HUD, música, pantalla completa
-  online.js  bots.js  disputa.js  records.js
-```
+**Regla de oro de esta fase: el juego no cambia.** Ni física, ni colores, ni textos. Solo se mueve código de sitio. Si se ve algo que mejorar, se apunta para después.
 
-Cómo hacerlo sin romper nada:
-1. Pasar el script tal cual a `js/main.js` como módulo y comprobar que todo funciona.
-2. Sacar las piezas de una en una, empezando por las que menos dependen del resto (utilidades → personajes → tablas → costa → cielo/mar/ola → partículas → surfista → récords → bots → disputa → online → física). **Probar después de cada una.**
-3. El estado que comparten muchas partes (puntos, posición, `state`…) se agrupa en `estado.js` en vez de variables sueltas.
-4. Quitar los parches que reescriben funciones de otras secciones (p. ej. `showTrick` en récords) y cambiarlos por llamadas directas o avisos simples.
+Pasos (cada uno es un commit, y después de cada uno se pasa la lista de pruebas):
 
-**Hecho cuando:** `index.html` no tiene lógica, ningún archivo de `js/` pasa de ~500 líneas, y la lista de pruebas pasa entera.
+| Paso | Qué se hace | Riesgo |
+|---|---|---|
+| 2.1 | **Convertir a módulo.** El script pasa tal cual a `js/main.js` y se carga con `<script type="module">`. Crear `js/three.js`. | Bajo |
+| 2.2 | **Red de seguridad.** Página `pruebas.html` que carga los módulos y comprueba cosas básicas: que cada personaje tiene sus fotos y un vehículo válido, que la física no da números raros (`NaN`). Crecerá con cada paso. | Bajo |
+| 2.3 | **Núcleo.** Sacar `util.js`, `config.js`, `guardado.js` (todas las claves de `localStorage` en un sitio, **sin cambiar sus nombres**) y `eventos.js`. | Bajo |
+| 2.4 | **Quitar los parches.** `records` deja de reescribir `showTrick`, `endSession` y `showMenu`; pasa a escuchar los eventos `truco`, `fin-sesion` y `menu`. | Medio |
+| 2.5 | **Datos.** Sacar `personajes.js`, `tablas.js` y `trucos.js` a `datos/`. | Bajo |
+| 2.6 | **Mundo.** Sacar a `mundo/` el motor, la cámara, los shaders, el cielo, el mar, la ola, las partículas, la costa y los delfines. Cada uno recibe la escena; no toca el estado del juego. | Medio |
+| 2.7 | **Surfista y vehículos.** Sacar cuerpo, posturas, tabla y rig a `surfista/`. Sustituir las 38 cadenas `CH.jetski ? … : CH.zodiac ? …` por `vehiculos/<tipo>.js`. | Medio |
+| 2.8 | **Estado de la partida.** Juntar las ~60 variables sueltas (`score`, `px`, `air`, `mult`…) en `nucleo/estado.js`. Es un cambio mecánico, pero toca muchas líneas. | Alto |
+| 2.9 | **Máquina de estados y física.** Partir `update()` en estados con `entrar` / `actualizar` / `salir` (`juego/sesion.js`) y sacar `fisica.js` y `trucos.js`. | Alto |
+| 2.10 | **Interfaz y controles.** Sacar menú, HUD, chat, récords, pantalla completa, música y controles. | Medio |
+| 2.11 | **Online y modos.** Sacar `online/` (con `protocolo.js` como único sitio del formato de red), `modos/bots.js` y `modos/disputa.js`. | Medio |
+| 2.12 | **Cierre.** `window.__surf` pasa a `debug.js`, `index.html` queda solo con HTML, se actualizan `CLAUDE.md` y `ARQUITECTURA.md` con lo que haya cambiado, y se publica. | Bajo |
+
+Para los pasos de riesgo alto (2.8 y 2.9): probar también con bots (`#bots`), con la Disputa y con cada vehículo, y si se puede, jugar una sesión entera de 3 minutos.
+
+Se puede publicar (unir a `main`) al terminar cualquier paso que deje el juego funcionando, no hace falta esperar al final. Recomendado: publicar tras 2.5, tras 2.9 y al terminar.
+
+**Hecho cuando:** `index.html` no tiene lógica, ningún archivo de `js/` pasa de ~400 líneas, no queda ninguna función reescrita por otro módulo, `pruebas.html` pasa y la lista de pruebas de `CLAUDE.md` pasa entera.
 
 ## Fase 3 — Online seguro y dentro del plan gratis ⬜
 
@@ -125,4 +129,4 @@ Siempre comprobando que en móvil sigue fluido (la calidad automática ya baja l
 
 ## Decisiones abiertas
 
-- ¿Cómo se sincronizan el repo privado y el público? (¿se sube a los dos a la vez? ¿se copia a mano?) Lo ideal sería un solo sitio desde el que se publique.
+- ¿Archivar o borrar el repo `surf-sagunto-privado` en GitHub, ahora que no se usa? (Lo decide Juanpe.)
