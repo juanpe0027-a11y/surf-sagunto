@@ -1,11 +1,8 @@
 // La tabla del surfista (con su diseño pintado y sus quillas) y el grupo boardRoot que lleva tabla, vehículo y surfista.
 import { DECKS, FINS } from '../datos/disenos.js';
-import { world } from '../mundo/motor.js';
-import { helmet, matHelmet } from './muneco.js';
-import { jetG, kayakG, paddle, zodiacG } from './vehiculos.js';
+import { boardRoot } from './raiz.js';
 
-export const boardRoot = new THREE.Group(); world.add(boardRoot);
-export let boardMesh = null; const finMeshes = [];
+export let boardMesh = null; export const finMeshes = [];
 const matBoard = new THREE.MeshStandardMaterial({ color: 0xf6f1e6, roughness: 0.35 });
 const matStripe = new THREE.MeshStandardMaterial({ color: 0xff5a4e, roughness: 0.4 });
 
@@ -44,19 +41,5 @@ export function paintBoard(c) {
   fg.translate(0, 0, -0.004); fg.rotateX(Math.PI);
   [[-0.6, 0.165, 0.08], [-0.6, -0.165, -0.08], [-0.86, 0, 0]].forEach(([x, z, toe], i) => {
     const m = new THREE.Mesh(fg, matFins[i]); m.position.set(x, 0.005, z); m.rotation.y = toe; m.userData.p = [x, z]; boardRoot.add(m); finMeshes.push(m);
-  });
-}
-// longboard: 9 pies (2,75 m), algo más ancha y con una sola quilla grande
-export function setBoardShape(c) {
-  const lg = c.board === 'long', bb = c.board === 'body', jet = c.board === 'jet', kay = c.board === 'kayak', zod = c.board === 'zodiac';
-  boardMesh.visible = !jet && !kay && !zod; jetG.visible = jet; kayakG.visible = kay; zodiacG.visible = zod;
-  matHelmet.color.setHex(c.helmetColor || 0xf1f1ef); paddle.visible = kay; helmet.visible = !!c.helmet;
-  boardMesh.scale.set(lg ? 1.4 : bb ? 0.56 : 1, bb ? 1.7 : 1, lg ? 1.1 : bb ? 1.18 : 1);
-  boardMesh.position.x = bb ? 0.18 : 0;
-  finMeshes.forEach((m, i) => {
-    const [fx, fz] = m.userData.p;
-    if (bb || jet || kay || zod) { m.visible = false; }
-    else if (lg) { m.visible = i === 2; m.position.set(-1.25, 0.005, 0); m.scale.setScalar(1.7); }
-    else { m.visible = true; m.position.set(fx, 0.005, fz); m.scale.setScalar(1); }
   });
 }

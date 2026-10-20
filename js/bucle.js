@@ -1,22 +1,23 @@
 // Bucle principal: cada fotograma avanza la partida, mueve la cámara y dibuja.
 import { $, clamp, lerp, sm, V3 } from './nucleo/util.js';
 import { G } from './nucleo/estado.js';
-import { adaptQuality, aspect, camera, camLook, camPos, FX, renderer, scene } from './mundo/motor.js';
 import { sky, skyMat } from './mundo/cielo.js';
-import { ocean, oceanMat } from './mundo/mar.js';
-import { updateWave, waveMat } from './mundo/ola.js';
-import { emitWave, partMat, updateParticles } from './mundo/particulas.js';
 import { coast, north } from './mundo/costa.js';
 import { updateDolphins } from './mundo/delfines.js';
+import { ocean, oceanMat } from './mundo/mar.js';
+import { adaptQuality, aspect, camera, camLook, camPos, FX, renderer, scene } from './mundo/motor.js';
+import { updateWave, waveMat } from './mundo/ola.js';
+import { emitWave, partMat, updateParticles } from './mundo/particulas.js';
 import { applyPose } from './surfista/muneco.js';
-import { boardRoot } from './surfista/tabla.js';
+import { boardRoot } from './surfista/raiz.js';
 import { aPos, estelaTabla } from './juego/fisica.js';
-import { tablaEnElAire } from './juego/trucos.js';
+import { actualizarHud, clockEl, fmtClock, hud, promptEl } from './juego/hud.js';
 import { pasoSesion } from './juego/sesion.js';
-import { actualizarHud, clockEl, fmtClock, hud, promptEl } from './interfaz/hud.js';
-import { statsTick } from './interfaz/records.js';
+import { tablaEnElAire } from './juego/trucos.js';
 import { mpUpdate } from './online/jugadores.js';
 import { DUEL, duelCam, duelUpdate } from './modos/disputa.js';
+import { statsTick } from './interfaz/records.js';
+import { actualizarMandos } from './entrada/controles.js';
 
 const fxV = new THREE.Vector3();
 function renderFrame(dt) {
@@ -93,6 +94,7 @@ function update(dt) {
   updateParticles(dt);
   actualizarCamara(dt);
   actualizarHud();
+  actualizarMandos();
 }
 
 G.last = performance.now();

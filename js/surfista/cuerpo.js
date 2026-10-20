@@ -2,7 +2,7 @@
 import { V3 } from '../nucleo/util.js';
 import { avisar } from '../nucleo/eventos.js';
 import { G } from '../nucleo/estado.js';
-import { boardRoot } from './tabla.js';
+import { boardRoot } from './raiz.js';
 
 // El modelo (cuerpo.glb) tiene huesos de verdad; cada fotograma se ponen en reposo y se orientan hacia las
 // articulaciones que calculan stance/prone/bodyRide/jetRide. La cabeza es la nuestra (foto, pelo, gafas, gorra).

@@ -1,7 +1,7 @@
 // La costa del Puerto de Sagunto: playa, paseo, Pantalán, Alto Horno, puerto y montañas al fondo.
 import { clamp, rnd, TAU, V3 } from '../nucleo/util.js';
-import { world } from './motor.js';
 import { cyl, setLimb, sph } from './formas.js';
+import { world } from './motor.js';
 
 export const coast = new THREE.Group(); world.add(coast);
 export const north = new THREE.Group(); world.add(north);   // Pantalán, Alto Horno y puerto: -x interno = derecha de la pantalla

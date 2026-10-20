@@ -5,8 +5,8 @@
 // <id> es el del login anónimo de Firebase: las reglas (firebase-reglas.json) solo dejan escribir lo tuyo.
 import { $ } from '../nucleo/util.js';
 import { G } from '../nucleo/estado.js';
-import { leer, guardar } from '../nucleo/guardado.js';
-import { toast } from '../interfaz/hud.js';
+import { guardar, leer } from '../nucleo/guardado.js';
+import { toast } from '../juego/hud.js';
 
 export const FIREBASE_CONFIG = {"apiKey": "AIzaSyBYEgJnEQxYbgT97giPRuTaRNd5d9vF8tg", "authDomain": "surf-sagunto.firebaseapp.com", "databaseURL": "https://surf-sagunto-default-rtdb.europe-west1.firebasedatabase.app", "projectId": "surf-sagunto", "storageBucket": "surf-sagunto.firebasestorage.app", "messagingSenderId": "669179228796", "appId": "1:669179228796:web:1e39377632d94fa1c50ff9"};
 export const SALA = (location.hash.replace('#', '').replace(/[^a-z0-9_-]/gi, '').slice(0, 24) || 'pantalan').toLowerCase();

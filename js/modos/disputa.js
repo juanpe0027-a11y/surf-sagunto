@@ -8,13 +8,13 @@ import { $, clamp, lerp, rnd, V3 } from '../nucleo/util.js';
 import { G, keys, stick } from '../nucleo/estado.js';
 import { aspect, camLook, camPos } from '../mundo/motor.js';
 import { splash } from '../mundo/particulas.js';
-import { boardRoot } from '../surfista/tabla.js';
+import { boardRoot } from '../surfista/raiz.js';
+import { bubble, chip, dial, ringbox, say, showTrick } from '../juego/hud.js';
 import { bump } from '../juego/puntos.js';
 import { startPaddle } from '../juego/sesion.js';
-import { bubble, chip, dial, ringbox, say, showTrick } from '../interfaz/hud.js';
-import { MP } from '../online/red.js';
 import { mpV } from '../online/jugadores.js';
 import { pushMsg } from '../online/mensajes.js';
+import { MP } from '../online/red.js';
 import { BOTS } from './bots.js';
 import { drawFighter, dropFighter, makeFighter } from './luchador.js';
 

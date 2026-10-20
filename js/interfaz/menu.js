@@ -5,17 +5,17 @@ import { G, keys, ptr } from '../nucleo/estado.js';
 import { guardar } from '../nucleo/guardado.js';
 import { DECKS } from '../datos/disenos.js';
 import { CHARS, PHOTOS } from '../datos/personajes.js';
-import { renderer, scene, world } from '../mundo/motor.js';
 import { UP } from '../mundo/formas.js';
+import { renderer, scene, world } from '../mundo/motor.js';
 import { particles } from '../mundo/particulas.js';
-import { poseA, shaka, stance } from '../surfista/posturas.js';
 import { applyPose, faceTex } from '../surfista/muneco.js';
-import { boardRoot, deckCv, paintBoard } from '../surfista/tabla.js';
 import { applyChar } from '../surfista/personaje.js';
+import { poseA, shaka, stance } from '../surfista/posturas.js';
+import { boardRoot } from '../surfista/raiz.js';
+import { deckCv, paintBoard } from '../surfista/tabla.js';
+import { fade, menuP, overlay, overP } from '../juego/hud.js';
 import { newGame, startTitleRide } from '../juego/sesion.js';
-import { fade } from './hud.js';
 
-export const overlay = $('overlay'), menuP = $('menu'), overP = $('over'), fadeEl = $('fade');
 const charsP = $('chars'), controlsP = $('controls'), cardsEl = $('cards');
 
 function pips(n) { let s = ''; for (let i = 1; i <= 5; i++) s += '<i class="' + (i <= n ? 'on' : '') + '"></i>'; return s; }

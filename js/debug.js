@@ -1,18 +1,18 @@
 // Herramientas para probar desde la consola del navegador (y para herramientas/probar.mjs): window.__surf.
 import { G, ptr } from './nucleo/estado.js';
-import { camera, camLook, camPos, toScreen } from './mundo/motor.js';
+import { DECKS, FINS, TORSOS } from './datos/disenos.js';
+import { CHARS, FACES, PHOTOS } from './datos/personajes.js';
 import { north } from './mundo/costa.js';
 import { spawnDolphins } from './mundo/delfines.js';
-import { boardRoot } from './surfista/tabla.js';
+import { camera, camLook, camPos, toScreen } from './mundo/motor.js';
 import { HUMAN } from './surfista/cuerpo.js';
-import { CHARS, FACES, PHOTOS } from './datos/personajes.js';
-import { DECKS, FINS, TORSOS } from './datos/disenos.js';
 import { vehiculo } from './surfista/posturas.js';
+import { boardRoot } from './surfista/raiz.js';
 import { steerTarget } from './juego/fisica.js';
-import { MP } from './online/red.js';
-import { upsertPeer } from './online/jugadores.js';
 import { tryPush } from './online/empujones.js';
+import { upsertPeer } from './online/jugadores.js';
 import { onMsg } from './online/mensajes.js';
+import { MP } from './online/red.js';
 import { DUEL, duelCount, duelSwing, startDuel } from './modos/disputa.js';
 
 window.__HUMAN = HUMAN;

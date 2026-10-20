@@ -6,11 +6,11 @@ import { seatedC } from '../datos/personajes.js';
 import { basisQuat, UP, vF, vN, vT } from '../mundo/formas.js';
 import { face, faceAt } from '../mundo/ola.js';
 import { emit, splash } from '../mundo/particulas.js';
-import { boardRoot } from '../surfista/tabla.js';
-import { addPts, bump } from './puntos.js';
+import { boardRoot } from '../surfista/raiz.js';
 import { aPos, LAND_A, LAND_SOFT, qAirBase, qLand, qLandPose, qLaunch, qRide, qTmp, qTmp2 } from './fisica.js';
+import { chip, say, showTrick } from './hud.js';
+import { addPts, bump } from './puntos.js';
 import { wipeout } from './sesion.js';
-import { chip, say, showTrick } from '../interfaz/hud.js';
 
 export const LAND_H = 0.8;
 // cómo cae: más abajo en la cara, con la tabla hacia abajo y hacia delante, o hacia el tubo si saltaste hacia él

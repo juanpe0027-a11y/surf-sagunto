@@ -1,9 +1,9 @@
 // Mensajes: frases rápidas, texto y notas de voz.
 import { $ } from '../nucleo/util.js';
 import { G } from '../nucleo/estado.js';
-import { say } from '../interfaz/hud.js';
-import { chatLog, chatP, MP } from './red.js';
+import { say } from '../juego/hud.js';
 import { gotPushed } from './empujones.js';
+import { chatLog, chatP, MP } from './red.js';
 import { botReply } from '../modos/bots.js';
 import { duelCount, duelGotHit, startDuel } from '../modos/disputa.js';
 

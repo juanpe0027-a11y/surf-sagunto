@@ -4,10 +4,10 @@
 import { $ } from '../nucleo/util.js';
 import { escuchar } from '../nucleo/eventos.js';
 import { G } from '../nucleo/estado.js';
-import { leer, guardar } from '../nucleo/guardado.js';
+import { guardar, leer } from '../nucleo/guardado.js';
 import { CHARS } from '../datos/personajes.js';
-import { showMenu } from './menu.js';
 import { firebaseListo, MP } from '../online/red.js';
+import { showMenu } from './menu.js';
 
 let ST = { best: 0, bestWave: 0, bestTube: 0, legends: 0, sessions: 0, total: 0, tricks: {}, tbest: {} };
 // temporada: al cambiarla, todos los récords (los del móvil y el ranking) empiezan de cero

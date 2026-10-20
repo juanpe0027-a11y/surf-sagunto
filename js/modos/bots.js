@@ -5,11 +5,11 @@ import { G } from '../nucleo/estado.js';
 import { CHARS } from '../datos/personajes.js';
 import { face, faceAt, HW } from '../mundo/ola.js';
 import { splash } from '../mundo/particulas.js';
-import { boardRoot } from '../surfista/tabla.js';
-import { MP } from '../online/red.js';
-import { upsertPeer } from '../online/jugadores.js';
+import { boardRoot } from '../surfista/raiz.js';
 import { gotPushed } from '../online/empujones.js';
+import { upsertPeer } from '../online/jugadores.js';
 import { logMsg } from '../online/mensajes.js';
+import { MP } from '../online/red.js';
 import { duelCount } from './disputa.js';
 
 const BOT_NAMES = ['Bot Pantalán', 'Bot Malvarrosa', 'Bot Almardà'];

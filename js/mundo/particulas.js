@@ -4,8 +4,8 @@ import { escuchar } from '../nucleo/eventos.js';
 import { PQ } from '../nucleo/config.js';
 import { G } from '../nucleo/estado.js';
 import { pxScale, world } from './motor.js';
-import { commonUniforms, GLSL_COMMON } from './shaders.js';
 import { ctrl, P, prm, wparams } from './ola.js';
+import { commonUniforms, GLSL_COMMON } from './shaders.js';
 
 const PN = 3600;
 const pPos = new Float32Array(PN * 3), pVel = new Float32Array(PN * 3), pLife = new Float32Array(PN), pMax = new Float32Array(PN);

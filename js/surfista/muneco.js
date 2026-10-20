@@ -5,10 +5,10 @@ import { escuchar } from '../nucleo/eventos.js';
 import { G } from '../nucleo/estado.js';
 import { seatedC } from '../datos/personajes.js';
 import { cyl, setLimb, sph, tv, UP } from '../mundo/formas.js';
-import { placePaddle } from './posturas.js';
-import { paddle } from './vehiculos.js';
-import { boardRoot } from './tabla.js';
 import { HUMAN, poseHuman } from './cuerpo.js';
+import { placePaddle } from './posturas.js';
+import { boardRoot } from './raiz.js';
+import { paddle } from './vehiculos.js';
 
 export const matSuit = new THREE.MeshStandardMaterial({ color: 0x18222e, roughness: 0.55 });
 export const matShorts = new THREE.MeshStandardMaterial({ color: 0xe8743b, roughness: 0.7 });

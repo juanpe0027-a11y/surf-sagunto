@@ -1,8 +1,10 @@
-// Carga todos los módulos en orden (de abajo arriba por capas) y arranca el juego.
+// Carga todos los módulos en orden y arranca el juego.
+// orden de carga: de abajo arriba por capas (núcleo, datos, mundo, surfista, juego, online, modos, interfaz, entrada)
 import './nucleo/util.js';
 import './nucleo/eventos.js';
 import './nucleo/config.js';
 import './nucleo/estado.js';
+import './nucleo/guardado.js';
 import './datos/disenos.js';
 import './datos/personajes.js';
 import './mundo/motor.js';
@@ -15,22 +17,18 @@ import './mundo/particulas.js';
 import './mundo/costa.js';
 import './mundo/delfines.js';
 import './surfista/posturas.js';
-import './surfista/muneco.js';
+import './surfista/raiz.js';
 import './surfista/vehiculos.js';
 import './surfista/tabla.js';
 import './surfista/cuerpo.js';
+import './surfista/muneco.js';
 import './surfista/personaje.js';
 import './surfista/rig.js';
 import './juego/puntos.js';
+import './juego/hud.js';
 import './juego/fisica.js';
 import './juego/trucos.js';
 import './juego/sesion.js';
-import './interfaz/hud.js';
-import './interfaz/musica.js';
-import './interfaz/pantalla.js';
-import './interfaz/menu.js';
-import './interfaz/records.js';
-import './entrada/controles.js';
 import './online/red.js';
 import './online/jugadores.js';
 import './online/empujones.js';
@@ -39,6 +37,11 @@ import './online/conexion.js';
 import './modos/bots.js';
 import './modos/luchador.js';
 import './modos/disputa.js';
+import './interfaz/musica.js';
+import './interfaz/pantalla.js';
+import './interfaz/menu.js';
+import './interfaz/records.js';
+import './entrada/controles.js';
 import './bucle.js';
 import './debug.js';
 

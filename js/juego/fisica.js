@@ -4,11 +4,11 @@ import { G, keys, ptr, stick } from '../nucleo/estado.js';
 import { basisQuat, vF, vN, vT, vZ } from '../mundo/formas.js';
 import { face, faceAt, HW } from '../mundo/ola.js';
 import { acc, emit, splash } from '../mundo/particulas.js';
-import { boardRoot } from '../surfista/tabla.js';
+import { boardRoot } from '../surfista/raiz.js';
+import { chip, showTrick } from './hud.js';
 import { addPts, bump } from './puntos.js';
-import { doTrick, land, LAND_H, launch, lipSpray, snap } from './trucos.js';
 import { wipeout } from './sesion.js';
-import { chip, showTrick } from '../interfaz/hud.js';
+import { doTrick, land, LAND_H, launch, lipSpray, snap } from './trucos.js';
 
 export const LAND_A = 0.15, LAND_SOFT = 1.4;   // al caer: tabla casi horizontal y un rato de recepción suave
 export const qLandPose = new THREE.Quaternion(), qLand = new THREE.Quaternion(), qAirBase = new THREE.Quaternion();

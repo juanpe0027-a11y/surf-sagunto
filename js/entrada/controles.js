@@ -2,11 +2,11 @@
 import { $, TAU } from '../nucleo/util.js';
 import { G, keys, ptr, stick } from '../nucleo/estado.js';
 import { wrap } from '../mundo/motor.js';
+import { fade, hud, menuP, overlay } from '../juego/hud.js';
 import { newGame, popUp } from '../juego/sesion.js';
-import { fade } from '../interfaz/hud.js';
-import { menuP, overlay, showMenu } from '../interfaz/menu.js';
 import { tryPush } from '../online/empujones.js';
 import { duelSwing } from '../modos/disputa.js';
+import { showMenu } from '../interfaz/menu.js';
 
 function trickTap() {
   if (G.state === 'duel') { duelSwing(); return; }
@@ -86,3 +86,9 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => { const k = KMAP[e.code]; if (k) keys[k] = false; });
 document.addEventListener('visibilitychange', () => { G.last = performance.now(); keys.up = keys.down = keys.left = keys.right = false; ptr.down = false; ptr.id = null; stick.id = null; stick.x = stick.y = 0; });
+// los dos círculos táctiles se ven solo mientras se juega
+export function actualizarMandos() {
+  const showPads = !hud.hidden && (G.state === 'ride' || G.state === 'popup' || G.state === 'paddle' || G.state === 'duel');
+  padStick.hidden = padTricks.hidden = !showPads;
+  if (showPads) drawStick();
+}

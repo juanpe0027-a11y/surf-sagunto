@@ -3,10 +3,10 @@ import { $, clamp } from '../nucleo/util.js';
 import { avisar } from '../nucleo/eventos.js';
 import { G } from '../nucleo/estado.js';
 import { toScreen } from '../mundo/motor.js';
-import { boardRoot } from '../surfista/tabla.js';
-import { fadeEl } from './menu.js';
-import { drawStick, padStick, padTricks } from '../entrada/controles.js';
+import { boardRoot } from '../surfista/raiz.js';
 
+// pantallas: la capa del menú (con el menú principal y la de fin de sesión) y el fundido entre escenas
+export const overlay = $('overlay'), menuP = $('menu'), overP = $('over'), fadeEl = $('fade');
 export const hud = $('hud'), scoreEl = $('score'), clockEl = $('clock'), waveNEl = $('waveN'), tricksEl = $('tricks');
 const multv = $('multv'), multArc = $('multArc'), wavePtsEl = $('wavePts');
 export const dial = $('dial'), dialArc = $('dialArc'), kmhEl = $('kmh'), angEl = $('ang'), distEl = $('dist');
@@ -36,9 +36,6 @@ export function actualizarHud() {
     multArc.style.strokeDashoffset = (276.5 * (1 - clamp((G.mult - 1) / 2, 0, 1))).toFixed(1);
     wavePtsEl.textContent = Math.floor(G.wavePts);
   }
-  const showPads = !hud.hidden && (G.state === 'ride' || G.state === 'popup' || G.state === 'paddle' || G.state === 'duel');
-  padStick.hidden = padTricks.hidden = !showPads;
-  if (showPads) drawStick();
   if (G.state === 'ride' || G.state === 'popup') {
     dial.hidden = false;
     const kmh = Math.round(G.v * 3.6);

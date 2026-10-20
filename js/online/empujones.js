@@ -1,11 +1,11 @@
 // Empujones: pegado a otro surfista, TRUCO lo tira (vuelve a remar y pierde los puntos de la ola).
 import { G } from '../nucleo/estado.js';
 import { splash } from '../mundo/particulas.js';
+import { chip, showTrick } from '../juego/hud.js';
 import { addPts, bump } from '../juego/puntos.js';
 import { wipeout } from '../juego/sesion.js';
-import { chip, showTrick } from '../interfaz/hud.js';
-import { MP } from './red.js';
 import { alive } from './jugadores.js';
+import { MP } from './red.js';
 import { botPushed } from '../modos/bots.js';
 import { duelCount } from '../modos/disputa.js';
 

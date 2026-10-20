@@ -1,6 +1,6 @@
 // Música: «Fiesta surfera» de Bruno Fumumo, con su botón y su volumen.
 import { $ } from '../nucleo/util.js';
-import { leer, guardar } from '../nucleo/guardado.js';
+import { guardar, leer } from '../nucleo/guardado.js';
 
 const music = $('music'), musicBtn = $('musicBtn');
 music.volume = 0.55;

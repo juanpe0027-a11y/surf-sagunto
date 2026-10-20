@@ -1,8 +1,7 @@
 // Pantalla completa y horizontal (en iPhone, guía para añadirlo a la pantalla de inicio).
 import { $ } from '../nucleo/util.js';
 import { resize } from '../mundo/motor.js';
-import { say } from './hud.js';
-import { overlay } from './menu.js';
+import { overlay, say } from '../juego/hud.js';
 
 const fsBtn = $('fsBtn'), fsNote = $('fsNote');
 const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
