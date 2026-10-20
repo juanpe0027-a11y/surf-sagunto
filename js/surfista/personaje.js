@@ -1,3 +1,4 @@
+// Vestir al muñeco con un personaje: colores, neopreno, tabla, cara y peinado (applyChar).
 import { avisar, escuchar } from '../nucleo/eventos.js';
 import { G } from '../nucleo/estado.js';
 import { TORSOS } from '../datos/disenos.js';

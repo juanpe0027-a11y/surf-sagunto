@@ -1,20 +1,19 @@
+// Cada móvil tiene su número propio, el del login anónimo (sin cuentas ni contraseñas). Se guarda en el móvil
+// y en Firebase (v2/records/<temporada>/<móvil>) para el ranking de todos: mejor sesión, mejor ola, mejor tubo,
+// LOCAL LEGEND y cada truco.
 import { $ } from '../nucleo/util.js';
 import { escuchar } from '../nucleo/eventos.js';
 import { G } from '../nucleo/estado.js';
+import { leer, guardar } from '../nucleo/guardado.js';
 import { CHARS } from '../datos/personajes.js';
 import { showMenu } from './menu.js';
 import { firebaseListo, MP } from '../online/red.js';
 
-// ===================== RÉCORDS: trucos y puntuaciones =====================
-// Cada móvil tiene su número propio, el del login anónimo (sin cuentas ni contraseñas). Se guarda en el móvil
-// y en Firebase (v2/records/<temporada>/<móvil>) para el ranking de todos: mejor sesión, mejor ola, mejor tubo,
-// LOCAL LEGEND y cada truco.
-const ST_KEY = 'surf-sagunto-stats';
-let ST ={ best: 0, bestWave: 0, bestTube: 0, legends: 0, sessions: 0, total: 0, tricks: {}, tbest: {} };
+let ST = { best: 0, bestWave: 0, bestTube: 0, legends: 0, sessions: 0, total: 0, tricks: {}, tbest: {} };
 // temporada: al cambiarla, todos los récords (los del móvil y el ranking) empiezan de cero
 const ST_SEASON = 2;
-try { const o = JSON.parse(localStorage.getItem(ST_KEY) || 'null'); if (o && typeof o === 'object' && o.season === ST_SEASON) ST = Object.assign(ST, o); } catch (e) {}
-try { if (localStorage.getItem('surf-sagunto-season') !== String(ST_SEASON)) { localStorage.setItem('surf-sagunto-season', String(ST_SEASON)); localStorage.setItem('surf-sagunto-best3d', '0'); G.best = 0; } } catch (e) {}
+try { const o = JSON.parse(leer('records') || 'null'); if (o && typeof o === 'object' && o.season === ST_SEASON) ST = Object.assign(ST, o); } catch (e) {}
+if (leer('temporada') !== String(ST_SEASON)) { guardar('temporada', String(ST_SEASON)); guardar('mejor', '0'); G.best = 0; }
 ST.season = ST_SEASON;
 ST.best = Math.max(ST.best || 0, G.best || 0);
 let stDirty = true, stSaveT = 4, stUid = null;
@@ -57,7 +56,7 @@ export function statsTick(dt) {
 }
 function statsSave() {
   if (!stDirty) return; stDirty = false;
-  try { localStorage.setItem(ST_KEY, JSON.stringify(ST)); } catch (e) {}
+  guardar('records', JSON.stringify(ST));
   if (!stUid) { stDirty = true; return; }   // todavía sin conectar: se guarda en cuanto haya conexión
   firebaseListo().then(({ db }) => recRef(db, stUid).set({ nm: (MP.myName || G.CH.name || 'Surfista').slice(0, 20), ch: G.CH.id, best: Math.floor(ST.best), bestWave: Math.floor(ST.bestWave),
     bestTube: Math.round(ST.bestTube * 10) / 10, legends: ST.legends, sessions: ST.sessions, total: ST.total, tricks: ST.tricks,

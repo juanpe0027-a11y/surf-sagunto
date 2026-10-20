@@ -1,3 +1,9 @@
+// Si tiras 3 veces al mismo surfista, los dos os vais al agua junto al Pantalán y os pegáis con lo que lleváis
+// (tabla, pala del kayak, remo o lata de rescate). Quien da 5 golpes es el LOCAL LEGEND (+1500) y el otro
+// pierde los puntos de la ola. Los demás siguen surfeando; al acabar, los dos vuelven al agua.
+// Controles: círculo hacia el rival = acercarse · hacia atrás = cubrirse (los golpes del suelo no cuentan)
+// GOLPE = lateral · con el círculo arriba = de arriba abajo · SALTAR y en el aire GOLPE: 1 toque mazazo, 2+ giro
+// (los golpes en el aire rompen la guardia; saltando esquivas los golpes del suelo)
 import { $, clamp, lerp, rnd, V3 } from '../nucleo/util.js';
 import { G, keys, stick } from '../nucleo/estado.js';
 import { aspect, camLook, camPos } from '../mundo/motor.js';
@@ -12,13 +18,6 @@ import { pushMsg } from '../online/mensajes.js';
 import { BOTS } from './bots.js';
 import { drawFighter, dropFighter, makeFighter } from './luchador.js';
 
-// ===================== DISPUTA POR EL PICO =====================
-// Si tiras 3 veces al mismo surfista, los dos os vais al agua junto al Pantalán y os pegáis con lo que lleváis
-// (tabla, pala del kayak, remo o lata de rescate). Quien da 5 golpes es el LOCAL LEGEND (+1500) y el otro
-// pierde los puntos de la ola. Los demás siguen surfeando; al acabar, los dos vuelven al agua.
-// Controles: círculo hacia el rival = acercarse · hacia atrás = cubrirse (los golpes del suelo no cuentan)
-// GOLPE = lateral · con el círculo arriba = de arriba abajo · SALTAR y en el aire GOLPE: 1 toque mazazo, 2+ giro
-// (los golpes en el aire rompen la guardia; saltando esquivas los golpes del suelo)
 export const DUEL_HP = 5, DUEL_TIME = 60, DUEL_Y = -0.72, G_PHI = 0.55, JUMP_V = 5.6, JUMP_G = 15;
 export const SW = [
   { dur: 0.55, hit: 0.28, reach: 1.6, name: 'Lateral' },

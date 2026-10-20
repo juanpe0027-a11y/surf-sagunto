@@ -1,3 +1,5 @@
+// Posturas del cuerpo: de pie en la tabla, tumbado, sentado en la moto, el kayak o la zodiac, remando y saludando.
+// Una postura es un objeto con la posición de cada articulación (manos, rodillas, pies, pecho, cabeza…).
 import { V3 } from '../nucleo/util.js';
 import { G } from '../nucleo/estado.js';
 import { UP } from '../mundo/formas.js';
@@ -131,7 +133,19 @@ export function placePaddle(pd, o) {
   pdA.subVectors(o.aF, o.aB).normalize();
   pd.quaternion.setFromUnitVectors(UP, pdA);
 }
-// postura de pie (surf), tumbado (bodyboard) o sentado (moto de agua / kayak) según el personaje
-export function poseFor(c) { return c.jetski ? jetRide : c.zodiac ? zodiacRide : c.kayak ? kayakRide : c.bodyboard ? bodyRide : stance; }
+// Qué hace el cuerpo en cada vehículo: surfear (de pie, tumbado o sentado), remar a por la ola y posar en el menú.
+// Un vehículo nuevo necesita: sus posturas aquí, su modelo en vehiculos.js y su bandera en la ficha del personaje.
+export const vehiculo = c => c.jetski ? 'moto' : c.zodiac ? 'zodiac' : c.kayak ? 'kayak' : c.bodyboard ? 'bodyboard' : 'tabla';
+const POSTURAS = {
+  //           surfear             remar (t = reloj, ph = fase de la brazada, f = fuerza)   posar en la ficha del menú
+  tabla:     { surf: stance,     remar: (o, t, ph, f) => prone(o, ph, f),        posar: (o, t) => shaka(stance(o, 0.2, 0, t, 0)) },
+  bodyboard: { surf: bodyRide,   remar: (o, t, ph, f) => prone(o, ph, f),        posar: (o, t) => bodyRide(o, 0.2, 0, t, 0) },
+  moto:      { surf: jetRide,    remar: (o, t) => jetRide(o, 0.3, 0, t),         posar: (o, t) => jetRide(o, 0.2, 0, t, 0) },
+  kayak:     { surf: kayakRide,  remar: (o, t) => kayakRide(o, 0.3, 0, t * 1.9), posar: (o, t) => kayakRide(o, 0.2, 0, t * 0.6, 0) },
+  zodiac:    { surf: zodiacRide, remar: (o, t) => zodiacRide(o, 0.3, 0, t),      posar: (o, t) => zodiacRide(o, 0.2, 0, t, 0) },
+};
+export const posturas = c => POSTURAS[vehiculo(c)];
+// postura de surfear: de pie (surf), tumbado (bodyboard) o sentado (moto de agua, kayak, zodiac)
+export function poseFor(c) { return posturas(c).surf; }
 export function riderStance(o, c, grab, t, lean, twist) { return poseFor(G.CH)(o, c, grab, t, lean, twist); }
 export function lerpPose(a, b, t, out) { for (const k of KEYS_POSE) out[k].lerpVectors(a[k], b[k], t); return out; }

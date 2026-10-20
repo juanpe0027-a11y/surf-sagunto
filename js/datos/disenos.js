@@ -1,3 +1,5 @@
+// Diseños pintados (en un canvas) de las tablas, las quillas y los neoprenos de cada surfista.
+// Las tablas que salen de una foto están en img/personajes/<id>/tabla.jpg.
 import { avisar } from '../nucleo/eventos.js';
 
 export const TORSOS = {

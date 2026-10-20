@@ -6,6 +6,10 @@ const tecla = (code, tipo = 'keydown') => window.dispatchEvent(new KeyboardEvent
 const pulsar = async (code, ms = 120) => { tecla(code); await esperar(ms); tecla(code, 'keyup'); };
 const res = { personajes: {}, problemas: [] };
 
+// el cuerpo 3D con esqueleto (modelos/cuerpo.glb) tiene que haber cargado
+res.cuerpo3d = !!(window.__HUMAN && window.__HUMAN.local);
+if (!res.cuerpo3d) res.problemas.push('no ha cargado el cuerpo 3D');
+
 $('toChars').click(); await esperar(600);
 const ids = [...document.querySelectorAll('#cards .card')].map(c => c.dataset.id);
 res.numPersonajes = ids.length;

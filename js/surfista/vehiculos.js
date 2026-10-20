@@ -1,3 +1,4 @@
+// Vehículos: zodiac de rescate (Krre), kayak con su pala (Raúl) y moto de agua (JuanP).
 import { boardRoot } from './tabla.js';
 
 // zodiac de rescate (Krre): tubos rojos, casco blanco, motor fueraborda con la bandera y rótulos S.O.S

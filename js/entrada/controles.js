@@ -1,3 +1,4 @@
+// Controles: dedo izquierdo = TRUCO, dedo derecho = joystick (rumbo de la tabla), y teclado.
 import { $, TAU } from '../nucleo/util.js';
 import { G, keys, ptr, stick } from '../nucleo/estado.js';
 import { wrap } from '../mundo/motor.js';
@@ -20,7 +21,6 @@ function trickTap() {
   G.trickTaps++; G.trickWin = 0.2;
 }
 
-// ---------- controles: arrastrar el dedo ----------
 function tap() { if (G.state === 'paddle' && G.windowOpen) popUp(); }
 export const padStick = $('padStick'), padTricks = $('padTricks'), knob = $('knob');
 // el joystick usa el centro del círculo de la derecha: vale tocar en cualquier parte de la mitad derecha

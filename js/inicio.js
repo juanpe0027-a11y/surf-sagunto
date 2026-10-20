@@ -1,3 +1,4 @@
+// Carga todos los módulos en orden (de abajo arriba por capas) y arranca el juego.
 import './nucleo/util.js';
 import './nucleo/eventos.js';
 import './nucleo/config.js';

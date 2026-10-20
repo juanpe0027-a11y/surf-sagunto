@@ -1,6 +1,8 @@
+// Menú principal, ficha de personajes y botones de empezar y volver al menú.
 import { $, hex } from '../nucleo/util.js';
 import { avisar, escuchar } from '../nucleo/eventos.js';
 import { G, keys, ptr } from '../nucleo/estado.js';
+import { guardar } from '../nucleo/guardado.js';
 import { DECKS } from '../datos/disenos.js';
 import { CHARS, PHOTOS } from '../datos/personajes.js';
 import { renderer, scene, world } from '../mundo/motor.js';
@@ -70,7 +72,7 @@ function renderCards() {
       '<span class="st"><span>Tubos</span><span class="pips">' + pips(c.tubo) + '</span></span>';
     b.addEventListener('click', () => {
       G.CH = c; applyChar(c); renderCards();
-      try { localStorage.setItem('surf-sagunto-char', c.id); } catch (e) {}
+      guardar('personaje', c.id);
     });
     cardsEl.appendChild(b);
   }
@@ -97,7 +99,7 @@ $('again').addEventListener('click', () => fade(newGame));
 $('toMenu').addEventListener('click', () => fade(() => { startTitleRide(); overlay.hidden = false; showMenu('main'); }));
 // volver al menú en mitad de la sesión: se guarda el récord si lo has superado
 $('hudHome').addEventListener('click', () => {
-  if (Math.floor(G.score) > G.best) { G.best = Math.floor(G.score); try { localStorage.setItem('surf-sagunto-best3d', G.best); } catch (e) {} }
+  if (Math.floor(G.score) > G.best) { G.best = Math.floor(G.score); guardar('mejor', G.best); }
   keys.up = keys.down = keys.left = keys.right = false; ptr.down = false;
   fade(() => { startTitleRide(); overlay.hidden = false; showMenu('main'); });
 });

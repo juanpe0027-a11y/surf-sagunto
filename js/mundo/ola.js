@@ -1,10 +1,11 @@
+// La ola: su forma (que cambia con G.curlX, G.grow y G.pm), su malla y su shader.
+// faceAt(x, h) da el punto de la cara de la ola a una altura h (0 = seno, 1 = cresta).
 import { clamp, lerp, sm } from '../nucleo/util.js';
 import { LOWQ } from '../nucleo/config.js';
 import { G } from '../nucleo/estado.js';
 import { world } from './motor.js';
 import { commonUniforms, GLSL_COMMON } from './shaders.js';
 
-// ---------- la ola ----------
 export const HW = 3.4;           // altura de la ola en metros
 const NX = LOWQ ? 220 : 360, XA = -48, NF = LOWQ ? 48 : 65, NB = 16;
            // largo de la ola por delante del tubo (en el online crece con los surfistas que haya)

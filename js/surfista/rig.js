@@ -1,3 +1,4 @@
+// Copias del muñeco para los demás jugadores (cada una con sus propios materiales y texturas).
 import { V3 } from '../nucleo/util.js';
 import { G } from '../nucleo/estado.js';
 import { world } from '../mundo/motor.js';
@@ -9,7 +10,6 @@ import { boardMesh, boardRoot, deckCv, deckTex, finCv, finTex } from './tabla.js
 import { HUMAN, makeHuman, poseHuman } from './cuerpo.js';
 import { applyChar } from './personaje.js';
 
-// --- copias del muñeco para los demás jugadores (cada una con sus propios materiales y texturas) ---
 function objMap(a, b, m) { m.set(a, b); for (let i = 0; i < a.children.length; i++) objMap(a.children[i], b.children[i], m); return m; }
 function texFromCanvas(src) { const c = document.createElement('canvas'); c.width = src.width; c.height = src.height; c.getContext('2d').drawImage(src, 0, 0); const t = new THREE.CanvasTexture(c); t.anisotropy = 4; return t; }
 export function buildRig(c) {

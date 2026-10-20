@@ -1,3 +1,4 @@
+// Marcadores en pantalla mientras se surfea: puntos, reloj, multiplicador, velocímetro, mensajes y avisos.
 import { $, clamp } from '../nucleo/util.js';
 import { avisar } from '../nucleo/eventos.js';
 import { G } from '../nucleo/estado.js';

@@ -1,9 +1,9 @@
+// Los luchadores de la Disputa por el Pico: postura de pelea, golpes con lo que llevan (tabla, pala, lata) y su dibujo.
 import { clamp, lerp, rnd, sm, TAU, V3 } from '../nucleo/util.js';
 import { UP } from '../mundo/formas.js';
 import { applyPoseRig, buildRig, disposeRig } from '../surfista/rig.js';
 import { DUEL, DUEL_Y, G_PHI, qRoll, SW, XAX, ZAX } from './disputa.js';
 
-// --- dónde van las manos y hacia dónde apunta el objeto (relativo al pecho; +x = hacia el rival) ---
 function overPhi(type, s) {
   const S = SW[type], up = type === 2 ? -1.1 : -0.8, down = type === 2 ? 2.7 : 2.3, w = S.hit * 0.62;
   if (s < 0) return G_PHI;

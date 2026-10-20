@@ -1,8 +1,10 @@
+// Piezas geométricas reutilizables: cilindro y esfera unidad (brazos, piernas, postes…) y cálculo de orientaciones.
 import { V3 } from '../nucleo/util.js';
 
 export const cyl = new THREE.CylinderGeometry(1, 1, 1, 10, 1);
 export const sph = new THREE.SphereGeometry(1, 14, 10);
 export const UP = V3(0, 1, 0), tv = V3(0, 0, 0);
+// coloca un cilindro (de radio m.userData.r) entre los puntos a y b
 export function setLimb(m, a, b) {
   tv.subVectors(b, a); const len = tv.length() || 0.001;
   m.position.copy(a).addScaledVector(tv, 0.5);
@@ -10,7 +12,7 @@ export function setLimb(m, a, b) {
   m.quaternion.setFromUnitVectors(UP, tv.divideScalar(len));
 }
 
-// orientación de la tabla sobre la cara de la ola
+// orientación a partir de un vector "adelante" (F) y uno "arriba" (Nn); vectores de trabajo compartidos
 export const vF = V3(0, 0, 0), vN = V3(0, 0, 0), vZ = V3(0, 0, 0), vT = V3(0, 0, 0), mB = new THREE.Matrix4();
 export function basisQuat(F, Nn, out) {
   vN.copy(Nn).addScaledVector(F, -F.dot(Nn)).normalize();

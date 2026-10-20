@@ -1,3 +1,4 @@
+// Puntos: cada maniobra suma puntos multiplicados por el multiplicador (x1 a x3), que sube al encadenar trucos.
 import { G } from '../nucleo/estado.js';
 
 export function bump(a) { G.mult = Math.min(3, G.mult + a); }

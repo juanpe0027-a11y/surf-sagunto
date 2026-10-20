@@ -1,10 +1,10 @@
+// Conexión al empezar: con la sala «bots» juega contra bots sin conexión; si no, se conecta a Firebase y escucha la sala.
 import { $ } from '../nucleo/util.js';
 import { FIREBASE_CONFIG, firebaseListo, MP, mpMenu, SALA } from './red.js';
 import { removePeer, updateCount, upsertPeer } from './jugadores.js';
 import { onMsg } from './mensajes.js';
 import { BOTS, makeBots } from '../modos/bots.js';
 
-// --- conexión ---
 (function connect() {
   const bb = $('botsBtn');
   if (SALA === 'bots') {

@@ -1,3 +1,5 @@
+// Con la sala «bots» no hay conexión: los demás surfistas son bots que comparten tu ola,
+// surfean solos, saltan, chocan y pueden empujarte (y tú a ellos) con el botón TRUCO.
 import { angDiff, clamp, lerp, rnd, sm, TAU } from '../nucleo/util.js';
 import { G } from '../nucleo/estado.js';
 import { CHARS } from '../datos/personajes.js';
@@ -10,9 +12,6 @@ import { gotPushed } from '../online/empujones.js';
 import { logMsg } from '../online/mensajes.js';
 import { duelCount } from './disputa.js';
 
-// ===================== SIMULACIÓN CON BOTS =====================
-// Con la sala «bots» no hay conexión: los demás surfistas son bots que comparten tu ola,
-// surfean solos, saltan, chocan y pueden empujarte (y tú a ellos) con el botón TRUCO.
 const BOT_NAMES = ['Bot Pantalán', 'Bot Malvarrosa', 'Bot Almardà'];
 export const BOTS = [];
 export function makeBots() {

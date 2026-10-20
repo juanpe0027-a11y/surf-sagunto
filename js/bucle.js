@@ -1,3 +1,4 @@
+// Bucle principal: cada fotograma avanza la partida, mueve la cámara y dibuja.
 import { $, clamp, lerp, sm, V3 } from './nucleo/util.js';
 import { G } from './nucleo/estado.js';
 import { adaptQuality, aspect, camera, camLook, camPos, FX, renderer, scene } from './mundo/motor.js';
@@ -25,7 +26,6 @@ function renderFrame(dt) {
   } else renderer.render(scene, camera);
 }
 
-// ---------- bucle principal ----------
 let camFast = 0;
 const desPos = V3(0, 0, 0), desLook = V3(0, 0, 0);
 

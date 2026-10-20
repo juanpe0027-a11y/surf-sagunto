@@ -1,3 +1,4 @@
+// Los demás surfistas: mandar mi estado, recibir el suyo, dibujarlos en mi ola, choques y la clasificación de la sala.
 import { $, clamp, lerp, TAU, V3 } from '../nucleo/util.js';
 import { escuchar } from '../nucleo/eventos.js';
 import { G } from '../nucleo/estado.js';
@@ -6,7 +7,7 @@ import { toScreen } from '../mundo/motor.js';
 import { basisQuat, UP, vT } from '../mundo/formas.js';
 import { face, faceAt } from '../mundo/ola.js';
 import { splash } from '../mundo/particulas.js';
-import { jetRide, kayakRide, poseFor, prone, zodiacRide } from '../surfista/posturas.js';
+import { poseFor, posturas } from '../surfista/posturas.js';
 import { boardRoot } from '../surfista/tabla.js';
 import { applyPoseRig, buildRig, disposeRig } from '../surfista/rig.js';
 import { addPts, bump } from '../juego/puntos.js';
@@ -116,7 +117,8 @@ export function mpUpdate(dt) {
       faceAt(rx, clamp(c.h, 0.03, 1));
       vT.set(0, -face.ty, -face.tz); basisQuat(vT, V3(0, -face.tz, face.ty), root.quaternion);
       root.position.set(rx, face.y + 0.02, face.z);
-      applyPoseRig(R.rig, R.ch.jetski ? jetRide(R.rig.pose, 0.3, 0, t) : R.ch.zodiac ? zodiacRide(R.rig.pose, 0.3, 0, t) : R.ch.kayak ? kayakRide(R.rig.pose, 0.3, 0, t * 1.9 + R.tgt.pr) : prone(R.rig.pose, t * 7 + R.tgt.pr, 0.7), 0.06, seatedC(R.ch) ? 1.5 : 0.9, t);
+      // cada uno rema a su ritmo (pr = su fase de remada)
+      applyPoseRig(R.rig, posturas(R.ch).remar(R.rig.pose, t + R.tgt.pr / 1.9, t * 7 + R.tgt.pr, 0.7), 0.06, seatedC(R.ch) ? 1.5 : 0.9, t);
     } else if (R.st === 'air') {
       faceAt(rx, 1);
       remoteFaceQuat(0.5, 0, qR);

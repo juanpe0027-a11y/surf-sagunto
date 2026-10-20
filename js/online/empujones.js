@@ -1,3 +1,4 @@
+// Empujones: pegado a otro surfista, TRUCO lo tira (vuelve a remar y pierde los puntos de la ola).
 import { G } from '../nucleo/estado.js';
 import { splash } from '../mundo/particulas.js';
 import { addPts, bump } from '../juego/puntos.js';

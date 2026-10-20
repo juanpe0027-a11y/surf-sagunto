@@ -1,7 +1,7 @@
+// El cielo del amanecer (con nubes), dibujado con un shader sobre una esfera enorme.
 import { world } from './motor.js';
 import { commonUniforms, GLSL_COMMON } from './shaders.js';
 
-// ---------- cielo ----------
 export const skyMat = new THREE.ShaderMaterial({
   uniforms: commonUniforms(), side: THREE.BackSide, depthWrite: false, fog: false,
   vertexShader: `varying vec3 vDir; void main(){ vDir = (modelMatrix * vec4(position, 0.0)).xyz; vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }`,

@@ -1,3 +1,4 @@
+// Partículas de agua: espuma, spray de la cresta, cortina del labio y salpicaduras.
 import { rnd } from '../nucleo/util.js';
 import { escuchar } from '../nucleo/eventos.js';
 import { PQ } from '../nucleo/config.js';
@@ -6,7 +7,6 @@ import { pxScale, world } from './motor.js';
 import { commonUniforms, GLSL_COMMON } from './shaders.js';
 import { ctrl, P, prm, wparams } from './ola.js';
 
-// ---------- partículas (espuma, spray) ----------
 const PN = 3600;
 const pPos = new Float32Array(PN * 3), pVel = new Float32Array(PN * 3), pLife = new Float32Array(PN), pMax = new Float32Array(PN);
 const pSize0 = new Float32Array(PN), pAlpha0 = new Float32Array(PN), pGrav = new Float32Array(PN);

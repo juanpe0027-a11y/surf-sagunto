@@ -1,15 +1,13 @@
+// Cuerpo humano realista: modelo con esqueleto (modelos/cuerpo.glb) que se mueve con nuestras posturas.
 import { V3 } from '../nucleo/util.js';
 import { avisar } from '../nucleo/eventos.js';
 import { G } from '../nucleo/estado.js';
-import { useHumanBody } from './muneco.js';
 import { boardRoot } from './tabla.js';
 
-// ---------- cuerpo humano realista: modelo con esqueleto que se mueve con nuestras posturas ----------
 // El modelo (cuerpo.glb) tiene huesos de verdad; cada fotograma se ponen en reposo y se orientan hacia las
 // articulaciones que calculan stance/prone/bodyRide/jetRide. La cabeza es la nuestra (foto, pelo, gafas, gorra).
 const BODY_URL = 'modelos/cuerpo.glb';
 export const HUMAN = { tpl: null, local: null, legLen: 0.888 };
-window.__HUMAN = HUMAN;
 const H_BONES = ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'LeftShoulder', 'RightShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightArm', 'RightForeArm', 'RightHand',
   'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase', 'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase'];
 function boneCat(n) {
@@ -145,13 +143,7 @@ export function loadHuman() {
     HUMAN.tpl = sc;
     HUMAN.local = makeHuman(G.CH);
     boardRoot.add(HUMAN.local.root);
-    useHumanBody(true);
-    avisar('cuerpo-listo');
+    avisar('cuerpo-listo');   // el muñeco esconde sus piezas sencillas y se rehacen los demás surfistas
   };
-  // si el servidor no sirve .glb (enlaces de Claude), el modelo va como texto en base64
-  const fromText = () => fetch('cuerpo.txt').then(r => r.ok ? r.text() : Promise.reject()).then(t => {
-    const bin = atob(t.trim()), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
-    new THREE.GLTFLoader().parse(u.buffer, '', onBody, () => {});
-  }).catch(() => {});
-  new THREE.GLTFLoader().load(BODY_URL, onBody, undefined, fromText);
+  new THREE.GLTFLoader().load(BODY_URL, onBody);   // si no carga, se queda el muñeco sencillo
 }

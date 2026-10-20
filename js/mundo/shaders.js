@@ -1,6 +1,6 @@
+// Trozos de GLSL que comparten los shaders del cielo, el mar, la ola y las partículas (niebla, color del cielo, ruido).
 import { FOG, fogHex, sunDir } from './motor.js';
 
-// ---------- GLSL compartido ----------
 export const GLSL_COMMON = `
 uniform vec3 sunDir;
 uniform float time;

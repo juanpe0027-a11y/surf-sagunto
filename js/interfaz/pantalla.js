@@ -1,9 +1,9 @@
+// Pantalla completa y horizontal (en iPhone, guía para añadirlo a la pantalla de inicio).
 import { $ } from '../nucleo/util.js';
 import { resize } from '../mundo/motor.js';
 import { say } from './hud.js';
 import { overlay } from './menu.js';
 
-// ---------- pantalla completa ----------
 const fsBtn = $('fsBtn'), fsNote = $('fsNote');
 const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
 function setFsLabel() { fsBtn.textContent = isFull() ? 'Salir de pantalla completa' : (IS_IOS && !IS_APP ? '📱 Pantalla completa en iPhone' : 'Pantalla completa'); }

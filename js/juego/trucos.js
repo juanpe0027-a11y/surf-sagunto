@@ -1,3 +1,4 @@
+// Saltos y trucos: despegar de la cresta, girar en el aire (360, rodeo, grab), caer y puntuar; snaps y re-entries.
 import { clamp, rnd, sm, TAU, V3 } from '../nucleo/util.js';
 import { PQ } from '../nucleo/config.js';
 import { G, ptr } from '../nucleo/estado.js';

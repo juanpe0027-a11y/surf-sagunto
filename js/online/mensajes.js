@@ -1,3 +1,4 @@
+// Mensajes: frases rápidas, texto y notas de voz.
 import { $ } from '../nucleo/util.js';
 import { G } from '../nucleo/estado.js';
 import { say } from '../interfaz/hud.js';
@@ -6,7 +7,6 @@ import { gotPushed } from './empujones.js';
 import { botReply } from '../modos/bots.js';
 import { duelCount, duelGotHit, startDuel } from '../modos/disputa.js';
 
-// --- mensajes: frases rápidas, texto y notas de voz ---
 function cleanText(text) { return (text || '').replace(/[\u0000-\u001f\u007f​-‏‪-‮⁠-⁤]/g, '').trim().slice(0, 80); }
 function showMine(text) { const me = $('myBub'); me.textContent = text; me.hidden = false; MP.myMsgT = 5; }
 export function logMsg(who, text) {

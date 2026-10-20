@@ -1,3 +1,4 @@
+// Física de la tabla en la ola: rumbo, velocidad, giros, rebotes y cutbacks (rideStep), y el spray que levanta.
 import { angDiff, clamp, lerp, rnd, sm, TAU, V3 } from '../nucleo/util.js';
 import { G, keys, ptr, stick } from '../nucleo/estado.js';
 import { basisQuat, vF, vN, vT, vZ } from '../mundo/formas.js';
@@ -50,7 +51,6 @@ export function steerTarget() {
   return Math.atan2(-stick.y, -stick.x);
 }
 
-// ---------- física de la ola ----------
 export function rideStep(dt, hT) {
   G.rideT += dt;
   G.curlSpeed = 8.5 + Math.min(3.5, G.rideT * 0.035);

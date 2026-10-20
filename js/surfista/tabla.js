@@ -1,15 +1,14 @@
+// La tabla del surfista (con su diseño pintado y sus quillas) y el grupo boardRoot que lleva tabla, vehículo y surfista.
 import { DECKS, FINS } from '../datos/disenos.js';
 import { world } from '../mundo/motor.js';
 import { helmet, matHelmet } from './muneco.js';
 import { jetG, kayakG, paddle, zodiacG } from './vehiculos.js';
 
-// ---------- el surfista ----------
 export const boardRoot = new THREE.Group(); world.add(boardRoot);
 export let boardMesh = null; const finMeshes = [];
 const matBoard = new THREE.MeshStandardMaterial({ color: 0xf6f1e6, roughness: 0.35 });
 const matStripe = new THREE.MeshStandardMaterial({ color: 0xff5a4e, roughness: 0.4 });
 
-// ---------- diseños pintados de tablas y quillas ----------
 export const deckCv = document.createElement('canvas'); deckCv.width = 1024; deckCv.height = 300;
 export const deckTex = new THREE.CanvasTexture(deckCv); deckTex.anisotropy = 4;
 matBoard.map = deckTex; matBoard.color.set(0xffffff);

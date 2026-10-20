@@ -1,4 +1,7 @@
+// El muñeco del surfista: cabeza con su cara, pelo, gafas, gorra, barba, pies… y applyPose, que lo coloca en una postura.
+// El cuerpo con esqueleto (cuerpo.js) sustituye a las piezas sencillas en cuanto carga.
 import { TAU, V3 } from '../nucleo/util.js';
+import { escuchar } from '../nucleo/eventos.js';
 import { G } from '../nucleo/estado.js';
 import { seatedC } from '../datos/personajes.js';
 import { cyl, setLimb, sph, tv, UP } from '../mundo/formas.js';
@@ -115,10 +118,11 @@ export const footB = new THREE.Mesh(footGeo, matSkin), footF = new THREE.Mesh(fo
 export const matFlipper = new THREE.MeshStandardMaterial({ color: 0x1f2a22, roughness: 0.5 });
 const hipC = V3(0, 0, 0);
 // partes del muñeco antiguo que sustituye el cuerpo nuevo
-export function useHumanBody(on) {
+function useHumanBody(on) {
   for (const k in L) if (k !== 'pony') L[k].visible = !on;
   for (const k in J) if (k !== 'head') J[k].visible = !on;
 }
+escuchar('cuerpo-listo', () => useHumanBody(true));
 
 export function applyPose(o) {
   hipC.addVectors(o.hB, o.hF).multiplyScalar(0.5);

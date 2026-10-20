@@ -1,7 +1,7 @@
+// El mar: reflejos del cielo, brillo del sol y espumas de olas anteriores, con un shader.
 import { world } from './motor.js';
 import { commonUniforms, GLSL_COMMON } from './shaders.js';
 
-// ---------- mar ----------
 export const oceanMat = new THREE.ShaderMaterial({
   uniforms: commonUniforms(), fog: false,
   vertexShader: `varying vec3 vPos; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vPos = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,

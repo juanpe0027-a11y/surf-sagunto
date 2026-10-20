@@ -1,4 +1,7 @@
+// Los personajes: aspecto, tabla, vehículo y estadísticas de cada uno, y sus fotos.
+// Para añadir uno: su ficha en CHARS y sus fotos en img/personajes/<id>/ (ver docs/ARQUITECTURA.md).
 import { G } from '../nucleo/estado.js';
+import { leer } from '../nucleo/guardado.js';
 
 export const seatedC = c => !!(c.jetski || c.kayak || c.zodiac);
 // surfistas: aspecto y estilo (1–5). vel = empuje de la ola, air = altura y giro, tubo = aguante y puntos en el tubo
@@ -70,5 +73,4 @@ export const CHARS = [
   { id: 'alex', goofy: true, name: 'Alex', tag: 'Tabla Lemon fish · melena al viento', skin: 0xc48c6c, hair: 0x2a1d14, style: 'long', beard: true, beardColor: 0x2a1d14, glasses: false,
     suit: 0x121316, upperArm: 0x121316, forearm: 0x121316, shorts: 0x121316, deck: 'photo', deckFallback: 'plain', deckPhoto: true, fins: ['black', 'black', 'black'], sw: [0x121316, 0xcfc2a6, 0x2a1d14], vel: 3, air: 3, tubo: 5 }
 ];
-G.CH = CHARS[0];
-try { G.CH = CHARS.find(c => c.id === localStorage.getItem('surf-sagunto-char')) || CHARS[0]; } catch (e) {}
+G.CH = CHARS.find(c => c.id === leer('personaje')) || CHARS[0];

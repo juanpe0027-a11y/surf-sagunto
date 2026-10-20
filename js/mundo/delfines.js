@@ -1,9 +1,9 @@
+// Delfines: de vez en cuando salta un grupo en el mar.
 import { rnd, TAU, V3 } from '../nucleo/util.js';
 import { G } from '../nucleo/estado.js';
 import { camLook, camPos, world } from './motor.js';
 import { splash } from './particulas.js';
 
-// ---------- delfines: de vez en cuando salta un grupo en el mar ----------
 const dolphins = [], dolMat = new THREE.MeshStandardMaterial({ color: 0x5b6773, roughness: 0.35, metalness: 0.1 });
 const dolBelly = new THREE.MeshStandardMaterial({ color: 0xc9cfd3, roughness: 0.4 });
 function makeDolphin() {

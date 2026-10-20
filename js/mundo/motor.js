@@ -1,12 +1,12 @@
+// Motor 3D: renderer, escena, cámara, luces, efectos de cine y calidad automática según los fps.
+// Todo el mundo va dentro de `world`, que está espejado en X (el surfista avanza hacia la izquierda de la pantalla).
 import { $, V3 } from '../nucleo/util.js';
 import { avisar } from '../nucleo/eventos.js';
 import { LOWQ } from '../nucleo/config.js';
 
 export const wrap = $('wrap'), canvas = $('c');
 
-// ---------- motor ----------
-export let renderer;
-renderer = new THREE.WebGLRenderer({ canvas, antialias: !LOWQ, powerPreference: 'high-performance' });   // si no hay WebGL ni se llega aquí (main.js)
+export const renderer = new THREE.WebGLRenderer({ canvas, antialias: !LOWQ, powerPreference: 'high-performance' });   // si no hay WebGL ni se llega aquí (main.js)
 let pixRatio = Math.min(window.devicePixelRatio || 1, LOWQ ? 1.4 : 1.75);
 renderer.setPixelRatio(pixRatio);
 renderer.outputColorSpace = THREE.LinearSRGBColorSpace;   // mismo color que el juego original
@@ -53,7 +53,7 @@ export function resize() {
   avisar('tamano', pxScale);
 }
 
-// ---------- efectos de cámara de cine (librería postprocessing) ----------
+// --- efectos de cámara de cine (librería postprocessing) ---
 // brillo del sol y de la espuma, color más vivo, viñeta y, en ordenador, fondo desenfocado y bordes suaves
 export const FX = { composer: null, on: true, dof: null };
 export function setupFX() {
