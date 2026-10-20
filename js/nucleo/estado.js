@@ -1,0 +1,93 @@
+export const G = {
+  // mundo/ola.js
+  XB: 150,
+  curlX: 0,
+  grow: 1,
+  pm: 1,
+  gtime: 0,
+  // surfista/muneco.js
+  faceTurn: 0.9,
+  windAmt: 0.2,
+  // datos/personajes.js
+  CH: null,   // se pone al cargar
+  // juego/sesion.js
+  state: 'title',
+  score: 0,
+  best: 0,
+  sessionT: null,   // se pone al cargar
+  waves: 0,
+  bestWave: 0,
+  wavePts: 0,
+  mult: 1,
+  rideT: 0,
+  curlSpeed: 8.5,
+  px: 0,
+  h: 0.5,
+  vh: 0,
+  s: 1.3,
+  air: false,
+  airT: 0,
+  spin: 0,
+  flip: 0,
+  aVy: 0,
+  airTop: 0,
+  launchY: 0,
+  pxStart: 0,
+  rideAngle: 0,
+  lastVh: 0,
+  snapCD: 0,
+  turnW: 0,
+  airBack: false,
+  airSteer: 0,
+  landSoft: 0,
+  landV: 0,
+  theta: 0,
+  v: 10,
+  omega: 0,
+  crouch: 0.3,
+  bank: 0,
+  airVx: 10,
+  twistAmt: 0,
+  backT: 0,
+  turnLock: 0,
+  spinT: 0,
+  flipT: 0,
+  grab: 0,
+  grabT: 0,
+  airDur: 1,
+  airHold: 0,
+  launchZ: 0,
+  landZ: 0,
+  landT: 1,
+  lastTrick: '',
+  airHintShown: false,
+  pt: 0,
+  windowOpen: false,
+  paddlePh: 0,
+  popT: 0,
+  missT: 0,
+  wipeT: 0,
+  tubeT: 0,
+  autoT: 1.3,
+  autoSpin: 0,
+  msgTimer: 0,
+  titleT: 0,
+  showT: 0,
+  // interfaz/menu.js
+  menuView: 'main',
+  // juego/trucos.js
+  trickTaps: 0,
+  trickWin: 0,
+  supT: 0,
+  pivotAng: 0,
+  // juego/fisica.js
+  btnTurn: null,
+  fs: null,
+  // bucle.js
+  clock: 0,
+  last: null,   // se pone al cargar
+};
+
+export const keys = { up: false, down: false, left: false, right: false };
+export const ptr = { down: false, id: null, x: 0, y: 0, ax: 0, ay: 0 };       // dedo izquierdo: trucos
+export const stick = { id: null, x: 0, y: 0 };                                   // dedo derecho: rumbo de la tabla (-1..1)
