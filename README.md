@@ -18,11 +18,16 @@ Juego de surf en 3D en la playa del Pantalán del Puerto de Sagunto, con modo on
 
 | Archivo | Qué es |
 |---|---|
-| `index.html` | El juego completo, ya montado (el modo online va dentro) |
+| `index.html` | El juego (el modo online va dentro) |
+| `css/estilo.css` | El aspecto del menú, el HUD y los paneles |
+| `img/personajes/<id>/` | Fotos de cada surfista: `foto.jpg` (ficha), `cara.jpg` (la cara del muñeco) y `tabla.jpg` (si su tabla sale de una foto) |
 | `vendor.js` | three.js 0.186.1 + GLTFLoader + SkeletonUtils + postprocessing 6.39.5 (empaquetado con esbuild) |
-| `cuerpo.glb` | Cuerpo humano con esqueleto (Xbot de los ejemplos de three.js) |
-| `musica.mp4` | «Fiesta surfera» de Bruno Fumumo |
+| `modelos/cuerpo.glb` | Cuerpo humano con esqueleto (Xbot de los ejemplos de three.js) |
+| `audio/musica.mp4` | «Fiesta surfera» de Bruno Fumumo |
 | `icono.png` | Icono para la pantalla de inicio |
-| `firebase-reglas.json` | Reglas de seguridad de la Realtime Database (proyecto `surf-sagunto`) |
+| `version.json` | Número de la versión publicada (los móviles con el juego abierto se actualizan solos) |
+| `firebase-reglas.json` | Reglas de seguridad de la Realtime Database (proyecto `surf-sagunto`) — ver [docs/FIREBASE.md](docs/FIREBASE.md) |
+| `herramientas/` | Pruebas automáticas y utilidades para desarrollar (el juego no las usa) |
+| `docs/` | [Plan de mejoras](docs/PLAN.md), [arquitectura](docs/ARQUITECTURA.md) y [Firebase](docs/FIREBASE.md) |
 
-Para probarlo en local hay que servir la carpeta con un servidor web (por ejemplo `python -m http.server`), porque abriendo el archivo directamente el navegador no deja cargar `cuerpo.glb`.
+Para probarlo en local hay que servir la carpeta con un servidor web (por ejemplo `python -m http.server`), porque abriendo el archivo directamente el navegador no deja cargar el modelo 3D. Cómo desarrollar y probar: [CLAUDE.md](CLAUDE.md).
