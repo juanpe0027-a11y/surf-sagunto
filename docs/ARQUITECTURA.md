@@ -1,6 +1,6 @@
 # Arquitectura — Surf Puerto de Sagunto
 
-Estructura a la que migra el juego en la fase 2 del [plan](PLAN.md). Es la referencia para decidir **dónde va cada cosa** al añadir o cambiar algo.
+Estructura a la que migra el juego en la fase 3 del [plan](PLAN.md). Es la referencia para decidir **dónde va cada cosa** al añadir o cambiar algo.
 
 ## Principios
 
@@ -54,7 +54,7 @@ js/
   interfaz/
     menu.js  hud.js  chat.js  records.js  pantalla.js  musica.js
   online/
-    red.js              conectar con Firebase (y login anónimo en la fase 3)
+    red.js              conectar con Firebase y login anónimo (firebaseListo)
     protocolo.js        formato de los mensajes de red, en un solo sitio
     jugadores.js        enviar mi estado y dibujar a los demás
     mensajes.js         chat, notas de voz, empujones
@@ -137,6 +137,6 @@ Todas las claves de `localStorage` (`surf-sagunto-char`, `surf-sagunto-nick`, `s
 
 ## Cosas a tener en cuenta
 
-- **Caché de GitHub Pages:** guarda los archivos ~10 minutos. Justo después de publicar, un móvil podría mezclar módulos viejos y nuevos. Para un juego entre amigos es aceptable; si da problemas, se resuelve con un service worker (fase 5).
+- **Caché de GitHub Pages:** guarda los archivos ~10 minutos. Justo después de publicar, un móvil podría mezclar módulos viejos y nuevos. Para un juego entre amigos es aceptable; si da problemas, se resuelve con un service worker (fase 6).
 - **Los módulos necesitan servidor:** igual que ahora, hay que probar con `python -m http.server`, no abriendo el archivo con doble clic.
 - **`vendor.js` sigue como está** (`window.THREE`). Los módulos lo leen a través de un pequeño `js/three.js` que hace `export const THREE = window.THREE`, para poder cambiarlo en el futuro en un solo sitio.
