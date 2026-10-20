@@ -2050,7 +2050,8 @@ try { best = +localStorage.getItem('surf-sagunto-best3d') || 0; } catch (e) {}
 let px = 0, h = 0.5, vh = 0, s = 1.3, air = false, airT = 0, spin = 0, flip = 0, aVy = 0, airTop = 0, launchY = 0, pxStart = 0;
 let rideAngle = 0, lastVh = 0, snapCD = 0;
 // la tabla tiene rumbo (theta: 0 = paralela a la orilla, + sube la ola, - baja) y velocidad v en m/s
-let turnW = 0, airBack = false, airSteer = 0;
+let turnW = 0, airBack = false, airSteer = 0, landSoft = 0, landV = 0;
+const LAND_A = 0.15, LAND_SOFT = 1.4;   // al caer: tabla casi horizontal y un rato de recepción suave
 let theta = 0, v = 10, omega = 0, crouch = 0.3, bank = 0, airVx = 10, twistAmt = 0, backT = 0, turnLock = 0;
 // aéreos: giros pedidos (spinT/flipT) que se completan solos, grab y recepción guiada sobre la ola
 let spinT = 0, flipT = 0, grab = 0, grabT = 0, airDur = 1, airHold = 0, launchZ = 0, landZ = 0, landT = 1, lastTrick = '', airHintShown = false;
@@ -2307,7 +2308,7 @@ function airMinVx(left) { return curlSpeed - (px - curlX - 2.5) / Math.max(left,
 // cómo cae: más abajo en la cara, con la tabla hacia abajo y hacia delante, o hacia el tubo si saltaste hacia él
 function setLandPose() {
   faceAt(px, LAND_H);
-  const a = airBack ? -Math.PI + 0.5 : -0.5;
+  const a = airBack ? -Math.PI + LAND_A : -LAND_A;
   vT.set(0, face.ty, face.tz);
   vF.set(Math.cos(a), 0, 0).addScaledVector(vT, Math.sin(a)).normalize();
   basisQuat(vF, V3(0, -face.tz, face.ty), qLandPose);
@@ -2365,7 +2366,8 @@ function trickTap() {
   trickTaps++; trickWin = 0.2;
 }
 function land() {
-  air = false; h = LAND_H; theta = airBack ? -Math.PI + 0.5 : -0.5; omega = 0; turnW = 0; backT = 0; fs = null; crouch = 1; v = Math.max(v, 9.5);
+  air = false; h = LAND_H; theta = airBack ? -Math.PI + LAND_A : -LAND_A; omega = 0; turnW = 0; backT = 0; fs = null; crouch = 1;
+  v = clamp(v * 0.7, 6.5, 9.5); landV = v; landSoft = LAND_SOFT;           // al tocar el agua frena: cae suave y controlable
   const sErr = Math.abs(spinT - spin), fErr = Math.abs(flipT - flip);
   faceAt(px, LAND_H); splash(V3(px, face.y, face.z), 34, 0.9);
   qLand.copy(boardRoot.quaternion); landT = 0;
@@ -2510,6 +2512,8 @@ function rideStep(dt, hT) {
     // giro: la tabla rota hacia el rumbo pedido por el camino más corto, con velocidad de giro
     // limitada (trazadas en arco). Rumbo completo de 360°: se puede volver de punta hacia el tubo.
     const prev = theta;
+    // tras caer, si no llevas el círculo, la tabla se endereza y sigue recta por la ola (no se va al plano)
+    if (hT === null && landSoft > 0 && !fs) hT = Math.cos(theta) < 0 ? Math.PI : 0;
     if (fs) {
       // maniobra TRUCO: 180 rápido en el sitio → recto hacia el tubo a la misma altura → 180 de vuelta
       fs.t += dt;
@@ -2564,8 +2568,11 @@ function rideStep(dt, hT) {
     // A media altura y arriba de la cara se va más rápido.
     const low = 1 - sm(0.2, 0.45, h);
     const zone = -0.8 + 3.2 * sm(0.06, 0.5, h) - 1.0 * sm(0.9, 1, h);
-    v += (-9.8 * 0.55 * sn + push * (1 - 0.45 * low) + pump + zone - 0.033 * v * v - 0.22 * v * low) * dt;
+    // justo después de caer de un salto: la pendiente apenas tira y el agua frena un poco (recepción suave)
+    const soft = landSoft > 0 ? landSoft / LAND_SOFT : 0; landSoft = Math.max(0, landSoft - dt);
+    v += (-9.8 * 0.55 * sn * (1 - 0.8 * soft) + push * (1 - 0.45 * low) * (1 - 0.5 * soft) + pump + zone - 0.033 * v * v - 0.22 * v * low - 0.5 * v * soft) * dt;
     v = clamp(v, 2, 19);
+    if (soft > 0) v = Math.min(v, landV + 3 * (1 - soft));      // tras caer, la velocidad vuelve poco a poco
     if (fs) {
       // misma línea: la altura no cambia y la tabla derrapa sin perder casi velocidad
       v = Math.max(fs.v0 * (fs.ph === 2 ? 0.92 : 0.85), 6);
@@ -3915,7 +3922,7 @@ window.__surf = { spawnDolphins, upsertPeer, onMsg, MP, startDuel, DUEL, duelSwi
 </script>
 
 <script>
-const BUILD_ID = '1792513354';
+const BUILD_ID = '1792513822';
 (function () {
   try {
     fetch(location.pathname + '?b=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => {
