@@ -11,7 +11,7 @@ const capa = f => CAPAS.indexOf(f.split('/')[0]);
 const todos = d => readdirSync(d).flatMap(n => statSync(join(d, n)).isDirectory() ? todos(join(d, n)) : n.endsWith('.js') ? [join(d, n)] : []);
 const fallos = [];
 for (const abs of todos(JS)) {
-  const f = relative(JS, abs).replace(/\/g, '/');
+  const f = relative(JS, abs).split('\\').join('/');
   if (capa(f) < 0) continue;                       // main.js, inicio.js, bucle.js, debug.js: arriba del todo
   for (const m of readFileSync(abs, 'utf8').matchAll(/^import .* from '([^']+)'/mg)) {
     const d = posix.normalize(posix.join(posix.dirname(f), m[1]));
