@@ -1,142 +1,136 @@
 # Arquitectura — Surf Puerto de Sagunto
 
-Estructura a la que migra el juego en la fase 3 del [plan](PLAN.md). Es la referencia para decidir **dónde va cada cosa** al añadir o cambiar algo.
+Cómo está organizado el código y **dónde va cada cosa** al añadir o cambiar algo.
 
 ## Principios
 
 1. **Sin compilación.** Módulos nativos del navegador (`import` / `export`). Lo que está en el repo es lo que se publica.
-2. **Archivos pequeños con un solo trabajo.** Ninguno pasa de ~400 líneas. Si crece más, se parte.
-3. **Capas con una sola dirección.** Cada carpeta solo importa de las que están por debajo (ver tabla). Si algo de abajo tiene que avisar a algo de arriba, usa **eventos**, nunca un import hacia arriba.
-4. **Los datos separados del código.** Personajes, tablas, trucos y textos son listas de datos; añadir uno nuevo no debería obligar a tocar la lógica.
-5. **Nadie reescribe funciones de otro módulo.** Si un módulo necesita enterarse de algo (un truco, el fin de la sesión), se suscribe a un evento.
+2. **Archivos pequeños con un solo trabajo.** Si uno pasa de ~400 líneas, se parte.
+3. **Capas con una sola dirección.** Cada carpeta solo importa de las que están por debajo (ver tabla). Si algo de abajo tiene que avisar a algo de arriba, usa **avisos** (`avisar` / `escuchar`), nunca un import hacia arriba. `node herramientas/capas.mjs` lo comprueba.
+4. **Los datos separados del código.** Personajes, diseños de tablas y posturas por vehículo son tablas de datos; añadir uno no obliga a tocar la lógica.
+5. **Nadie reescribe funciones de otro módulo.** Si un módulo necesita enterarse de algo (un truco, el fin de la sesión), escucha un aviso.
 
-## Carpetas
+## Cómo arranca
+
+`index.html` carga `vendor.js` (three.js, que queda global como `THREE`), Firebase y `js/main.js`.
+`main.js` comprueba que el navegador tiene WebGL y carga `js/inicio.js`, que importa todos los módulos en orden de capas y arranca el juego. `js/bucle.js` es el bucle principal: cada fotograma avanza la partida, mueve la cámara y dibuja.
+
+## Capas y carpetas
+
+| Capa | Carpeta | Qué hay | Puede importar de |
+|---|---|---|---|
+| 1 | `nucleo/` | utilidades, avisos, ajustes, **estado de la partida (`G`)**, guardado en el móvil | nada |
+| 2 | `datos/` | personajes y diseños pintados | 1 |
+| 3 | `mundo/` | escena 3D: motor, cielo, mar, ola, partículas, costa, delfines | 1–2 |
+| 4 | `surfista/` | el muñeco, su cuerpo, posturas, tabla y vehículos | 1–3 |
+| 5 | `juego/` | sesión, física, trucos, puntos y marcadores en pantalla | 1–4 |
+| 6 | `online/` y `modos/` | Firebase, otros jugadores, mensajes · bots y Disputa por el Pico (se usan entre sí) | 1–6 |
+| 7 | `interfaz/` | menú, récords, música, pantalla completa | 1–7 |
+| 8 | `entrada/` | controles (táctil y teclado) | 1–8 |
+| — | `js/` | `main.js`, `inicio.js`, `bucle.js`, `debug.js` | todo |
+
+Dentro de una misma carpeta los módulos pueden usarse entre sí (por ejemplo `juego/fisica.js` y `juego/trucos.js`).
 
 ```
-index.html              solo HTML de la interfaz + <script type="module" src="js/main.js">
-version.json            número de versión (lo lee el aviso de "hay versión nueva")
-css/estilo.css
-img/personajes/<id>/    cara.jpg, foto.jpg, tabla.jpg de cada personaje
-modelos/                cuerpo.glb (y en el futuro, la costa)
-audio/                  musica.mp4
-vendor.js               three.js + postprocessing ya empaquetados (window.THREE, window.POSTFX)
 js/
-  main.js               arranque: crea cada pieza, las conecta y lanza el bucle
-  three.js              export const THREE = window.THREE (el único sitio que lee vendor.js)
-  nucleo/               ← no sabe nada de three.js ni del HTML
-    config.js           constantes (duración de sesión, temporada, Firebase, calidad…)
-    util.js             clamp, lerp, rnd, sm…
-    eventos.js          avisos entre módulos: on('truco', fn) / emit('truco', datos)
-    guardado.js         todo lo que se guarda en el móvil (localStorage), con sus claves en un solo sitio
-    estado.js           la partida: puntos, multiplicador, ola actual, estado de la máquina
+  main.js              arranque: comprueba WebGL y carga inicio.js
+  inicio.js            importa todo en orden y arranca
+  bucle.js             bucle principal, cámara y dibujo de cada fotograma
+  debug.js             window.__surf (para probar desde la consola y para las pruebas automáticas)
+  nucleo/
+    util.js            $, clamp, lerp, sm, rnd, TAU, V3, angDiff, hex
+    eventos.js         avisar / escuchar
+    config.js          LOWQ (móvil), PQ, SESSION
+    estado.js          G: el estado de la partida, documentado campo a campo; keys, ptr, stick (lo que pide el jugador)
+    guardado.js        leer / guardar en el móvil (todas las claves en un sitio)
   datos/
-    personajes.js       la lista de personajes (antes CHARS)
-    tablas.js           diseños de tablas y quillas (antes DECKS, FINS)
-    trucos.js           nombres y puntos de los trucos
-  mundo/                ← la escena 3D; no conoce las reglas del juego
-    motor.js            renderer, luces, efectos de cámara, calidad automática
-    camara.js
-    shaders.js          GLSL compartido
+    personajes.js      CHARS (fichas), PHOTOS, FACES
+    disenos.js         DECKS (tablas), FINS (quillas), TORSOS (neoprenos), fotos de tablas
+  mundo/
+    motor.js           renderer, escena, cámara, luces, efectos, calidad automática, world (espejado), toScreen
+    formas.js          geometrías y cálculos de orientación reutilizables
+    shaders.js         GLSL compartido
     cielo.js  mar.js  ola.js  particulas.js  costa.js  delfines.js
   surfista/
-    cuerpo.js           cargar cuerpo.glb y mover los huesos
-    posturas.js         posturas base (de pie, tumbado, shaka…)
-    tabla.js            pintar la tabla y las quillas
-    rig.js              montar el muñeco completo de un personaje (el mío o el de otro jugador)
-    vehiculos/          un archivo por forma de surfear (ver más abajo)
-      surf.js  longboard.js  bodyboard.js  motoagua.js  kayak.js  zodiac.js  index.js
+    posturas.js        posturas del cuerpo y tabla POSTURAS por vehículo
+    raiz.js            boardRoot: el grupo que lleva tabla, vehículo y surfista
+    vehiculos.js       modelos de zodiac, kayak (con pala) y moto de agua
+    tabla.js           la tabla pintada y sus quillas
+    cuerpo.js          cuerpo con esqueleto (modelos/cuerpo.glb)
+    muneco.js          cabeza, pelo, gafas, gorra, pies… y applyPose
+    personaje.js       applyChar: viste el muñeco con un personaje; setBoardShape
+    rig.js             copias del muñeco para los demás jugadores
   juego/
-    sesion.js           máquina de estados: menú, remar, ponerse de pie, surfear, caída, fin
-    fisica.js           movimiento por la ola, giros, saltos, tubo
-    trucos.js           detectar trucos y dar puntos
-  entrada/
-    controles.js        táctil y teclado → una sola "intención" (girar, subir, truco)
-  interfaz/
-    menu.js  hud.js  chat.js  records.js  pantalla.js  musica.js
+    sesion.js          estados de la partida (tabla ESTADOS) y sus cambios: remar, ponerse de pie, caer, fin…
+    fisica.js          rideStep: movimiento por la ola; spray de la tabla
+    trucos.js          saltos, trucos en el aire, caídas, snaps
+    puntos.js          addPts, bump (multiplicador)
+    hud.js             marcadores, mensajes (say, chip, showTrick, toast) y pantallas
   online/
-    red.js              conectar con Firebase y login anónimo (firebaseListo)
-    protocolo.js        formato de los mensajes de red, en un solo sitio
-    jugadores.js        enviar mi estado y dibujar a los demás
-    mensajes.js         chat, notas de voz, empujones
-    salas.js            elegir sala (y abrir otra cuando esté llena)
+    red.js             Firebase: login anónimo (firebaseListo), MP, sala, inactividad
+    conexion.js        al empezar: bots o conexión a la sala
+    jugadores.js       mandar mi estado, dibujar a los demás, choques, clasificación
+    empujones.js       empujar y que te empujen
+    mensajes.js        chat, frases rápidas, notas de voz
   modos/
-    bots.js
-    disputa.js          Disputa por el Pico
-  debug.js              herramientas para probar (antes window.__surf)
+    bots.js            simulación con bots (sala #bots)
+    disputa.js         Disputa por el Pico
+    luchador.js        posturas y dibujo de los luchadores
+  interfaz/
+    menu.js  records.js  musica.js  pantalla.js
+  entrada/
+    controles.js       táctil y teclado; trickTap (botón TRUCO)
 ```
-
-### Quién puede importar de quién
-
-| Carpeta | Puede importar de |
-|---|---|
-| `nucleo/` | nada (solo de sí misma) |
-| `datos/` | `nucleo/` |
-| `mundo/`, `surfista/` | `nucleo/`, `datos/` |
-| `juego/`, `entrada/` | todo lo anterior |
-| `interfaz/`, `online/`, `modos/` | todo lo anterior |
-| `main.js` | todo |
 
 ## Las piezas clave
 
-### Eventos (`nucleo/eventos.js`)
-Un tablón de avisos muy simple. Por ejemplo: `juego/trucos.js` hace `emit('truco', { nombre, puntos })`, y `interfaz/hud.js` y `interfaz/records.js` se enteran sin que `trucos.js` sepa que existen. Esto sustituye a los parches actuales que reescriben `showTrick`, `endSession` y `showMenu`.
+### Estado de la partida (`nucleo/estado.js`)
+Un objeto `G` con todo lo que cambian varias partes del juego: `G.state`, `G.score`, `G.px`, `G.curlX`… Cada campo tiene un comentario que dice qué es. Lo que solo usa un módulo se queda como variable de ese módulo.
 
-Eventos previstos: `truco`, `ola-cogida`, `caida`, `fin-sesion`, `cambio-estado`, `menu`, `personaje`, `empujon`, `disputa`.
+### Avisos (`nucleo/eventos.js`)
+`avisar('truco', nombre, puntos)` y `escuchar('truco', (nombre, puntos) => …)`. Avisos que hay:
 
-### Máquina de estados (`juego/sesion.js`)
-Ahora el juego pregunta `if (state === 'ride')` y similares en más de 70 sitios. En la nueva estructura, cada estado es un objeto con tres funciones:
+| Aviso | Quién avisa | Quién escucha |
+|---|---|---|
+| `truco` | `juego/hud.js` (showTrick) | `interfaz/records.js` |
+| `fin-sesion` | `juego/sesion.js` | `interfaz/records.js` |
+| `menu` | `interfaz/menu.js` (showMenu) | `interfaz/records.js` |
+| `personaje` | `surfista/personaje.js` (applyChar) | `interfaz/menu.js` («Surfeas con…») |
+| `foto-tabla` | `datos/disenos.js` (carga una foto de tabla) | `surfista/personaje.js`, `interfaz/menu.js` |
+| `cuerpo-listo` | `surfista/cuerpo.js` | `surfista/muneco.js`, `online/jugadores.js` |
+| `tamano` | `mundo/motor.js` (resize) | `mundo/particulas.js` |
 
-```js
-remar: {
-  entrar() { … },        // al empezar a remar
-  actualizar(dt) { … },  // cada fotograma
-  salir() { … },         // al dejar de remar
-}
-```
+### Estados de la partida (`juego/sesion.js`)
+`ESTADOS` tiene una función por estado (`title`, `paddle`, `miss`, `popup`, `ride`, `wipe`, `over`) que se ejecuta cada fotograma y devuelve la postura del surfista. Las funciones que cambian de estado (`startPaddle`, `popUp`, `wipeout`, `endSession`…) están en el mismo archivo. La Disputa (`duel`) la lleva `modos/disputa.js`.
 
-Los estados son: `menu`, `escaparate` (elegir personaje), `remar`, `fallo`, `dePie`, `surfear`, `caida`, `entreOlas`, `disputa` y `fin`. Para añadir un estado nuevo (un minijuego, por ejemplo) basta con escribir un objeto así; no hay que tocar los demás.
-
-### Vehículos (`surfista/vehiculos/`)
-Ahora la moto, el kayak, la zodiac y el bodyboard se distinguen con cadenas tipo `CH.jetski ? … : CH.zodiac ? … : …` en 38 sitios. En la nueva estructura, cada forma de surfear es un archivo con lo que la hace distinta:
-
-```js
-export default {
-  id: 'kayak',
-  postura(pose, ctx) { … },     // cómo va colocado el cuerpo al surfear
-  remar(pose, ctx) { … },       // cómo rema
-  forma: 'kayak',               // forma de la tabla/barco
-  fisica: { giro: 0.8, … },     // si se mueve distinto
-}
-```
-
-El personaje solo dice `vehiculo: 'kayak'`. Para añadir un vehículo nuevo (paddle surf, por ejemplo), se crea un archivo nuevo y se registra en `index.js`.
+### Vehículos (`surfista/posturas.js`)
+`vehiculo(c)` dice si un personaje va en `tabla`, `bodyboard`, `moto`, `kayak` o `zodiac`, y `POSTURAS` dice cómo va el cuerpo en cada uno al surfear, remar y posar.
 
 ### Personajes (`datos/personajes.js` + `img/personajes/<id>/`)
-Cada personaje es una ficha de datos: nombre, colores, tabla, vehículo, estadísticas y sus fotos en la carpeta con su `id`. Añadir un personaje = añadir una ficha y una carpeta de fotos.
-
-### Protocolo de red (`online/protocolo.js`)
-Un solo sitio que define qué se envía y en qué formato (`dx`, `h`, `th`…). Cada mensaje lleva un número de versión (`v`), para que dos versiones distintas del juego no se líen si se cruzan en la misma ola mientras se actualiza.
+Cada personaje es una ficha de datos en `CHARS` y sus fotos en la carpeta con su `id`: `foto.jpg` (ficha del menú), `cara.jpg` (cara del muñeco) y, si su tabla sale de una foto, `tabla.jpg`.
 
 ### Guardado (`nucleo/guardado.js`)
-Todas las claves de `localStorage` (`surf-sagunto-char`, `surf-sagunto-nick`, `surf-dev`…) en un solo sitio, con el `try/catch` hecho una vez. **No se cambian los nombres de las claves**, o los jugadores perderían su personaje, su nombre y sus récords.
+`leer('personaje')`, `guardar('mejor', 1234)`… Todas las claves de `localStorage` en un sitio. **No se cambian los nombres de las claves**, o los jugadores perderían su personaje, su nombre y sus récords.
 
 ## Dónde va cada cosa
 
 | Quiero… | Toco… |
 |---|---|
-| Añadir un personaje | `datos/personajes.js` + `img/personajes/<id>/` |
-| Añadir un diseño de tabla | `datos/tablas.js` |
-| Añadir un truco | `datos/trucos.js` y, si tiene movimiento propio, `juego/trucos.js` |
-| Un vehículo nuevo | archivo nuevo en `surfista/vehiculos/` |
-| Cambiar cómo se ve el mar, la ola o el cielo | `mundo/mar.js`, `mundo/ola.js`, `mundo/cielo.js` |
+| Añadir un personaje | su ficha en `datos/personajes.js` + sus fotos en `img/personajes/<id>/` (y si tiene tabla pintada nueva, su dibujo en `datos/disenos.js`). Después, `herramientas/pruebas/datos.js` comprueba que no falta nada |
+| Cambiar cómo se ve el mar, la ola o el cielo | `mundo/mar.js`, `mundo/ola.js`, `mundo/cielo.js` (y lo común en `mundo/shaders.js`) |
 | Algo del Pantalán o la costa | `mundo/costa.js` |
 | Cambiar cómo se mueve el surfista | `juego/fisica.js` |
-| Un botón o panel nuevo | `index.html` + `css/estilo.css` + su módulo en `interfaz/` |
-| Algo del online | `online/` (y las reglas en `firebase-reglas.json`) |
-| Un modo de juego nuevo | archivo nuevo en `modos/` + su estado en `juego/sesion.js` |
+| Un truco nuevo | `juego/trucos.js` (en el aire) o `juego/fisica.js` (en la ola) |
+| Un vehículo nuevo | su modelo en `surfista/vehiculos.js`, sus posturas en `POSTURAS` (`surfista/posturas.js`), su forma en `setBoardShape` (`surfista/personaje.js`) y su bandera en la ficha |
+| Un mensaje o marcador en pantalla | `juego/hud.js` (+ el HTML en `index.html` y el estilo en `css/estilo.css`) |
+| Un botón o panel del menú | `index.html` + `css/estilo.css` + `interfaz/menu.js` |
+| Algo del online | `online/` (y si cambia lo que se envía, las reglas en `firebase-reglas.json`: ver [FIREBASE.md](FIREBASE.md)) |
+| Un modo de juego nuevo | archivo nuevo en `modos/` + su estado en `G.state` (como la Disputa) |
+| Algo que se guarde en el móvil | una clave nueva en `nucleo/guardado.js` |
 
 ## Cosas a tener en cuenta
 
-- **Caché de GitHub Pages:** guarda los archivos ~10 minutos. Justo después de publicar, un móvil podría mezclar módulos viejos y nuevos. Para un juego entre amigos es aceptable; si da problemas, se resuelve con un service worker (fase 6).
-- **Los módulos necesitan servidor:** igual que ahora, hay que probar con `python -m http.server`, no abriendo el archivo con doble clic.
-- **`vendor.js` sigue como está** (`window.THREE`). Los módulos lo leen a través de un pequeño `js/three.js` que hace `export const THREE = window.THREE`, para poder cambiarlo en el futuro en un solo sitio.
+- **`THREE` es global** (lo pone `vendor.js`); los módulos no lo importan.
+- **El mundo está espejado en X** (`world.scale.x = -1`): dentro de `world`, +x va hacia la izquierda de la pantalla. Por eso la cámara usa `-camPos.x`.
+- **Caché de GitHub Pages:** guarda los archivos ~10 minutos. `herramientas/nueva-version.mjs` pone `?v=` en `js/main.js` y el CSS, pero los demás módulos pueden tardar esos minutos en actualizarse. Para un juego entre amigos es aceptable; si da problemas, se resuelve con un service worker (fase 6 del plan).
+- **Los módulos necesitan servidor:** hay que probar con `python -m http.server`, no abriendo el archivo con doble clic.

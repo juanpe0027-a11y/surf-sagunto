@@ -66,44 +66,32 @@ Cambios sin riesgo que hacen el juego bastante más ligero. El juego debe verse 
 
 **Hecho cuando:** las pruebas automáticas y la lista de `CLAUDE.md` pasan, y la página pesa mucho menos. ✅
 
-## Fase 3 — Estructura sólida (refactor) ⬜
+## Fase 3 — Estructura sólida (refactor) ✅
 
-Pasar del script único de ~3.500 líneas a la estructura descrita en **[ARQUITECTURA.md](ARQUITECTURA.md)**: módulos nativos del navegador, sin compilación, organizados en capas, con eventos en vez de parches, una máquina de estados, y los vehículos y personajes como datos.
+El script único de ~3.500 líneas es ahora **45 módulos** en `js/`, organizados por capas: ver **[ARQUITECTURA.md](ARQUITECTURA.md)**. El juego se juega igual: todas las pruebas pasan (los 12 personajes, bots, Disputa, online con dos jugadores y las 47 reglas).
 
-Es la fase más importante. Después de ella:
-- cada cambio toca un archivo de 100–400 líneas, y Claude se equivoca mucho menos;
-- añadir un personaje es añadir una ficha y unas fotos; un vehículo o un modo de juego, un archivo nuevo;
-- las fases 4 y 5 se hacen sobre módulos concretos (`online/`, `mundo/`) sin riesgo de romper el resto.
+Cómo se hizo: primero se preparó el código dentro del archivo único (avisos en vez de parches, `update()` partido en funciones), y después se partió con una herramienta que analiza el código (qué usa cada parte, qué variables se escriben desde varios sitios), para no dejarse ninguna referencia. Luego se pulió a mano cada módulo.
 
-**Regla de oro de esta fase: el juego no cambia.** Ni física, ni colores, ni textos. Solo se mueve código de sitio. Si se ve algo que mejorar, se apunta para después.
+- [x] 3.1 El script pasa a módulos (`js/main.js` comprueba WebGL y carga `js/inicio.js`). No hizo falta `js/three.js`: `THREE` sigue siendo global
+- [x] 3.2 Red de seguridad: `herramientas/pruebas.html` (en el navegador, sin instalar nada) y `herramientas/pruebas/datos.js` (fotos, diseños y vehículo de cada personaje)
+- [x] 3.3 Núcleo: `util.js`, `eventos.js`, `config.js`, `estado.js` y `guardado.js` (todas las claves del móvil en un sitio, con los mismos nombres)
+- [x] 3.4 Fuera los parches: los récords escuchan los avisos `truco`, `fin-sesion` y `menu`
+- [x] 3.5 Datos: `datos/personajes.js` y `datos/disenos.js`
+- [x] 3.6 Mundo: motor, shaders, cielo, mar, ola, partículas, costa y delfines
+- [x] 3.7 Surfista: posturas, cuerpo, muñeco, tabla, vehículos, personaje y rig. Las cadenas `CH.jetski ? … : CH.zodiac ? …` de las posturas son ahora la tabla `POSTURAS` (un archivo por vehículo no compensaba: cada vehículo son tres líneas)
+- [x] 3.8 Estado de la partida: 79 variables en `G` (`nucleo/estado.js`), documentadas una a una
+- [x] 3.9 Estados de la partida como tabla `ESTADOS` (una función por estado) en `juego/sesion.js`; física y trucos aparte
+- [x] 3.10 Interfaz y controles
+- [x] 3.11 Online y modos (el `protocolo.js` con el formato de red pasa a la fase 4, que es cuando se va a cambiar ese formato)
+- [x] 3.12 Cierre: `debug.js`, `index.html` solo con HTML, CSS y HTML de la Disputa en su sitio, `herramientas/capas.mjs` y documentación al día
 
-⚠️ **Mientras dure esta fase, Juanpe no debería cambiar `index.html` en `main`**: cada cambio suyo en el archivo grande habría que trasladarlo a mano a los módulos nuevos. Si necesita cambiar algo, mejor hacerlo sobre la rama `mejoras`, o avisar para traerlo antes del siguiente paso.
+Cambios pequeños que sí se notan (a propósito): el kayak rema igual de rápido cuando pierde la ola que cuando rema (antes iba más lento esos 2 segundos); y se han quitado el botón «Descargar juego» y la carga de `cuerpo.txt`, que solo funcionaban dentro de Claude.
 
-Pasos (cada uno es un commit, y después de cada uno se pasan las pruebas):
-
-| Paso | Qué se hace | Riesgo |
-|---|---|---|
-| 3.1 | **Convertir a módulo.** El script pasa tal cual a `js/main.js` y se carga con `<script type="module">`. Crear `js/three.js`. | Bajo |
-| 3.2 | **Red de seguridad.** Página `pruebas.html` que carga los módulos y comprueba cosas básicas: que cada personaje tiene sus fotos y un vehículo válido, que la física no da números raros (`NaN`). Crecerá con cada paso. | Bajo |
-| 3.3 | **Núcleo.** Sacar `util.js`, `config.js`, `guardado.js` (todas las claves de `localStorage` en un sitio, **sin cambiar sus nombres**) y `eventos.js`. | Bajo |
-| 3.4 | **Quitar los parches.** `records` deja de reescribir `showTrick`, `endSession` y `showMenu`; pasa a escuchar los eventos `truco`, `fin-sesion` y `menu`. | Medio |
-| 3.5 | **Datos.** Sacar `personajes.js`, `tablas.js` y `trucos.js` a `datos/`. | Bajo |
-| 3.6 | **Mundo.** Sacar a `mundo/` el motor, la cámara, los shaders, el cielo, el mar, la ola, las partículas, la costa y los delfines. Cada uno recibe la escena; no toca el estado del juego. | Medio |
-| 3.7 | **Surfista y vehículos.** Sacar cuerpo, posturas, tabla y rig a `surfista/`. Sustituir las 38 cadenas `CH.jetski ? … : CH.zodiac ? …` por `vehiculos/<tipo>.js`. | Medio |
-| 3.8 | **Estado de la partida.** Juntar las ~60 variables sueltas (`score`, `px`, `air`, `mult`…) en `nucleo/estado.js`. Es un cambio mecánico, pero toca muchas líneas. | Alto |
-| 3.9 | **Máquina de estados y física.** Partir `update()` en estados con `entrar` / `actualizar` / `salir` (`juego/sesion.js`) y sacar `fisica.js` y `trucos.js`. | Alto |
-| 3.10 | **Interfaz y controles.** Sacar menú, HUD, chat, récords, pantalla completa, música y controles. | Medio |
-| 3.11 | **Online y modos.** Sacar `online/` (con `protocolo.js` como único sitio del formato de red), `modos/bots.js` y `modos/disputa.js`. | Medio |
-| 3.12 | **Cierre.** `window.__surf` pasa a `debug.js`, `index.html` queda solo con HTML, se actualizan `CLAUDE.md` y `ARQUITECTURA.md` con lo que haya cambiado, y se publica. | Bajo |
-
-Para los pasos de riesgo alto (3.8 y 3.9): además de las pruebas automáticas, jugar una sesión entera de 3 minutos a mano.
-
-Se puede publicar (unir a `main`) al terminar cualquier paso que deje el juego funcionando, sin esperar al final. Recomendado: publicar tras 3.5, tras 3.9 y al terminar.
-
-**Hecho cuando:** `index.html` no tiene lógica, ningún archivo de `js/` pasa de ~400 líneas, no queda ninguna función reescrita por otro módulo, y todas las pruebas pasan.
+⚠️ Los cambios que Juanpe haga a partir de ahora en `main` sobre el `index.html` antiguo no encajan directamente en los módulos: hay que trasladarlos a mano al módulo que toque. Lo mejor es unir esta rama a `main` cuanto antes y seguir ya sobre la estructura nueva.
 
 ## Fase 4 — Online para más gente ⬜
 
+- **`online/protocolo.js`**: el formato de lo que se envía por la red en un solo sitio (ahora está repartido entre jugadores, empujones, mensajes y disputa)
 - **Salas con tope**: máximo ~10–12 jugadores por ola; si está llena, se abre `pantalan-2` automáticamente
 - **Mensajes más ligeros**: menos actualizaciones por segundo cuando no hace falta (el juego ya suaviza el movimiento entre una y otra) y solo lo que cambia
 - Medir el consumo real en la consola de Firebase (Realtime Database → Uso) antes y después

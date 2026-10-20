@@ -4,53 +4,60 @@ Juego de surf 3D de navegador (three.js + Firebase). Lo mantiene **Juanpe, que n
 
 **Antes de hacer cualquier cambio, lee [docs/PLAN.md](docs/PLAN.md)**: ahí están las fases de mejora, en cuál estamos y qué falta. Si terminas una tarea del plan, márcala como hecha en ese archivo.
 
-**Para saber dónde va cada cosa en el código, lee [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md).** Describe la estructura a la que estamos migrando; mientras la migración no termine, el código viejo sigue en `index.html`.
+**Para saber dónde va cada cosa en el código, lee [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md).** Tiene el mapa de los módulos, las capas y una tabla de «quiero… → toco…».
 
 ## Reglas que no se rompen
 
 1. **Todo gratis.** Firebase se queda en el plan **Spark** (gratuito); nunca propongas pasar a Blaze ni usar servicios de pago. Hosting: GitHub Pages. Cloud Storage de Firebase **no** está disponible en Spark: no lo uses.
 2. **Sin paso de compilación.** Nada de npm, Vite, webpack ni TypeScript. Archivos que el navegador carga tal cual. `vendor.js` es la única excepción (ya viene empaquetado; no se regenera salvo para actualizar three.js).
 3. **Nada de imágenes o audio en base64 dentro del código.** Van como archivos en `img/` (o `audio/`) y se cargan por URL.
-4. **No hagas crecer `index.html`.** En cuanto empiece la fase 3 del plan, el código nuevo va en su módulo de `js/`, no en el script gigante.
+4. **Cada cosa en su módulo, y las capas en orden.** El código va en `js/`, en el módulo que le toca según [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md). Ningún módulo importa de una capa de arriba (`node herramientas/capas.mjs` lo comprueba); para avisar hacia arriba se usa `avisar` / `escuchar`. Si un archivo pasa de ~400 líneas, pártelo.
 5. **Trabaja en una rama, nunca directamente en `main`.** `main` se publica sola en GitHub Pages: lo que se sube ahí lo juega la gente al momento. Las mejoras van en la rama `mejoras` (o una rama nueva por tarea) y se unen a `main` solo cuando se han probado.
 6. **Un cambio cada vez, y probado.** Después de cada cambio, pasa las pruebas de abajo antes de seguir.
 7. **Si cambias lo que se envía por la red** (un campo nuevo en el jugador o en un mensaje), añádelo también a `firebase-reglas.json` y a sus pruebas: las reglas rechazan los campos que no conocen. Ver [docs/FIREBASE.md](docs/FIREBASE.md).
 
-## Cómo está montado (a día de hoy)
+## Cómo está montado
 
 | Archivo | Qué es |
 |---|---|
-| `index.html` | El HTML y un único script de ~3.500 líneas con todo el juego (se partirá en módulos en la fase 3) |
-| `css/estilo.css` | Estilos del menú, HUD y paneles |
+| `index.html` | El HTML del juego (menú, marcadores, paneles); carga `vendor.js`, Firebase y `js/main.js` |
+| `js/` | El código, en módulos por capas: ver [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md) |
+| `css/estilo.css` | Estilos del menú, marcadores, paneles y la Disputa |
 | `img/personajes/<id>/` | `foto.jpg` (ficha del menú), `cara.jpg` (cara del muñeco 3D), `tabla.jpg` (si la tabla sale de una foto) |
-| `vendor.js` | three.js 0.186.1 + GLTFLoader + SkeletonUtils + postprocessing 6.39.5 (expone `window.THREE` y `window.POSTFX`) |
+| `vendor.js` | three.js 0.186.1 + GLTFLoader + SkeletonUtils + postprocessing 6.39.5 (deja `THREE` y `POSTFX` globales) |
 | `modelos/cuerpo.glb` | Cuerpo humano con esqueleto (Xbot de three.js) |
 | `audio/musica.mp4`, `icono.png` | Música e icono |
 | `version.json` | Número de la versión publicada |
 | `firebase-reglas.json` | Reglas de la Realtime Database. **Cambiarlas aquí no hace nada**: hay que publicarlas en la consola de Firebase ([docs/FIREBASE.md](docs/FIREBASE.md)) |
 | `firebase.json`, `.firebaserc` | Configuración de la herramienta de Firebase (emulador local y publicar reglas) |
-| `herramientas/` | Pruebas automáticas (no las carga el juego) |
+| `herramientas/` | Pruebas y utilidades para desarrollar (el juego no las usa) |
 
-Secciones del script (buscar el comentario `// ---------- nombre ----------`): utilidades, motor, efectos de cámara, GLSL compartido, cielo, mar, la ola, partículas, el surfista, diseños de tablas, cuerpo humano, la costa, estado del juego, personajes (`CHARS`), música, pantalla completa, física de la ola, bucle principal, delfines, controles, MODO ONLINE, SIMULACIÓN CON BOTS, DISPUTA POR EL PICO, RÉCORDS.
+**Online:** no hay ola compartida. Cada jugador simula su propia ola y publica en `v2/salas/<sala>/players/<uid>` su posición *relativa al tubo* (~8 veces/s). Los demás lo dibujan en ese punto de su ola. Eventos (empujón, disputa, golpe), chat y notas de voz van por `v2/salas/<sala>/msgs`. Récords en `v2/records/<temporada>/<uid>`. `<uid>` es el del login anónimo de Firebase (`firebaseListo()` en `js/online/red.js`). La sala se elige con `#nombre` en la URL (por defecto `pantalan`; `#bots` juega con bots sin conexión). Detalles y reglas: [docs/FIREBASE.md](docs/FIREBASE.md).
 
-**Online:** no hay ola compartida. Cada jugador simula su propia ola y publica en `v2/salas/<sala>/players/<uid>` su posición *relativa al tubo* (~8 veces/s). Los demás lo dibujan en ese punto de su ola. Eventos (empujón, disputa, golpe), chat y notas de voz van por `v2/salas/<sala>/msgs`. Récords en `v2/records/<temporada>/<uid>`. `<uid>` es el del login anónimo de Firebase (`firebaseListo()`). La sala se elige con `#nombre` en la URL (por defecto `pantalan`; `#bots` juega con bots sin conexión). Detalles y reglas: [docs/FIREBASE.md](docs/FIREBASE.md).
+Opciones en la URL: `#sala`, `#bots`, `?emulador` (usa el emulador local de Firebase), `?sinred` (no se conecta a nada; lo usan las pruebas).
 
 ## Publicación
 
 - Este repo (`juanpe0027-a11y/surf-sagunto`, público) es el único con el que se trabaja. GitHub Pages publica la rama **`main`** en **https://juanpe0027-a11y.github.io/surf-sagunto/**.
 - ⚠️ **Subir a `main` = publicar al momento para todos los jugadores.** Por eso no se trabaja en `main`: se trabaja en una rama, se prueba, y se une a `main` solo cuando funciona.
 - El repo `surf-sagunto-privado` era una copia; ya no se usa.
-- Al publicar una versión nueva, ejecuta `node herramientas/nueva-version.mjs`: pone el mismo número nuevo en `BUILD_ID` (al final de `index.html`) y en `version.json`, y añade `?v=` a los CSS y JS propios. Así los móviles que tienen el juego abierto se recargan solos y no se quedan con archivos viejos de la caché. Sin Node, cambia a mano el número en esos sitios (el mismo en todos, y mayor que el anterior).
+- Al publicar una versión nueva, ejecuta `node herramientas/nueva-version.mjs`: pone el mismo número nuevo en `BUILD_ID` (al final de `index.html`) y en `version.json`, y añade `?v=` a `js/main.js` y al CSS. Así los móviles que tienen el juego abierto se recargan solos y no se quedan con archivos viejos de la caché. Sin Node, cambia a mano el número en esos sitios (el mismo en todos, y mayor que el anterior).
 - El repo es público: no metas aquí contraseñas ni datos personales (la configuración de Firebase sí puede estar, es normal que sea pública).
 
 ## Cómo probar
 
-### Pruebas automáticas (recomendado)
+### Sin instalar nada: `herramientas/pruebas.html`
+
+Sirve la carpeta (`python -m http.server 8000`) y abre `http://localhost:8000/herramientas/pruebas.html` (o, ya publicado, `https://juanpe0027-a11y.github.io/surf-sagunto/herramientas/pruebas.html`). Pulsa «Empezar las pruebas»: el juego se juega solo con cada personaje, con bots y en la Disputa, y cada prueba sale en verde o en rojo con lo que ha fallado. No se conecta al online.
+
+### Pruebas automáticas (con Node)
 
 Necesitan Node 22 o más y Chrome o Edge. Abren el juego en un Chrome sin ventana, juegan solas y avisan de cualquier error. **Por defecto bloquean Firebase**, así que no ensucian la base de datos real.
 
 ```
-node herramientas/probar.mjs herramientas/pruebas/partida.js        # una ola con cada personaje, menú y récords
+node herramientas/capas.mjs                                            # nadie importa de una capa de arriba
+node herramientas/probar.mjs herramientas/pruebas/datos.js             # fotos, diseños y vehículo de cada personaje
+node herramientas/probar.mjs herramientas/pruebas/partida.js           # una ola con cada personaje, menú y récords
 node herramientas/probar.mjs herramientas/pruebas/bots.js --hash=bots  # bots y Disputa por el Pico
 ```
 
@@ -66,7 +73,7 @@ node herramientas/probar.mjs herramientas/pruebas/online.js --emulador --jugador
 
 ### A mano
 
-Hay que servir la carpeta (abrir el archivo con doble clic no deja cargar `cuerpo.glb`):
+Hay que servir la carpeta (abrir el archivo con doble clic no deja cargar los módulos):
 
 ```
 python -m http.server 8000
@@ -74,11 +81,11 @@ python -m http.server 8000
 
 y abrir `http://localhost:8000/#pruebas` (**usa siempre una sala de pruebas** como `#pruebas`: la base de datos es la misma que la del juego real). Para jugar contra bots: `http://localhost:8000/#bots`. Para usar el emulador: `http://localhost:8000/?emulador#pruebas`.
 
-⚠️ Sin el emulador, los récords que hagas probando se guardan en el ranking real.
+⚠️ Sin el emulador ni `?sinred`, los récords que hagas probando se guardan en el ranking real.
 
 ### Lista de pruebas después de cada cambio
 
-- [ ] Las pruebas automáticas pasan (o, si no se pueden usar, todo lo de abajo)
+- [ ] Las pruebas automáticas o `herramientas/pruebas.html` pasan (si no se pueden usar, todo lo de abajo)
 - [ ] Carga sin errores en la consola del navegador (F12 → Consola)
 - [ ] Menú: se ven las fichas de todos los personajes con su cara
 - [ ] Remar, coger la ola, girar, tubo, salto con truco y caída
@@ -90,9 +97,10 @@ y abrir `http://localhost:8000/#pruebas` (**usa siempre una sala de pruebas** co
 
 ## Estilo del código
 
-- Los archivos del repo tienen finales de línea de Windows (CRLF). Edítalos con la herramienta de edición, **no con `sed -i`**: lo convierte todo a LF y git ve el archivo entero como cambiado, lo que provoca conflictos con los cambios de Juanpe.
-
-- Comentarios y nombres de la interfaz en **español**, explicando el *porqué* en una línea, como el código actual.
-- Personajes: los datos de cada uno van en `CHARS` (y fotos en `img/`); añadir un personaje no debería requerir tocar la física ni el online.
-- No dupliques código para un personaje concreto: usa las banderas que ya existen (`bodyboard`, `jetski`, `kayak`, `zodiac`, `board: 'long'`…).
-- Si tienes que cambiar el comportamiento de una función de otra sección, cámbiala en su sitio; no la reescribas por encima (`showTrick = function…` es un ejemplo de lo que no hay que hacer).
+- Comentarios y textos del juego en **español**, explicando el *porqué* en una línea. Cada módulo empieza con un comentario que dice para qué sirve.
+- El estado compartido de la partida va en `G` (`js/nucleo/estado.js`), con un comentario por campo. Lo que solo usa un módulo se queda en ese módulo.
+- Personajes: los datos de cada uno van en `CHARS` (y fotos en `img/personajes/<id>/`); añadir un personaje no debería requerir tocar la física ni el online.
+- No dupliques código para un personaje o vehículo concreto: usa las banderas de la ficha (`bodyboard`, `jetski`, `kayak`, `zodiac`, `board: 'long'`…) y la tabla `POSTURAS` (`js/surfista/posturas.js`).
+- Si tienes que cambiar el comportamiento de una función de otro módulo, cámbiala en su sitio; no la reescribas por encima. Para enterarte de algo que pasa en otro módulo, usa `escuchar`.
+- Lo que se guarda en el móvil, con `leer` / `guardar` (`js/nucleo/guardado.js`); nunca `localStorage` directamente.
+- `index.html` tiene finales de línea de Windows (CRLF). Edítalo con la herramienta de edición, **no con `sed -i`**: lo convierte todo a LF y git ve el archivo entero como cambiado.
