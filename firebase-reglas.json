@@ -1,0 +1,37 @@
+{
+  "rules": {
+    "salas": {
+      "$sala": {
+        "players": {
+          ".read": true,
+          "$pid": {
+            ".write": true,
+            ".validate": "newData.val() == null || (newData.hasChildren(['ch', 'st']) && newData.child('ch').isString() && newData.child('ch').val().length < 20)"
+          }
+        },
+        "msgs": {
+          ".read": true,
+          ".indexOn": [
+            "at"
+          ],
+          "$mid": {
+            ".write": true,
+            ".validate": "newData.val() == null || (newData.child('at').isNumber() && (newData.child('ev').exists() ? ((newData.child('ev').val() == 'push' || newData.child('ev').val() == 'duel' || newData.child('ev').val() == 'hit') && newData.child('to').isString() && newData.child('to').val().length < 40) : newData.child('tx').exists() ? (newData.child('tx').isString() && newData.child('tx').val().length <= 80) : (newData.child('au').isString() && newData.child('au').val().length < 400000)))"
+          }
+        }
+      }
+    },
+    "stats": {
+      ".read": true,
+      ".indexOn": [
+        "best",
+        "bestWave",
+        "season"
+      ],
+      "$dev": {
+        ".write": "newData.exists() && $dev.length <= 24",
+        ".validate": "newData.hasChildren(['nm', 'best', 'bestWave']) && newData.child('nm').isString() && newData.child('nm').val().length <= 20 && newData.child('best').isNumber() && newData.child('best').val() >= 0 && newData.child('best').val() < 5000000 && newData.child('bestWave').isNumber() && newData.child('bestWave').val() >= 0 && newData.child('bestWave').val() < 5000000 && newData.child('season').val() == 2 && (!data.exists() || data.child('season').val() != 2 || newData.child('best').val() >= data.child('best').val())"
+      }
+    }
+  }
+}
