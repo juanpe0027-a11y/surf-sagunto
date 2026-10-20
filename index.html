@@ -435,7 +435,7 @@ function setupFX() {
 const fxV = new THREE.Vector3();
 function renderFrame(dt) {
   if (FX.composer && FX.on) {
-    if (FX.dof) { boardRoot.getWorldPosition(fxV); FX.dof.cocMaterial.focusDistance = Math.max(4, camera.position.distanceTo(fxV)); }
+    if (FX.dof) { boardRoot.getWorldPosition(fxV); FX.dof.cocMaterial.focusDistance = state === 'duel' ? camPos.distanceTo(camLook) : Math.max(4, camera.position.distanceTo(fxV)); }
     FX.composer.render(dt);
   } else renderer.render(scene, camera);
 }
@@ -2301,6 +2301,7 @@ function doTrick(n) {
 // en la ola, TRUCO gira la tabla 180°: hacia el tubo (en contra de la ola) y, otra vez, hacia fuera
 let btnTurn = null, fs = null;
 function trickTap() {
+  if (state === 'duel') { if (typeof duelSwing === 'function') duelSwing(); return; }
   if (state === 'ride' && !air) {
     if (typeof tryPush === 'function' && tryPush()) return;     // modo online: pegado a otro surfista, TRUCO lo empuja
     if (fs) return;
@@ -2651,7 +2652,7 @@ function update(dt) {
   clock += dt; gtime += dt;
   for (const m of [skyMat, oceanMat, waveMat, partMat]) m.uniforms.time.value = clock;
   if (msgTimer > 0) { msgTimer -= dt; if (msgTimer <= 0) promptEl.hidden = true; }
-  if (state !== 'title' && state !== 'over') { sessionT -= dt; clockEl.textContent = fmtClock(sessionT); }
+  if (state !== 'title' && state !== 'over' && state !== 'duel') { sessionT -= dt; clockEl.textContent = fmtClock(sessionT); }
   let pose = null;
 
   if (state === 'title' && menuView === 'chars') {
@@ -2721,6 +2722,9 @@ function update(dt) {
     }
     landT += dt;
     pose = riderStance(poseA, crouch, air ? grab : 0, clock, air ? 0 : -bank * 0.8, air ? 0 : twistAmt);
+  } else if (state === 'duel') {
+    boardRoot.visible = false;
+    if (typeof duelUpdate === 'function') duelUpdate(dt);
   } else if (state === 'wipe' || state === 'over') {
     wipeT += dt; curlX += curlSpeed * dt;
     if (boardRoot.visible) {
@@ -2791,6 +2795,8 @@ function update(dt) {
       desLook.set(desPos.x + Math.sin(yaw) * 60, 6 + 6 * sm(1.4, 2.6, yaw), desPos.z - Math.cos(yaw) * 60);
       k = 1.5;
     }
+  } else if (state === 'duel' && typeof duelCam === 'function') {
+    duelCam(desPos, desLook, far); k = 3;
   } else if (state === 'miss') {
     desPos.set(sp.x - 3, 4.5, sp.z + 18 * far);
     desLook.set(sp.x - 3, 1.5, sp.z - 3);
@@ -2814,7 +2820,7 @@ function update(dt) {
   camera.lookAt(-camLook.x, camLook.y, camLook.z);  sky.position.copy(camPos);
   ocean.position.x = camPos.x; ocean.position.z = camPos.z;
   coast.position.x = camPos.x * 0.92;
-  north.position.x = camPos.x;
+  north.position.x = state === 'duel' && typeof DUEL !== 'undefined' && DUEL.on ? DUEL.ax + DUEL.pOff : camPos.x;   // en la disputa, el Pantalán se queda al lado
 
   // marcadores
   if (state !== 'title' && state !== 'over') {
@@ -2823,7 +2829,7 @@ function update(dt) {
     multArc.style.strokeDashoffset = (276.5 * (1 - clamp((mult - 1) / 2, 0, 1))).toFixed(1);
     wavePtsEl.textContent = Math.floor(wavePts);
   }
-  const showPads = !hud.hidden && (state === 'ride' || state === 'popup' || state === 'paddle');
+  const showPads = !hud.hidden && (state === 'ride' || state === 'popup' || state === 'paddle' || state === 'duel');
   padStick.hidden = padTricks.hidden = !showPads;
   if (showPads) drawStick();
   if (state === 'ride' || state === 'popup') {
@@ -2994,7 +3000,7 @@ function buildRig(c) {
     strands: strands.map(s => s.map(g)), pony: g(L.pony), pose: mkPose(), faceYaw: new THREE.Quaternion(), mats: [...matMap.values()], texs: [...texDone.values()] };
   for (const k in L) rig.L[k] = g(L[k]);
   for (const k in J) rig.J[k] = g(J[k]);
-  rig.rider = g(rider); rig.paddle = g(paddle);
+  rig.rider = g(rider); rig.paddle = g(paddle); rig.board = g(boardMesh);
   rig.human = makeHuman(c); if (rig.human) r.add(rig.human.root);
   r.visible = false; world.add(r);
   return rig;
@@ -3070,6 +3076,7 @@ function gotPushed(name) {
 }
 function updateBots(dt) {
   for (const b of BOTS) {
+    if (b.st === 'duel') continue;
     b.t += dt; b.pushCD = Math.max(0, b.pushCD - dt);
     if (b.st === 'wipe') {
       if (b.t > 2.5) { b.st = 'paddle'; b.t = 0; b.dx = rnd(4, 10); b.h = 0.05; }
@@ -3100,7 +3107,7 @@ function updateBots(dt) {
       if (state === 'ride' && !air && b.pushCD === 0 && rideT > 4) {
         const rx = curlX + b.dx;
         if (Math.abs(rx - px) < 1.6 && Math.abs(b.h - h) < 0.2 && Math.random() < dt * 0.5) {
-          b.pushCD = 7; botSay(b, '💪'); splash(boardRoot.position, 60, 1.2); gotPushed(b.nm);
+          b.pushCD = 7; botSay(b, '💪'); splash(boardRoot.position, 60, 1.2); gotPushed(b.nm); duelCount(MP.remotes.get(b.id));
         }
       }
       if (b.rideT > 28) { b.score += b.wave; b.wave = 0; b.st = 'wipe'; b.t = 1.2; }
@@ -3137,6 +3144,7 @@ function myStatus() {
   if (state === 'ride' || state === 'popup') return air ? 'air' : 'ride';
   if (state === 'paddle' || state === 'miss') return 'paddle';
   if (state === 'wipe') return 'wipe';
+  if (state === 'duel') return 'duel';
   return 'menu';
 }
 const r2 = n => Math.round(n * 100) / 100;
@@ -3145,7 +3153,11 @@ function mpSend(dt) {
   MP.sendT -= dt;
   if (MP.sendT > 0) return;
   const st = myStatus();
-  MP.sendT = st === 'menu' ? 2 : 0.125;
+  MP.sendT = st === 'menu' ? 2 : st === 'duel' ? 0.1 : 0.125;
+  if (st === 'duel' && DUEL.on) {
+    MP.meRef.set({ ch: CH.id, nm: MP.myName || CH.name, st, du: DUEL.oppId, dx: r2(DUEL.myU), h: DUEL.myHp, gr: DUEL.swN, sc: Math.floor(score), t: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
+    return;
+  }
   MP.meRef.set({ ch: CH.id, nm: MP.myName || CH.name, st, dx: r2(px - curlX), h: r2(h), th: r2(theta), bk: r2(bank), cr: r2(crouch),
     gr: r2(grab), ay: r2(air ? aPos.y : 0), sp: r2(spin), fl: r2(flip), pr: r2(paddlePh % TAU), sc: Math.floor(score), t: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
 }
@@ -3163,7 +3175,12 @@ function upsertPeer(id, pr) {
     MP.remotes.set(id, R);
   }
   if (R.chId !== ch.id) { if (R.rig) disposeRig(R.rig); R.rig = buildRig(ch); R.chId = ch.id; }
+  const wasSt = R.st;
   R.ch = ch; R.st = typeof pr.st === 'string' ? pr.st : 'menu';
+  R.du = typeof pr.du === 'string' ? pr.du : '';
+  if (R.st === 'duel' && wasSt !== 'duel' && R.du && R.du !== MP.myId && id < R.du) {
+    const O = MP.remotes.get(R.du); chip('⚔️ Disputa por el Pico: ' + (pr.nm || ch.name) + ' contra ' + (O ? O.nm || O.ch.name : 'otro surfista'));
+  }
   R.nm = typeof pr.nm === 'string' ? pr.nm.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 20) : ch.name;
   R.label.querySelector('b').textContent = R.nm || ch.name;
   for (const k of KEYS_NUM) { const v = Number(pr[k]); R.tgt[k] = isFinite(v) ? v : 0; if (!(k in R.cur)) R.cur[k] = R.tgt[k]; }
@@ -3202,7 +3219,7 @@ function mpUpdate(dt) {
     if (Math.abs(R.tgt.dx - R.cur.dx) > 25) R.cur.dx = R.tgt.dx;     // ha cambiado de ola: sin arrastre
     R.msgT = Math.max(0, R.msgT - dt);
     if (R.msgT === 0) R.label.querySelector('.mpbub').hidden = true;
-    const vis = showAll && R.st !== 'menu' && R.st !== 'wipe';
+    const vis = showAll && state !== 'duel' && R.st !== 'menu' && R.st !== 'wipe' && R.st !== 'duel';
     R.rig.root.visible = vis;
     if (!vis) { R.label.hidden = true; continue; }
     const c = R.cur, rx = curlX + c.dx, root = R.rig.root;
@@ -3277,6 +3294,7 @@ function tryPush() {
   splash(best.rig.root.position, 70, 1.4);
   const got = addPts(300); chip('💪 Has tirado a ' + name); showTrick('Empujón a ' + name, got); bump(0.1);
   v = Math.max(6, v - 1); crouch = 1;
+  duelCount(best);
   return true;
 }
 // cada personaje solo puede llevarlo una persona a la vez
@@ -3307,17 +3325,17 @@ function waveLength(dt) {
 // clasificación de los que están en la sala
 const boardEl = $('mpBoard'); let boardT = 0;
 const padLab = document.querySelector('#padTricks .lab');
-let pushShown = false;
+let pushShown = 0;
 function updatePushHint() {
-  const can = !!pushTarget();
-  if (can !== pushShown) { pushShown = can; padLab.textContent = can ? '💪 EMPUJAR' : 'TRUCO'; document.getElementById('padTricks').classList.toggle('push', can); }
+  const mode = state === 'duel' ? 2 : pushTarget() ? 1 : 0;
+  if (mode !== pushShown) { pushShown = mode; padLab.textContent = ['TRUCO', '💪 EMPUJAR', '⚔️ GOLPE'][mode]; document.getElementById('padTricks').classList.toggle('push', mode > 0); }
 }
 function updateBoard(dt) {
   boardT -= dt; if (boardT > 0) return; boardT = 0.25;
   markTaken();
   const rows = [{ n: 'Tú', s: Math.floor(score), me: true }];
   for (const R of MP.remotes.values()) if (R.st !== 'menu') rows.push({ n: R.nm || R.ch.name, s: R.sc || 0 });
-  boardEl.hidden = rows.length < 2 || hud.hidden;
+  boardEl.hidden = rows.length < 2 || hud.hidden || state === 'duel';
   if (boardEl.hidden) return;
   rows.sort((a, b) => b.s - a.s);
   boardEl.textContent = '';
@@ -3352,7 +3370,9 @@ function onMsg(m) {
   if (!m || m.id === MP.myId) return;
   if (typeof m.at === 'number' && m.at < MP.startAt - 3000) return;    // solo lo nuevo
   const R = MP.remotes.get(m.id), who = (typeof m.nm === 'string' && m.nm.slice(0, 20)) || (R && R.ch.name) || 'Surfista';
-  if (m.ev === 'push') { if (m.to === MP.myId) gotPushed(who); return; }
+  if (m.ev === 'push') { if (m.to === MP.myId) { gotPushed(who); duelCount(R); } return; }
+  if (m.ev === 'duel') { if (m.to === MP.myId && R) setTimeout(() => startDuel(R), 1200); return; }
+  if (m.ev === 'hit') { if (m.to === MP.myId) duelGotHit(m.id); return; }
   if (typeof m.tx === 'string') {
     const text = cleanText(m.tx);
     if (R) { const b = R.label.querySelector('.mpbub'); b.textContent = text; b.hidden = false; R.msgT = 5; }
@@ -3433,6 +3453,241 @@ micBtn.addEventListener('contextmenu', e => e.preventDefault());
   } catch (e) { mpMenu.textContent = 'No se ha podido conectar al modo online'; }
 })();
 
+
+// ===================== DISPUTA POR EL PICO =====================
+// Si tiras 3 veces al mismo surfista, los dos salís del agua a la arena y os pegáis con lo que lleváis
+// (tabla, pala del kayak, remo o lata de rescate). Quien da 5 golpes es el LOCAL LEGEND (+1500) y el otro
+// pierde los puntos de la ola. Los demás siguen surfeando; al acabar, los dos vuelven al agua.
+const DUEL_HP = 5, DUEL_REACH = 1.55, DUEL_TIME = 60, DUEL_Y = -0.72, SW_DUR = 0.62, SW_HIT = 0.33, G_PHI = 0.55;
+const ZAX = V3(0, 0, 1), XAX = V3(1, 0, 0), qRoll = new THREE.Quaternion().setFromAxisAngle(V3(1, 0, 0), Math.PI / 2);
+const DUEL = { on: false };
+MP.pushCount = {};
+function swingPhi(s) {
+  if (s < 0) return G_PHI;
+  if (s < 0.22) return lerp(G_PHI, -0.8, sm(0, 0.22, s));          // coge impulso por encima de la cabeza
+  if (s < SW_HIT) return lerp(-0.8, 2.3, (s - 0.22) / (SW_HIT - 0.22));  // ¡golpe!
+  return lerp(2.3, G_PHI, sm(SW_HIT, SW_DUR, s));                  // vuelve a la guardia
+}
+// postura de pelea: de pie mirando a +x con el objeto agarrado con las dos manos
+function duelPose(o, phi, walk, t, hurt, cz) {
+  const st = Math.sin(t * 10) * walk * 0.2, bob = 0.02 * Math.sin(t * 4) - 0.04 * hurt;
+  const lx = 0.14 * clamp((phi - 1) / 1.3, 0, 1) - 0.1 * clamp(-phi / 0.8, 0, 1) - 0.22 * hurt;
+  o.fw.set(1, 0, cz);
+  o.hB.set(-0.03 + lx * 0.3, 0.93 + bob, -0.1); o.hF.set(0.03 + lx * 0.3, 0.93 + bob, 0.1);
+  o.kB.set(-0.1 - st, 0.5, -0.14); o.kF.set(0.17 + st, 0.5, 0.15);
+  o.fB.set(-0.22 - st * 1.6, 0.06 + Math.max(0, -st) * 0.5, -0.16); o.fF.set(0.3 + st * 1.6, 0.06 + Math.max(0, st) * 0.5, 0.16);
+  o.ch.set(0.03 + lx, 1.42 + bob, 0); o.hd.set(o.ch.x + 0.04 - hurt * 0.08, o.ch.y + 0.27, 0);
+  o.sB.set(o.ch.x - 0.02, o.ch.y - 0.02, -0.19); o.sF.set(o.ch.x - 0.02, o.ch.y - 0.02, 0.19);
+  const r = 0.5, hx = o.ch.x + r * Math.sin(phi), hy = o.ch.y - 0.05 + r * Math.cos(phi);
+  o.aF.set(hx, hy, 0.05); o.aB.set(hx - 0.1 * Math.sin(phi), hy - 0.1 * Math.cos(phi), -0.05);
+  o.eB.set((o.sB.x + o.aB.x) / 2 - 0.06, (o.sB.y + o.aB.y) / 2 - 0.12, -0.3);
+  o.eF.set((o.sF.x + o.aF.x) / 2 - 0.06, (o.sF.y + o.aF.y) / 2 - 0.12, 0.3);
+  return o;
+}
+const matBuoy = new THREE.MeshStandardMaterial({ color: 0xe0261f, roughness: 0.4 }), buoyGeo = new THREE.CapsuleGeometry(0.1, 0.75, 4, 12);
+function makeFighter(ch) {
+  const rig = buildRig(ch);
+  rig.root.children.forEach(o => { o.visible = o === rig.rider || (rig.human && o === rig.human.root); });
+  rig.rider.scale.set(1, 1, 1); rig.rider.position.set(0, 0, 0); rig.rider.rotation.set(0, 0, 0);   // de pie, sin goofy/regular
+  const F = { rig, ch, axis: UP, off: 0.8, weapon: null, extra: null, ph: rnd(0, 5) };
+  if (!ch.jetski && !ch.kayak && !ch.zodiac && rig.board) {                 // su tabla
+    F.weapon = rig.board; rig.rider.add(F.weapon); F.axis = XAX; F.off = 0.85 * F.weapon.scale.x;
+  } else if (ch.zodiac) {                                                    // lata de rescate roja
+    F.weapon = F.extra = new THREE.Mesh(buoyGeo, matBuoy); rig.rider.add(F.weapon); F.off = 0.6;
+  } else if (rig.paddle) { F.weapon = rig.paddle; F.off = 0.8; }             // pala del kayak / remo
+  if (F.weapon) F.weapon.visible = true;
+  rig.root.visible = true;
+  return F;
+}
+function dropFighter(F) { if (!F) return; if (F.extra) F.extra.removeFromParent(); disposeRig(F.rig); }
+const wD = V3(0, 0, 0), dq1 = new THREE.Quaternion(), dq2 = new THREE.Quaternion();
+function drawFighter(F, u, oU, phi, walk, hurt, ko, t) {
+  const rig = F.rig, root = rig.root, right = oU >= u;
+  dq1.setFromAxisAngle(UP, right ? 0 : Math.PI); dq2.setFromAxisAngle(ZAX, ko * 1.45);
+  root.quaternion.copy(dq1).multiply(dq2);
+  root.position.set(DUEL.ax + u, DUEL_Y + ko * 0.45 + 0.04 * Math.sin(t * 1.6 + F.ph), DUEL.az);
+  duelPose(rig.pose, phi, walk, t + F.ph, hurt, right ? 0.45 : -0.45);
+  applyPoseRig(rig, rig.pose, 0.15, (right ? 1.0 : 2.1) + Math.PI + 0.6, t);
+  if (F.weapon) {
+    const o = rig.pose;
+    wD.set(Math.sin(phi), Math.cos(phi), 0);
+    F.weapon.position.addVectors(o.aB, o.aF).multiplyScalar(0.5).addScaledVector(wD, F.off);
+    F.weapon.quaternion.setFromUnitVectors(F.axis, wD);
+    if (F.axis === XAX) F.weapon.quaternion.multiply(qRoll);      // la tabla de cara, no de canto
+  }
+}
+
+// --- marcador de la disputa ---
+const duelCss = document.createElement('style');
+duelCss.textContent = '#duelHud{position:absolute;left:50%;top:calc(118px + env(safe-area-inset-top, 0px));transform:translateX(-50%);width:min(560px,calc(100% - 32px));z-index:40;pointer-events:none;text-align:center;font-family:var(--body);color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.7)}' +
+  '#duelHud .dt{font:900 22px var(--display);letter-spacing:.04em;color:var(--sun)}' +
+  '#duelHud .dbars{display:flex;align-items:center;gap:10px;margin-top:6px}' +
+  '#duelHud .db{flex:1;text-align:left}#duelHud .db.r{text-align:right}' +
+  '#duelHud .db b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+  '#duelHud .db i{display:block;height:14px;border:2px solid #fff;border-radius:8px;background:rgba(13,22,32,.6);overflow:hidden}' +
+  '#duelHud .db span{display:block;height:100%;background:linear-gradient(90deg,#ff5a4e,#ffc94a);transition:width .25s}' +
+  '#duelHud .db.r span{margin-left:auto}' +
+  '#duelHud .dclk{font:900 20px var(--display);min-width:38px}' +
+  '#duelHud .dres{margin-top:10px;font:900 30px var(--display);color:var(--sun)}';
+document.head.appendChild(duelCss);
+const duelHud = document.createElement('div'); duelHud.id = 'duelHud'; duelHud.hidden = true;
+duelHud.innerHTML = '<div class="dt">⚔️ DISPUTA POR EL PICO</div><div class="dbars"><div class="db"><b></b><i><span></span></i></div><div class="dclk">60</div><div class="db r"><b></b><i><span></span></i></div></div><div class="dres" hidden></div>';
+toastEl.parentNode.appendChild(duelHud);
+const dBars = duelHud.querySelectorAll('.db'), dClk = duelHud.querySelector('.dclk'), dRes = duelHud.querySelector('.dres');
+function duelHudUpdate() {
+  const D = DUEL, meLeft = D.myU >= D.oppU;
+  const rows = [[MP.myName || CH.name, D.myHp, true], [D.oppName, D.oppHp, false]];
+  if (!meLeft) rows.reverse();
+  rows.forEach((r, i) => { dBars[i].querySelector('b').textContent = (r[2] ? '⭐ ' : '') + r[0]; dBars[i].querySelector('span').style.width = (100 * Math.max(0, r[1]) / DUEL_HP) + '%'; });
+  dClk.textContent = Math.max(0, Math.ceil(DUEL_TIME - D.t));
+}
+
+// --- empujones: al tercero contra el mismo, disputa ---
+function duelCount(R) {
+  if (!R || DUEL.on) return;
+  const n = (MP.pushCount[R.id] || 0) + 1; MP.pushCount[R.id] = n;
+  const name = R.nm || R.ch.name;
+  if (n < 3) { chip('⚔️ Disputa con ' + name + ': ' + n + '/3 empujones'); return; }
+  MP.pushCount[R.id] = 0;
+  if (!R.bot && MP.base) MP.base.child('msgs').push({ ev: 'duel', to: R.id, id: MP.myId, nm: MP.myName || CH.name, at: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
+  setTimeout(() => startDuel(R), 1200);
+}
+function startDuel(R) {
+  if (DUEL.on || !R || !R.ch || state === 'title' || state === 'over') return false;
+  const bot = R.bot ? BOTS.find(b => b.id === R.id) : null;
+  Object.assign(DUEL, { on: true, R, oppId: R.id, bot, oppName: R.nm || R.ch.name, side: (MP.myId < R.id) ? -1 : 1,
+    ax: camPos.x, az: 35, pOff: 14, t: 0, myHp: DUEL_HP, oppHp: DUEL_HP, swT: -1, swN: 0, hitDone: false, phi: G_PHI, walk: 0, hurt: 0, ko: 0,
+    oSwT: -1, oHitDone: false, oSeenN: -1, oppPhi: G_PHI, oppWalk: 0, oppHurt: 0, oppKo: 0, lastOppHp: DUEL_HP, bCD: 1.2, bBack: 0,
+    seen: !!bot, goneT: 0, result: '', endT: 0, predT: 0 });
+  DUEL.myU = DUEL.side * 1.8; DUEL.oppU = -DUEL.side * 1.8;
+  if (bot) { bot.st = 'duel'; R.st = 'duel'; }
+  DUEL.me = makeFighter(CH); DUEL.him = makeFighter(R.ch);
+  state = 'duel'; air = false; boardRoot.visible = false; dial.hidden = true; bubble.hidden = true; ringbox.hidden = true; ringbox.classList.remove('go'); windowOpen = false;
+  duelCam(camPos, camLook, aspect < 0.9 ? 1.6 : 1);
+  duelHud.hidden = false; dRes.hidden = true; duelHudUpdate();
+  say('⚔️ ¡Disputa por el Pico contra ' + DUEL.oppName + '! Acércate y pulsa GOLPE', 2.6);
+  bump(0.15);
+  return true;
+}
+function duelSwing() {
+  const D = DUEL;
+  if (!D.on || D.result || D.swT >= 0 || D.myHp <= 0) return;
+  D.swT = 0; D.hitDone = false; D.swN++;
+}
+function duelFx(u) { mpV.set(DUEL.ax + u, 0.4, DUEL.az); splash(mpV, 40, 0.9); bump(0.12); }
+function duelMyHit() {
+  const D = DUEL;
+  if (Math.abs(D.myU - D.oppU) > DUEL_REACH || D.oppHp <= 0) return;
+  D.oppHp--; D.oppHurt = 1; duelFx(D.oppU);
+  if (D.bot) D.oppU = clamp(D.oppU + Math.sign(D.oppU - D.myU || 1) * 0.75, -5, 5);
+  else { D.predT = 0; if (MP.base) MP.base.child('msgs').push({ ev: 'hit', to: D.oppId, id: MP.myId, nm: MP.myName || CH.name, at: firebase.database.ServerValue.TIMESTAMP }).catch(() => {}); }
+}
+function duelGotHit(fromId) {
+  const D = DUEL;
+  if (!D.on || D.result || D.myHp <= 0 || fromId !== D.oppId) return;
+  D.myHp--; D.hurt = 1;
+  D.myU = clamp(D.myU + Math.sign(D.myU - D.oppU || 1) * 0.75, -5, 5);
+  duelFx(D.myU);
+}
+// el bot pelea solo: se acerca, pega y a veces retrocede
+function duelBot(dt) {
+  const D = DUEL, dist = D.myU - D.oppU, ad = Math.abs(dist);
+  let mv = 0;
+  D.bCD -= dt; D.bBack -= dt;
+  if (!D.result && D.oppHp > 0) {
+    const want = D.bBack > 0 ? 2.8 : 1.2;
+    mv = ad > want + 0.15 ? Math.sign(dist) : ad < want - 0.35 ? -Math.sign(dist) : 0;
+    if (D.oSwT < 0 && ad < DUEL_REACH - 0.1 && D.bCD <= 0) { D.oSwT = 0; D.oHitDone = false; D.bCD = rnd(1.0, 2.0); if (Math.random() < 0.3) D.bBack = rnd(0.5, 1.2); }
+  }
+  if (D.oSwT >= 0) mv *= 0.3;
+  D.oppU = clamp(D.oppU + mv * 2.1 * dt, -5, 5);
+  D.oppWalk = lerp(D.oppWalk, Math.abs(mv), 1 - Math.exp(-dt * 8));
+  if (D.oSwT >= 0) {
+    D.oSwT += dt;
+    if (!D.oHitDone && D.oSwT >= SW_HIT) { D.oHitDone = true; if (Math.abs(D.myU - D.oppU) < DUEL_REACH) duelGotHit(D.oppId); }
+    if (D.oSwT >= SW_DUR) D.oSwT = -1;
+  }
+}
+// el rival online: su posición, su vida y sus golpes llegan con su estado
+function duelNet(dt) {
+  const D = DUEL, R = MP.remotes.get(D.oppId);
+  const inDuel = R && R.st === 'duel' && R.du === MP.myId;
+  if (inDuel) {
+    D.seen = true; D.goneT = 0;
+    const u0 = D.oppU; D.oppU = R.cur.dx;
+    D.oppWalk = lerp(D.oppWalk, clamp(Math.abs(D.oppU - u0) / Math.max(dt, 1e-3) / 2.6, 0, 1), 1 - Math.exp(-dt * 8));
+    const n = Math.round(R.tgt.gr);
+    if (D.oSeenN < 0) D.oSeenN = n; else if (n > D.oSeenN) { D.oSeenN = n; D.oSwT = 0; }
+    const hp = Math.round(R.tgt.h);
+    if (hp < D.lastOppHp) { D.oppHurt = 1; } D.lastOppHp = hp;
+    D.oppHp = Math.min(D.oppHp, hp);
+  } else if (D.seen) D.goneT += dt;
+  if (D.oSwT >= 0) { D.oSwT += dt; if (D.oSwT >= SW_DUR) D.oSwT = -1; }
+  if (D.oppHp < D.lastOppHp) D.predT += dt;
+}
+function duelFinish(win, why) {
+  const D = DUEL; if (D.result) return;
+  D.result = win === true ? 'win' : win === false ? 'lose' : 'tie'; D.endT = 0;
+  if (win === true) {
+    score += 1500; showTrick('👑 LOCAL LEGEND', 1500);
+    dRes.textContent = '👑 ¡ERES EL LOCAL LEGEND!' + (why ? ' (' + why + ')' : '');
+    if (!MP.sim && !D.bot) pushMsg({ tx: '👑 ¡Soy el LOCAL LEGEND! He ganado a ' + D.oppName });
+  } else if (win === false) {
+    const lost = Math.floor(wavePts); score = Math.max(0, score - wavePts); wavePts = 0; mult = 1;
+    dRes.textContent = '😵 ' + D.oppName + ' es el LOCAL LEGEND' + (lost ? '  −' + lost : '');
+    if (D.bot) { D.bot.score += 1500; }
+  } else dRes.textContent = '🤝 Empate';
+  dRes.hidden = false;
+}
+function duelEnd() {
+  const D = DUEL;
+  dropFighter(D.me); dropFighter(D.him); D.me = D.him = null;
+  if (D.bot) { D.bot.st = 'paddle'; D.bot.t = 0; D.bot.dx = rnd(4, 10); }
+  D.on = false; duelHud.hidden = true; boardRoot.visible = true;
+  MP.pushCount[D.oppId] = 0;
+  startPaddle();
+}
+function duelUpdate(dt) {
+  const D = DUEL;
+  if (!D.on) { boardRoot.visible = true; startPaddle(); return; }
+  D.t += dt;
+  const t = performance.now() / 1000;
+  // moverse: círculo de la derecha (o flechas) hacia la izquierda o la derecha de la pantalla
+  let mv = stick.id !== null && Math.abs(stick.x) > 0.25 ? Math.sign(stick.x) * Math.min(1, Math.abs(stick.x) * 1.4) : 0;
+  mv = -mv; if (keys.left) mv = 1; if (keys.right) mv = -1;   // derecha de la pantalla = -x interno
+  if (D.result || D.myHp <= 0) mv = 0;
+  if (D.swT >= 0) mv *= 0.3;
+  D.myU = clamp(D.myU + mv * 2.8 * dt, -5, 5);
+  D.walk = lerp(D.walk, Math.abs(mv), 1 - Math.exp(-dt * 8));
+  if (D.swT >= 0) {
+    D.swT += dt;
+    if (!D.hitDone && D.swT >= SW_HIT) { D.hitDone = true; duelMyHit(); }
+    if (D.swT >= SW_DUR) D.swT = -1;
+  }
+  D.phi = swingPhi(D.swT);
+  if (D.bot) duelBot(dt); else duelNet(dt);
+  D.oppPhi = swingPhi(D.oSwT);
+  // no se atraviesan
+  const gap = D.myU - D.oppU;
+  if (Math.abs(gap) < 0.75) D.myU = D.oppU + Math.sign(gap || D.side) * 0.75;
+  D.hurt = Math.max(0, D.hurt - dt * 2.5); D.oppHurt = Math.max(0, D.oppHurt - dt * 2.5);
+  D.ko = lerp(D.ko, D.myHp <= 0 ? 1 : 0, 1 - Math.exp(-dt * 5)); D.oppKo = lerp(D.oppKo, D.oppHp <= 0 ? 1 : 0, 1 - Math.exp(-dt * 5));
+  drawFighter(D.me, D.myU, D.oppU, D.phi, D.walk, D.hurt, D.ko, t);
+  drawFighter(D.him, D.oppU, D.myU, D.oppPhi, D.oppWalk, D.oppHurt, D.oppKo, t);
+  duelHudUpdate();
+  if (!D.result) {
+    if (D.myHp <= 0) duelFinish(false);
+    else if (D.oppHp <= 0 && (D.bot || D.lastOppHp <= 0 || D.predT > 2.5)) duelFinish(true);
+    else if (D.t > DUEL_TIME) duelFinish(D.myHp > D.oppHp ? true : D.myHp < D.oppHp ? false : null);
+    else if (!D.bot && !D.seen && D.t > 6) { say(D.oppName + ' no ha entrado en la disputa', 2.2); duelEnd(); }
+    else if (!D.bot && D.goneT > 3) duelFinish(true, D.oppName + ' se ha ido');
+  } else { D.endT += dt; if (D.endT > 3.4) duelEnd(); }
+}
+function duelCam(dp, dl, far) {
+  const D = DUEL, mid = D.ax + (D.myU + D.oppU) / 2, sep = Math.abs(D.myU - D.oppU);
+  dp.set(mid, 1.05, D.az + (2.1 + sep * 0.42) * far); dl.set(mid, 0.75, D.az);
+}
+
 window.addEventListener('resize', resize);
 if (window.ResizeObserver) new ResizeObserver(resize).observe(wrap);
 resize();
@@ -3443,12 +3698,12 @@ placeBoardOnFace();
 camPos.set(px + 7, 4.5, 17);
 requestAnimationFrame(frame);
 $('start').focus({ preventScroll: true });
-window.__surf = { spawnDolphins, upsertPeer, onMsg, MP, get state() { return state; }, get score() { return score; }, get dx() { return px - curlX; }, get s() { return s; }, get h() { return h; }, get air() { return air; }, ptr, get theta() { return theta; }, get v() { return v; }, get tgt() { return steerTarget(); }, get bp() { return toScreen(boardRoot.position.x, boardRoot.position.y, boardRoot.position.z); }, };
+window.__surf = { spawnDolphins, upsertPeer, onMsg, MP, startDuel, DUEL, duelSwing, duelCount, tryPush, camPos, camLook, camera, north, get state() { return state; }, get score() { return score; }, get dx() { return px - curlX; }, get s() { return s; }, get h() { return h; }, get air() { return air; }, ptr, get theta() { return theta; }, get v() { return v; }, get tgt() { return steerTarget(); }, get bp() { return toScreen(boardRoot.position.x, boardRoot.position.y, boardRoot.position.z); }, };
 })();
 </script>
 
 <script>
-const BUILD_ID = '1792447711';
+const BUILD_ID = '1792482733';
 (function () {
   try {
     fetch(location.pathname + '?b=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => {
