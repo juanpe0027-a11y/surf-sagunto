@@ -3221,7 +3221,7 @@ function mpSend(dt) {
   const st = myStatus();
   MP.sendT = st === 'menu' ? 2 : st === 'duel' ? 0.1 : 0.125;
   if (st === 'duel' && DUEL.on) {
-    MP.meRef.set({ ch: CH.id, nm: MP.myName || CH.name, st, du: DUEL.oppId, dx: r2(DUEL.myU), h: DUEL.myHp, gr: DUEL.swN, sc: Math.floor(score), t: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
+    MP.meRef.set({ ch: CH.id, nm: MP.myName || CH.name, st, du: DUEL.oppId, dx: r2(DUEL.A.u), h: DUEL.A.hp, gr: DUEL.swN, sp: DUEL.A.sw.type, bk: DUEL.A.block ? 1 : 0, ay: r2(DUEL.A.jy), sc: Math.floor(score), t: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
     return;
   }
   MP.meRef.set({ ch: CH.id, nm: MP.myName || CH.name, st, dx: r2(px - curlX), h: r2(h), th: r2(theta), bk: r2(bank), cr: r2(crouch),
@@ -3446,7 +3446,7 @@ function onMsg(m) {
   const R = MP.remotes.get(m.id), who = (typeof m.nm === 'string' && m.nm.slice(0, 20)) || (R && R.ch.name) || 'Surfista';
   if (m.ev === 'push') { if (m.to === MP.myId) { gotPushed(who); duelCount(R); } return; }
   if (m.ev === 'duel') { if (m.to === MP.myId && R) setTimeout(() => startDuel(R), 1200); return; }
-  if (m.ev === 'hit') { if (m.to === MP.myId) duelGotHit(m.id); return; }
+  if (m.ev === 'hit') { if (m.to === MP.myId) duelGotHit(m.id, m.ty); return; }
   if (typeof m.tx === 'string') {
     const text = cleanText(m.tx);
     if (R) { const b = R.label.querySelector('.mpbub'); b.textContent = text; b.hidden = false; R.msgT = 5; }
@@ -3553,31 +3553,71 @@ function checkIdle() {
 
 
 // ===================== DISPUTA POR EL PICO =====================
-// Si tiras 3 veces al mismo surfista, los dos salís del agua a la arena y os pegáis con lo que lleváis
+// Si tiras 3 veces al mismo surfista, los dos os vais al agua junto al Pantalán y os pegáis con lo que lleváis
 // (tabla, pala del kayak, remo o lata de rescate). Quien da 5 golpes es el LOCAL LEGEND (+1500) y el otro
 // pierde los puntos de la ola. Los demás siguen surfeando; al acabar, los dos vuelven al agua.
-const DUEL_HP = 5, DUEL_REACH = 1.55, DUEL_TIME = 60, DUEL_Y = -0.72, SW_DUR = 0.62, SW_HIT = 0.33, G_PHI = 0.55;
+// Controles: círculo hacia el rival = acercarse · hacia atrás = cubrirse (los golpes del suelo no cuentan)
+// GOLPE = lateral · con el círculo arriba = de arriba abajo · SALTAR y en el aire GOLPE: 1 toque mazazo, 2+ giro
+// (los golpes en el aire rompen la guardia; saltando esquivas los golpes del suelo)
+const DUEL_HP = 5, DUEL_TIME = 60, DUEL_Y = -0.72, G_PHI = 0.55, JUMP_V = 5.6, JUMP_G = 15;
+const SW = [
+  { dur: 0.55, hit: 0.28, reach: 1.6, name: 'Lateral' },
+  { dur: 0.62, hit: 0.33, reach: 1.55, name: 'De arriba abajo' },
+  { dur: 0.5, hit: 0.26, reach: 1.75, name: 'Mazazo aéreo' },
+  { dur: 0.7, hit: 0.36, reach: 1.85, name: 'Giro aéreo' }
+];
 const ZAX = V3(0, 0, 1), XAX = V3(1, 0, 0), qRoll = new THREE.Quaternion().setFromAxisAngle(V3(1, 0, 0), Math.PI / 2);
 const DUEL = { on: false };
 MP.pushCount = {};
-function swingPhi(s) {
+const mkFighterState = u => ({ u, hp: DUEL_HP, netHp: DUEL_HP, pendHp: DUEL_HP, pendT: 0, sw: { type: 0, t: -1, hit: true },
+  block: false, jy: 0, jv: 0, walk: 0, hurt: 0, ko: 0, airTaps: 0, tapWin: 0, airDone: false, airPlan: 0, spinA: 0 });
+
+// --- dónde van las manos y hacia dónde apunta el objeto (relativo al pecho; +x = hacia el rival) ---
+function overPhi(type, s) {
+  const S = SW[type], up = type === 2 ? -1.1 : -0.8, down = type === 2 ? 2.7 : 2.3, w = S.hit * 0.62;
   if (s < 0) return G_PHI;
-  if (s < 0.22) return lerp(G_PHI, -0.8, sm(0, 0.22, s));          // coge impulso por encima de la cabeza
-  if (s < SW_HIT) return lerp(-0.8, 2.3, (s - 0.22) / (SW_HIT - 0.22));  // ¡golpe!
-  return lerp(2.3, G_PHI, sm(SW_HIT, SW_DUR, s));                  // vuelve a la guardia
+  if (s < w) return lerp(G_PHI, up, sm(0, w, s));                  // coge impulso por encima de la cabeza
+  if (s < S.hit) return lerp(up, down, (s - w) / (S.hit - w));     // ¡golpe!
+  return lerp(down, G_PHI, sm(S.hit, S.dur, s));                   // vuelve a la guardia
+}
+const hr = V3(0, 0, 0), hd2 = V3(0, 0, 0), hg = V3(0, 0, 0), dg = V3(0, 0, 0);
+function weaponState(f) {
+  const s = f.sw.t, type = f.sw.type;
+  let lean = 0, off = 1, roll = true;
+  if (f.block && s < 0) {                                          // cubrirse: el objeto en vertical delante de la cara
+    hr.set(0.3, -0.12, 0); hd2.set(0.12, 1, 0).normalize(); lean = -0.06; off = 0.2; roll = false;
+  } else if (s >= 0 && (type === 0 || type === 3)) {               // lateral (o giro): barrido de lado a lado
+    const S = SW[type];
+    let psi;
+    if (type === 3) psi = 0.35;
+    else if (s < S.hit * 0.55) psi = lerp(0.2, 2.0, sm(0, S.hit * 0.55, s));
+    else if (s < S.hit) psi = lerp(2.0, -1.3, (s - S.hit * 0.55) / (S.hit * 0.45));
+    else psi = -1.3;
+    hr.set(0.45 * Math.cos(psi), -0.12, 0.45 * Math.sin(psi)); hd2.set(Math.cos(psi), 0.12, Math.sin(psi)).normalize();
+    lean = 0.06;
+    if (s > S.hit && type === 0) {                                 // vuelve a la guardia
+      const k = sm(S.hit, S.dur, s), phi = G_PHI;
+      hg.set(0.5 * Math.sin(phi), -0.05 + 0.5 * Math.cos(phi), 0); dg.set(Math.sin(phi), Math.cos(phi), 0);
+      hr.lerp(hg, k); hd2.lerp(dg, k).normalize();
+    }
+  } else {                                                         // guardia o de arriba abajo / mazazo
+    const phi = overPhi(type, s);
+    hr.set(0.5 * Math.sin(phi), -0.05 + 0.5 * Math.cos(phi), 0); hd2.set(Math.sin(phi), Math.cos(phi), 0);
+    lean = 0.14 * clamp((phi - 1) / 1.3, 0, 1) - 0.1 * clamp(-phi / 0.8, 0, 1);
+  }
+  return { lean, off, roll };
 }
 // postura de pelea: de pie mirando a +x con el objeto agarrado con las dos manos
-function duelPose(o, phi, walk, t, hurt, cz) {
-  const st = Math.sin(t * 10) * walk * 0.2, bob = 0.02 * Math.sin(t * 4) - 0.04 * hurt;
-  const lx = 0.14 * clamp((phi - 1) / 1.3, 0, 1) - 0.1 * clamp(-phi / 0.8, 0, 1) - 0.22 * hurt;
+function duelPose(o, walk, t, hurt, cz, lean, air) {
+  const st = Math.sin(t * 10) * walk * 0.2 * (air ? 0 : 1), bob = 0.02 * Math.sin(t * 4) - 0.04 * hurt;
+  const lx = lean - 0.22 * hurt, tuck = air ? 0.18 : 0;
   o.fw.set(1, 0, cz);
   o.hB.set(-0.03 + lx * 0.3, 0.93 + bob, -0.1); o.hF.set(0.03 + lx * 0.3, 0.93 + bob, 0.1);
-  o.kB.set(-0.1 - st, 0.5, -0.14); o.kF.set(0.17 + st, 0.5, 0.15);
-  o.fB.set(-0.22 - st * 1.6, 0.06 + Math.max(0, -st) * 0.5, -0.16); o.fF.set(0.3 + st * 1.6, 0.06 + Math.max(0, st) * 0.5, 0.16);
+  o.kB.set(-0.1 - st + tuck * 0.5, 0.5 + tuck, -0.14); o.kF.set(0.17 + st + tuck * 0.5, 0.5 + tuck, 0.15);
+  o.fB.set(-0.22 - st * 1.6, 0.06 + Math.max(0, -st) * 0.5 + tuck * 1.2, -0.16); o.fF.set(0.3 + st * 1.6, 0.06 + Math.max(0, st) * 0.5 + tuck * 1.2, 0.16);
   o.ch.set(0.03 + lx, 1.42 + bob, 0); o.hd.set(o.ch.x + 0.04 - hurt * 0.08, o.ch.y + 0.27, 0);
   o.sB.set(o.ch.x - 0.02, o.ch.y - 0.02, -0.19); o.sF.set(o.ch.x - 0.02, o.ch.y - 0.02, 0.19);
-  const r = 0.5, hx = o.ch.x + r * Math.sin(phi), hy = o.ch.y - 0.05 + r * Math.cos(phi);
-  o.aF.set(hx, hy, 0.05); o.aB.set(hx - 0.1 * Math.sin(phi), hy - 0.1 * Math.cos(phi), -0.05);
+  o.aF.set(o.ch.x + hr.x, o.ch.y + hr.y, hr.z + 0.05); o.aB.set(o.aF.x - 0.1 * hd2.x, o.aF.y - 0.1 * hd2.y, hr.z - 0.05 - 0.1 * hd2.z);
   o.eB.set((o.sB.x + o.aB.x) / 2 - 0.06, (o.sB.y + o.aB.y) / 2 - 0.12, -0.3);
   o.eF.set((o.sF.x + o.aF.x) / 2 - 0.06, (o.sF.y + o.aF.y) / 2 - 0.12, 0.3);
   return o;
@@ -3598,24 +3638,25 @@ function makeFighter(ch) {
   return F;
 }
 function dropFighter(F) { if (!F) return; if (F.extra) F.extra.removeFromParent(); disposeRig(F.rig); }
-const wD = V3(0, 0, 0), dq1 = new THREE.Quaternion(), dq2 = new THREE.Quaternion();
-function drawFighter(F, u, oU, phi, walk, hurt, ko, t) {
-  const rig = F.rig, root = rig.root, right = oU >= u;
-  dq1.setFromAxisAngle(UP, right ? 0 : Math.PI); dq2.setFromAxisAngle(ZAX, ko * 1.45);
+const dq1 = new THREE.Quaternion(), dq2 = new THREE.Quaternion(), dq3 = new THREE.Quaternion();
+function drawFighter(F, f, oU, t) {
+  const rig = F.rig, root = rig.root, right = oU >= f.u;
+  f.spinA = f.sw.t >= 0 && f.sw.type === 3 ? TAU * sm(0, SW[3].dur * 0.9, f.sw.t) : 0;       // giro aéreo: vuelta entera
+  dq1.setFromAxisAngle(UP, (right ? 0 : Math.PI) + f.spinA); dq2.setFromAxisAngle(ZAX, f.ko * 1.45);
   root.quaternion.copy(dq1).multiply(dq2);
-  root.position.set(DUEL.ax + u, DUEL_Y + ko * 0.45 + 0.04 * Math.sin(t * 1.6 + F.ph), DUEL.az);
-  duelPose(rig.pose, phi, walk, t + F.ph, hurt, right ? 0.45 : -0.45);
+  root.position.set(DUEL.ax + f.u, DUEL_Y + f.jy + f.ko * 0.45 + 0.04 * Math.sin(t * 1.6 + F.ph), DUEL.az);
+  const ws = weaponState(f);
+  duelPose(rig.pose, f.walk, t + F.ph, f.hurt, right ? 0.45 : -0.45, ws.lean, f.jy > 0.05);
   applyPoseRig(rig, rig.pose, 0.15, (right ? 1.0 : 2.1) + Math.PI + 0.6, t);
   if (F.weapon) {
     const o = rig.pose;
-    wD.set(Math.sin(phi), Math.cos(phi), 0);
-    F.weapon.position.addVectors(o.aB, o.aF).multiplyScalar(0.5).addScaledVector(wD, F.off);
-    F.weapon.quaternion.setFromUnitVectors(F.axis, wD);
-    if (F.axis === XAX) F.weapon.quaternion.multiply(qRoll);      // la tabla de cara, no de canto
+    F.weapon.position.addVectors(o.aB, o.aF).multiplyScalar(0.5).addScaledVector(hd2, F.off * ws.off);
+    F.weapon.quaternion.setFromUnitVectors(F.axis, hd2);
+    if (F.axis === XAX && ws.roll) F.weapon.quaternion.multiply(qRoll);   // la tabla de cara, no de canto
   }
 }
 
-// --- marcador de la disputa ---
+// --- marcador de la disputa y botón SALTAR ---
 const duelCss = document.createElement('style');
 duelCss.textContent = '#duelHud{position:absolute;left:50%;top:calc(118px + env(safe-area-inset-top, 0px));transform:translateX(-50%);width:min(560px,calc(100% - 32px));z-index:40;pointer-events:none;text-align:center;font-family:var(--body);color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.7)}' +
   '#duelHud .dt{font:900 22px var(--display);letter-spacing:.04em;color:var(--sun)}' +
@@ -3627,17 +3668,24 @@ duelCss.textContent = '#duelHud{position:absolute;left:50%;top:calc(118px + env(
   '#duelHud .db.r span{margin-left:auto}' +
   '#duelHud .dclk{font:900 20px var(--display);min-width:38px}' +
   '#duelHud .dres{margin-top:10px;font:900 30px var(--display);color:var(--sun)}' +
+  '#duelJump{position:absolute;left:max(30px, env(safe-area-inset-left, 0px));bottom:calc(36px + min(150px, 34vw) + env(safe-area-inset-bottom, 0px));width:72px;height:72px;border-radius:50%;border:2px solid rgba(255,255,255,.75);background:rgba(255,255,255,.1);color:#fff;font:900 13px var(--display);line-height:1.1;text-shadow:0 1px 3px rgba(0,0,0,.6);touch-action:none;-webkit-user-select:none;user-select:none;z-index:30}' +
+  '#duelJump:active{background:rgba(255,255,255,.3)}' +
   // en horizontal: arriba del todo, entre los botones de la izquierda y el multiplicador, sin tapar a los que pelean
   '@media (min-aspect-ratio: 1/1){#duelHud{top:max(8px, env(safe-area-inset-top, 0px));width:min(440px,calc(100% - 460px));min-width:240px}' +
-  '#duelHud .dt{font-size:15px}#duelHud .dbars{margin-top:2px;gap:8px}#duelHud .db b{font-size:12px}#duelHud .db i{height:10px}#duelHud .dclk{font-size:16px;min-width:28px}#duelHud .dres{margin-top:4px;font-size:20px}}';
+  '#duelHud .dt{font-size:15px}#duelHud .dbars{margin-top:2px;gap:8px}#duelHud .db b{font-size:12px}#duelHud .db i{height:10px}#duelHud .dclk{font-size:16px;min-width:28px}#duelHud .dres{margin-top:4px;font-size:20px}' +
+  '#duelJump{width:58px;height:58px;font-size:11px;left:calc(max(14px, env(safe-area-inset-left, 0px)) + min(118px, 27vh) + 10px);bottom:calc(20px + env(safe-area-inset-bottom, 0px))}}';
 document.head.appendChild(duelCss);
 const duelHud = document.createElement('div'); duelHud.id = 'duelHud'; duelHud.hidden = true;
 duelHud.innerHTML = '<div class="dt">⚔️ DISPUTA POR EL PICO</div><div class="dbars"><div class="db"><b></b><i><span></span></i></div><div class="dclk">60</div><div class="db r"><b></b><i><span></span></i></div></div><div class="dres" hidden></div>';
 toastEl.parentNode.appendChild(duelHud);
+const jumpBtn = document.createElement('button'); jumpBtn.id = 'duelJump'; jumpBtn.type = 'button'; jumpBtn.hidden = true;
+jumpBtn.innerHTML = '⤴<br>SALTAR'; jumpBtn.setAttribute('aria-label', 'Saltar');
+jumpBtn.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); duelJump(); });
+toastEl.parentNode.appendChild(jumpBtn);
 const dBars = duelHud.querySelectorAll('.db'), dClk = duelHud.querySelector('.dclk'), dRes = duelHud.querySelector('.dres');
 function duelHudUpdate() {
-  const D = DUEL, meLeft = D.myU >= D.oppU;
-  const rows = [[MP.myName || CH.name, D.myHp, true], [D.oppName, D.oppHp, false]];
+  const D = DUEL, meLeft = D.A.u >= D.B.u;
+  const rows = [[MP.myName || CH.name, D.A.hp, true], [D.oppName, D.B.hp, false]];
   if (!meLeft) rows.reverse();
   rows.forEach((r, i) => { dBars[i].querySelector('b').textContent = (r[2] ? '⭐ ' : '') + r[0]; dBars[i].querySelector('span').style.width = (100 * Math.max(0, r[1]) / DUEL_HP) + '%'; });
   dClk.textContent = Math.max(0, Math.ceil(DUEL_TIME - D.t));
@@ -3656,75 +3704,147 @@ function duelCount(R) {
 function startDuel(R) {
   if (DUEL.on || !R || !R.ch || state === 'title' || state === 'over') return false;
   const bot = R.bot ? BOTS.find(b => b.id === R.id) : null;
-  Object.assign(DUEL, { on: true, R, oppId: R.id, bot, oppName: R.nm || R.ch.name, side: (MP.myId < R.id) ? -1 : 1,
-    ax: camPos.x, az: 35, pOff: 14, t: 0, myHp: DUEL_HP, oppHp: DUEL_HP, swT: -1, swN: 0, hitDone: false, phi: G_PHI, walk: 0, hurt: 0, ko: 0,
-    oSwT: -1, oHitDone: false, oSeenN: -1, oppPhi: G_PHI, oppWalk: 0, oppHurt: 0, oppKo: 0, lastOppHp: DUEL_HP, bCD: 1.2, bBack: 0,
-    seen: !!bot, goneT: 0, result: '', endT: 0, predT: 0 });
-  DUEL.myU = DUEL.side * 1.8; DUEL.oppU = -DUEL.side * 1.8;
+  const side = (MP.myId < R.id) ? -1 : 1;
+  Object.assign(DUEL, { on: true, R, oppId: R.id, bot, oppName: R.nm || R.ch.name, side,
+    ax: camPos.x, az: 35, pOff: 14, t: 0, swN: 0, oSeenN: -1, bCD: 1.2, bBack: 0, bBlockT: 0, bReact: -1, upWas: false,
+    seen: !!bot, goneT: 0, result: '', endT: 0, A: mkFighterState(side * 1.8), B: mkFighterState(-side * 1.8) });
   if (bot) { bot.st = 'duel'; R.st = 'duel'; }
   DUEL.me = makeFighter(CH); DUEL.him = makeFighter(R.ch);
   state = 'duel'; air = false; boardRoot.visible = false; dial.hidden = true; bubble.hidden = true; ringbox.hidden = true; ringbox.classList.remove('go'); windowOpen = false;
   duelCam(camPos, camLook, aspect < 0.9 ? 1.6 : 1);
-  duelHud.hidden = false; dRes.hidden = true; duelHudUpdate();
-  say('⚔️ ¡Disputa por el Pico contra ' + DUEL.oppName + '! Acércate y pulsa GOLPE', 2.6);
+  duelHud.hidden = false; dRes.hidden = true; jumpBtn.hidden = false; duelHudUpdate();
+  say('⚔️ ¡Disputa contra ' + DUEL.oppName + '! Hacia atrás te cubres · GOLPE pega · SALTAR + GOLPE en el aire', 3.2);
   bump(0.15);
   return true;
 }
+function startSwing(f, type) { f.sw.type = type; f.sw.t = 0; f.sw.hit = false; f.block = false; if (f === DUEL.A) DUEL.swN++; }
+function jumpF(f) { if (f.jy > 0.01 || f.hp <= 0) return; f.jv = JUMP_V; f.airDone = false; f.airTaps = 0; f.block = false; }
+function duelJump() {
+  const D = DUEL; if (!D.on || D.result || state !== 'duel') return;
+  jumpF(D.A);
+}
 function duelSwing() {
-  const D = DUEL;
-  if (!D.on || D.result || D.swT >= 0 || D.myHp <= 0) return;
-  D.swT = 0; D.hitDone = false; D.swN++;
+  const D = DUEL, A = D.A;
+  if (!D.on || D.result || A.hp <= 0) return;
+  if (A.jy > 0.02) { if (A.airDone || A.sw.t >= 0) return; A.airTaps++; A.tapWin = 0.22; return; }   // en el aire: cuenta los toques
+  if (A.sw.t >= 0) return;
+  const over = (stick.id !== null && stick.y < -0.45) || keys.down;                                  // círculo arriba = de arriba abajo
+  startSwing(A, over ? 1 : 0);
 }
-function duelFx(u) { mpV.set(DUEL.ax + u, 0.4, DUEL.az); splash(mpV, 40, 0.9); bump(0.12); }
-function duelMyHit() {
-  const D = DUEL;
-  if (Math.abs(D.myU - D.oppU) > DUEL_REACH || D.oppHp <= 0) return;
-  D.oppHp--; D.oppHurt = 1; duelFx(D.oppU);
-  if (D.bot) D.oppU = clamp(D.oppU + Math.sign(D.oppU - D.myU || 1) * 0.75, -5, 5);
-  else { D.predT = 0; if (MP.base) MP.base.child('msgs').push({ ev: 'hit', to: D.oppId, id: MP.myId, nm: MP.myName || CH.name, at: firebase.database.ServerValue.TIMESTAMP }).catch(() => {}); }
+function duelFx(u, y, n) { mpV.set(DUEL.ax + u, y, DUEL.az); splash(mpV, n, 0.9); }
+// ¿qué pasa con un golpe? (sin dar, bloqueado, esquivado saltando o golpe)
+function hitResult(att, def, defBlock, defJy) {
+  const S = SW[att.sw.type];
+  if (Math.abs(att.u - def.u) > S.reach || def.hp <= 0) return 'miss';
+  const ground = att.sw.type < 2;
+  if (ground && defJy > 0.55) return 'dodge';
+  if (ground && defBlock) return 'block';
+  return 'hit';
 }
-function duelGotHit(fromId) {
-  const D = DUEL;
-  if (!D.on || D.result || D.myHp <= 0 || fromId !== D.oppId) return;
-  D.myHp--; D.hurt = 1;
-  D.myU = clamp(D.myU + Math.sign(D.myU - D.oppU || 1) * 0.75, -5, 5);
-  duelFx(D.myU);
+function onBlocked(def) {
+  duelFx(def.u, 1.2, 14); def.u = clamp(def.u + Math.sign(def.u - (def === DUEL.A ? DUEL.B : DUEL.A).u || 1) * 0.3, -5, 5);
+  say('🛡️ ¡Bloqueado!', 0.7);
 }
-// el bot pelea solo: se acerca, pega y a veces retrocede
+function myImpact() {
+  const D = DUEL, A = D.A, B = D.B;
+  const bBlock = D.bot ? B.block : (D.R && D.R.tgt.bk > 0.5), bJy = D.bot ? B.jy : (D.R ? D.R.cur.ay || 0 : 0);
+  const r = hitResult(A, B, bBlock, bJy);
+  if (r === 'block') { onBlocked(B); return; }
+  if (r === 'dodge') { say('💨 ¡Lo ha esquivado!', 0.7); return; }
+  if (r !== 'hit') return;
+  B.hurt = 1; duelFx(B.u, 0.4, 40); bump(0.12);
+  if (A.sw.type >= 2) chip('💥 ' + SW[A.sw.type].name);
+  if (D.bot) { B.hp--; B.u = clamp(B.u + Math.sign(B.u - A.u || 1) * 0.75, -5, 5); }
+  else {
+    B.pendHp = (B.pendT > 0 ? B.pendHp : B.netHp) - 1; B.pendT = 1.5;
+    if (MP.base) MP.base.child('msgs').push({ ev: 'hit', to: D.oppId, ty: A.sw.type, id: MP.myId, nm: MP.myName || CH.name, at: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
+  }
+}
+function duelGotHit(fromId, ty) {
+  const D = DUEL, A = D.A;
+  if (!D.on || D.result || A.hp <= 0 || fromId !== D.oppId) return;
+  ty = clamp(Math.round(Number(ty) || 0), 0, 3);
+  const ground = ty < 2;
+  if (ground && A.jy > 0.55) { say('💨 ¡Esquivado!', 0.7); return; }
+  if (ground && A.block) { onBlocked(A); return; }
+  A.hp--; A.hurt = 1;
+  A.u = clamp(A.u + Math.sign(A.u - D.B.u || 1) * 0.75, -5, 5);
+  duelFx(A.u, 0.4, 40); bump(0.12);
+}
+// salto y golpes de un luchador (la física es la misma para los dos)
+function stepFighter(f, dt, isMe) {
+  if (f.jy > 0 || f.jv > 0) {
+    f.jv -= JUMP_G * dt; f.jy += f.jv * dt;
+    if (f.jy <= 0) { f.jy = 0; f.jv = 0; duelFx(f.u, 0.1, 12); }
+  }
+  if (f.tapWin > 0) {                                              // toques de GOLPE en el aire: 1 mazazo, 2 o más giro
+    f.tapWin -= dt;
+    if (f.tapWin <= 0 && f.airTaps > 0) { startSwing(f, f.airTaps >= 2 ? 3 : 2); f.airDone = true; f.airTaps = 0; }
+  }
+  if (f.sw.t >= 0) {
+    f.sw.t += dt;
+    const S = SW[f.sw.type];
+    if (!f.sw.hit && f.sw.t >= S.hit) { f.sw.hit = true; if (isMe) myImpact(); else if (DUEL.bot) botImpact(); }
+    if (f.sw.t >= S.dur) f.sw.t = -1;
+  }
+  f.hurt = Math.max(0, f.hurt - dt * 2.5);
+  f.ko = lerp(f.ko, f.hp <= 0 ? 1 : 0, 1 - Math.exp(-dt * 5));
+}
+function botImpact() {
+  const D = DUEL, A = D.A, B = D.B;
+  const r = hitResult(B, A, A.block, A.jy);
+  if (r === 'block') { onBlocked(A); return; }
+  if (r === 'dodge') { say('💨 ¡Esquivado!', 0.7); return; }
+  if (r !== 'hit') return;
+  A.hp--; A.hurt = 1; A.u = clamp(A.u + Math.sign(A.u - B.u || 1) * 0.75, -5, 5);
+  duelFx(A.u, 0.4, 40); bump(0.12);
+}
+// el bot pelea solo: se acerca, pega, a veces se cubre, salta o retrocede
 function duelBot(dt) {
-  const D = DUEL, dist = D.myU - D.oppU, ad = Math.abs(dist);
+  const D = DUEL, A = D.A, B = D.B, dist = A.u - B.u, ad = Math.abs(dist), dir = Math.sign(dist) || 1;
   let mv = 0;
-  D.bCD -= dt; D.bBack -= dt;
-  if (!D.result && D.oppHp > 0) {
-    const want = D.bBack > 0 ? 2.8 : 1.2;
-    mv = ad > want + 0.15 ? Math.sign(dist) : ad < want - 0.35 ? -Math.sign(dist) : 0;
-    if (D.oSwT < 0 && ad < DUEL_REACH - 0.1 && D.bCD <= 0) { D.oSwT = 0; D.oHitDone = false; D.bCD = rnd(1.0, 2.0); if (Math.random() < 0.3) D.bBack = rnd(0.5, 1.2); }
+  D.bCD -= dt; D.bBack -= dt; D.bBlockT -= dt;
+  B.block = false;
+  if (!D.result && B.hp > 0) {
+    // reacciona a tu golpe: a veces se cubre, a veces salta
+    if (A.sw.t >= 0 && A.sw.t < 0.2 && A.sw.type < 2 && ad < 2.2 && D.bReact !== D.swN) {
+      D.bReact = D.swN; const r = Math.random();
+      if (r < 0.4) D.bBlockT = 0.55; else if (r < 0.52) jumpF(B);
+    }
+    if (D.bBlockT > 0 && B.jy <= 0.01 && B.sw.t < 0) { B.block = true; mv = -dir * 0.4; }
+    else {
+      const want = D.bBack > 0 ? 2.8 : 1.25;
+      mv = ad > want + 0.15 ? dir : ad < want - 0.35 ? -dir : 0;
+      if (B.sw.t < 0 && B.jy <= 0.01 && D.bCD <= 0 && ad < 1.5) {
+        if (Math.random() < 0.22) { jumpF(B); B.airPlan = Math.random() < 0.5 ? 2 : 3; }
+        else startSwing(B, Math.random() < 0.5 ? 1 : 0);
+        D.bCD = rnd(1.0, 2.0); if (Math.random() < 0.3) D.bBack = rnd(0.5, 1.2);
+      }
+      if (B.airPlan && B.jy > 0.5 && B.jv < 1.5 && B.sw.t < 0) { startSwing(B, B.airPlan); B.airPlan = 0; }
+    }
   }
-  if (D.oSwT >= 0) mv *= 0.3;
-  D.oppU = clamp(D.oppU + mv * 2.1 * dt, -5, 5);
-  D.oppWalk = lerp(D.oppWalk, Math.abs(mv), 1 - Math.exp(-dt * 8));
-  if (D.oSwT >= 0) {
-    D.oSwT += dt;
-    if (!D.oHitDone && D.oSwT >= SW_HIT) { D.oHitDone = true; if (Math.abs(D.myU - D.oppU) < DUEL_REACH) duelGotHit(D.oppId); }
-    if (D.oSwT >= SW_DUR) D.oSwT = -1;
-  }
+  if (B.sw.t >= 0) mv *= 0.3;
+  B.u = clamp(B.u + mv * (B.block ? 1.1 : 2.1) * dt, -5, 5);
+  B.walk = lerp(B.walk, Math.abs(mv), 1 - Math.exp(-dt * 8));
 }
-// el rival online: su posición, su vida y sus golpes llegan con su estado
+// el rival online: su posición, vida, guardia, salto y golpes llegan con su estado
 function duelNet(dt) {
-  const D = DUEL, R = MP.remotes.get(D.oppId);
+  const D = DUEL, B = D.B, R = MP.remotes.get(D.oppId);
   const inDuel = R && R.st === 'duel' && R.du === MP.myId;
   if (inDuel) {
     D.seen = true; D.goneT = 0;
-    const u0 = D.oppU; D.oppU = R.cur.dx;
-    D.oppWalk = lerp(D.oppWalk, clamp(Math.abs(D.oppU - u0) / Math.max(dt, 1e-3) / 2.6, 0, 1), 1 - Math.exp(-dt * 8));
+    const u0 = B.u; B.u = R.cur.dx;
+    B.walk = lerp(B.walk, clamp(Math.abs(B.u - u0) / Math.max(dt, 1e-3) / 2.6, 0, 1), 1 - Math.exp(-dt * 8));
+    B.block = R.tgt.bk > 0.5; B.jy = Math.max(0, R.cur.ay || 0);
     const n = Math.round(R.tgt.gr);
-    if (D.oSeenN < 0) D.oSeenN = n; else if (n > D.oSeenN) { D.oSeenN = n; D.oSwT = 0; }
+    if (D.oSeenN < 0) D.oSeenN = n;
+    else if (n > D.oSeenN) { D.oSeenN = n; B.sw.type = clamp(Math.round(R.tgt.sp) || 0, 0, 3); B.sw.t = 0; B.sw.hit = true; }   // el golpe lo calcula él
     const hp = Math.round(R.tgt.h);
-    if (hp < D.lastOppHp) { D.oppHurt = 1; } D.lastOppHp = hp;
-    D.oppHp = Math.min(D.oppHp, hp);
+    if (hp < B.netHp) B.hurt = 1;
+    B.netHp = hp;
   } else if (D.seen) D.goneT += dt;
-  if (D.oSwT >= 0) { D.oSwT += dt; if (D.oSwT >= SW_DUR) D.oSwT = -1; }
-  if (D.oppHp < D.lastOppHp) D.predT += dt;
+  B.pendT = Math.max(0, B.pendT - dt);
+  B.hp = B.pendT > 0 ? Math.min(B.netHp, B.pendHp) : B.netHp;
 }
 function duelFinish(win, why) {
   const D = DUEL; if (D.result) return;
@@ -3744,48 +3864,47 @@ function duelEnd() {
   const D = DUEL;
   dropFighter(D.me); dropFighter(D.him); D.me = D.him = null;
   if (D.bot) { D.bot.st = 'paddle'; D.bot.t = 0; D.bot.dx = rnd(4, 10); }
-  D.on = false; duelHud.hidden = true; boardRoot.visible = true;
+  D.on = false; duelHud.hidden = true; jumpBtn.hidden = true; boardRoot.visible = true;
   MP.pushCount[D.oppId] = 0;
   startPaddle();
 }
 function duelUpdate(dt) {
   const D = DUEL;
-  if (!D.on) { boardRoot.visible = true; startPaddle(); return; }
+  if (!D.on) { boardRoot.visible = true; jumpBtn.hidden = true; startPaddle(); return; }
+  const A = D.A, B = D.B;
   D.t += dt;
   const t = performance.now() / 1000;
   // moverse: círculo de la derecha (o flechas) hacia la izquierda o la derecha de la pantalla
   let mv = stick.id !== null && Math.abs(stick.x) > 0.25 ? Math.sign(stick.x) * Math.min(1, Math.abs(stick.x) * 1.4) : 0;
   mv = -mv; if (keys.left) mv = 1; if (keys.right) mv = -1;   // derecha de la pantalla = -x interno
-  if (D.result || D.myHp <= 0) mv = 0;
-  if (D.swT >= 0) mv *= 0.3;
-  D.myU = clamp(D.myU + mv * 2.8 * dt, -5, 5);
-  D.walk = lerp(D.walk, Math.abs(mv), 1 - Math.exp(-dt * 8));
-  if (D.swT >= 0) {
-    D.swT += dt;
-    if (!D.hitDone && D.swT >= SW_HIT) { D.hitDone = true; duelMyHit(); }
-    if (D.swT >= SW_DUR) D.swT = -1;
-  }
-  D.phi = swingPhi(D.swT);
-  if (D.bot) duelBot(dt); else duelNet(dt);
-  D.oppPhi = swingPhi(D.oSwT);
-  // no se atraviesan
-  const gap = D.myU - D.oppU;
-  if (Math.abs(gap) < 0.75) D.myU = D.oppU + Math.sign(gap || D.side) * 0.75;
-  D.hurt = Math.max(0, D.hurt - dt * 2.5); D.oppHurt = Math.max(0, D.oppHurt - dt * 2.5);
-  D.ko = lerp(D.ko, D.myHp <= 0 ? 1 : 0, 1 - Math.exp(-dt * 5)); D.oppKo = lerp(D.oppKo, D.oppHp <= 0 ? 1 : 0, 1 - Math.exp(-dt * 5));
-  drawFighter(D.me, D.myU, D.oppU, D.phi, D.walk, D.hurt, D.ko, t);
-  drawFighter(D.him, D.oppU, D.myU, D.oppPhi, D.oppWalk, D.oppHurt, D.oppKo, t);
+  if (D.result || A.hp <= 0) mv = 0;
+  // hacia atrás (alejándote del rival) te cubres con el objeto y retrocedes despacio
+  const toward = Math.sign(B.u - A.u) || 1;
+  A.block = mv * toward < -0.3 && A.jy <= 0.01 && A.sw.t < 0 && !D.result && A.hp > 0;
+  if (keys.up && !D.upWas) duelJump();                        // teclado: ↑ / espacio = saltar
+  D.upWas = keys.up;
+  if (A.sw.t >= 0) mv *= 0.3;
+  A.u = clamp(A.u + mv * (A.block ? 1.2 : 2.8) * dt, -5, 5);
+  A.walk = lerp(A.walk, Math.abs(mv), 1 - Math.exp(-dt * 8));
+  stepFighter(A, dt, true);
+  if (D.bot) { duelBot(dt); stepFighter(B, dt, false); }
+  else { duelNet(dt); if (B.sw.t >= 0) { B.sw.t += dt; if (B.sw.t >= SW[B.sw.type].dur) B.sw.t = -1; } B.hurt = Math.max(0, B.hurt - dt * 2.5); B.ko = lerp(B.ko, B.hp <= 0 ? 1 : 0, 1 - Math.exp(-dt * 5)); }
+  // no se atraviesan (salvo saltando por encima)
+  const gap = A.u - B.u;
+  if (Math.abs(gap) < 0.75 && A.jy < 0.6 && B.jy < 0.6) A.u = B.u + Math.sign(gap || D.side) * 0.75;
+  drawFighter(D.me, A, B.u, t);
+  drawFighter(D.him, B, A.u, t);
   duelHudUpdate();
   if (!D.result) {
-    if (D.myHp <= 0) duelFinish(false);
-    else if (D.oppHp <= 0 && (D.bot || D.lastOppHp <= 0 || D.predT > 2.5)) duelFinish(true);
-    else if (D.t > DUEL_TIME) duelFinish(D.myHp > D.oppHp ? true : D.myHp < D.oppHp ? false : null);
+    if (A.hp <= 0) duelFinish(false);
+    else if (D.bot ? B.hp <= 0 : B.netHp <= 0) duelFinish(true);
+    else if (D.t > DUEL_TIME) duelFinish(A.hp > B.hp ? true : A.hp < B.hp ? false : null);
     else if (!D.bot && !D.seen && D.t > 6) { say(D.oppName + ' no ha entrado en la disputa', 2.2); duelEnd(); }
     else if (!D.bot && D.goneT > 3) duelFinish(true, D.oppName + ' se ha ido');
   } else { D.endT += dt; if (D.endT > 3.4) duelEnd(); }
 }
 function duelCam(dp, dl, far) {
-  const D = DUEL, mid = D.ax + (D.myU + D.oppU) / 2, sep = Math.abs(D.myU - D.oppU);
+  const D = DUEL, mid = D.ax + (D.A.u + D.B.u) / 2, sep = Math.abs(D.A.u - D.B.u);
   dp.set(mid, 1.05, D.az + (2.1 + sep * 0.42) * far); dl.set(mid, 0.75, D.az);
 }
 
@@ -3913,7 +4032,7 @@ window.__surf = { spawnDolphins, upsertPeer, onMsg, MP, startDuel, DUEL, duelSwi
 </script>
 
 <script>
-const BUILD_ID = '1792514165';
+const BUILD_ID = '1792524504';
 (function () {
   try {
     fetch(location.pathname + '?b=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => {
