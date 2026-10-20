@@ -3177,7 +3177,7 @@ function myStatus() {
 }
 const r2 = n => Math.round(n * 100) / 100;
 function mpSend(dt) {
-  if (!MP.meRef || !MP.connected) return;
+  if (!MP.meRef || !MP.connected || MP.away) return;
   MP.sendT -= dt;
   if (MP.sendT > 0) return;
   const st = myStatus();
@@ -3204,6 +3204,7 @@ function upsertPeer(id, pr) {
   }
   if (R.chId !== ch.id) { if (R.rig) disposeRig(R.rig); R.rig = buildRig(ch); R.chId = ch.id; }
   const wasSt = R.st;
+  R.seen = performance.now(); R.purged = false;
   R.ch = ch; R.st = typeof pr.st === 'string' ? pr.st : 'menu';
   R.du = typeof pr.du === 'string' ? pr.du : '';
   if (R.st === 'duel' && wasSt !== 'duel' && R.du && R.du !== MP.myId && id < R.du) {
@@ -3219,8 +3220,11 @@ function removePeer(id) {
   const R = MP.remotes.get(id); if (!R) return;
   if (R.rig) disposeRig(R.rig); R.label.remove(); MP.remotes.delete(id); updateCount();
 }
+// jugador «fantasma»: lleva más de 10 s sin mandar nada (móvil bloqueado, pestaña olvidada…)
+const alive = R => R.bot || performance.now() - (R.seen || 0) < 10000;
 function updateCount() {
-  const n = [...MP.remotes.values()].filter(R => R.st !== 'menu').length, all = MP.remotes.size;
+  const live = [...MP.remotes.values()].filter(alive);
+  const n = live.filter(R => R.st !== 'menu').length, all = live.length;
   const txt = n === 0 ? 'Solo tú en el agua' : n === 1 ? '1 surfista más en el agua' : n + ' surfistas más en el agua';
   mpCount.textContent = '🌊 ' + txt;
   mpMenu.textContent = !MP.db ? mpMenu.textContent : MP.connected ? '🌊 Online · sala «' + SALA + '» · ' + all + (all === 1 ? ' conectado más' : ' conectados más') : '🌊 Conectando…';
@@ -3236,6 +3240,7 @@ function remoteFaceQuat(th, bk, out) {
   return out;
 }
 function mpUpdate(dt) {
+  checkIdle();
   mpSend(dt);
   if (MP.sim) updateBots(dt);
   updateBoard(dt); waveLength(dt); updatePushHint();
@@ -3247,7 +3252,9 @@ function mpUpdate(dt) {
     if (Math.abs(R.tgt.dx - R.cur.dx) > 25) R.cur.dx = R.tgt.dx;     // ha cambiado de ola: sin arrastre
     R.msgT = Math.max(0, R.msgT - dt);
     if (R.msgT === 0) R.label.querySelector('.mpbub').hidden = true;
-    const vis = showAll && state !== 'duel' && R.st !== 'menu' && R.st !== 'wipe' && R.st !== 'duel';
+    // los fantasmas no se ven; si siguen así 45 s, se borran de la sala
+    if (!alive(R) && !R.purged && MP.base && performance.now() - (R.seen || 0) > 45000) { R.purged = true; MP.base.child('players/' + R.id).remove().catch(() => {}); }
+    const vis = showAll && alive(R) && state !== 'duel' && R.st !== 'menu' && R.st !== 'wipe' && R.st !== 'duel';
     R.rig.root.visible = vis;
     if (!vis) { R.label.hidden = true; continue; }
     const c = R.cur, rx = curlX + c.dx, root = R.rig.root;
@@ -3305,7 +3312,7 @@ function pushTarget() {
   let best = null, bd = 99;
   const now = performance.now();
   for (const R of MP.remotes.values()) {
-    if ((R.st !== 'ride' && R.st !== 'air') || !R.rig) continue;
+    if ((R.st !== 'ride' && R.st !== 'air') || !R.rig || !alive(R)) continue;
     const ddx = Math.abs(curlX + R.cur.dx - px), ddh = Math.abs(R.cur.h - h);
     const recent = R.lastHit && now - R.lastHit < 1500;
     if ((ddx < 4 && ddh < 0.45) || recent) { const d = ddx + ddh * 6 - (recent ? 5 : 0); if (d < bd) { bd = d; best = R; } }
@@ -3328,7 +3335,7 @@ function tryPush() {
 // cada personaje solo puede llevarlo una persona a la vez
 function takenBy(id) {
   if (MP.sim) return null;
-  for (const R of MP.remotes.values()) if (R.chId === id) return R.nm || R.ch.name;
+  for (const R of MP.remotes.values()) if (R.chId === id && alive(R)) return R.nm || R.ch.name;
   return null;
 }
 const toastEl = $('mpToast'); let toastTO = 0;
@@ -3346,7 +3353,7 @@ function markTaken() {
 }
 // la ola se alarga cuantos más surfistas hay en el agua, para que quepan todos
 function waveLength(dt) {
-  let n = 1; for (const R of MP.remotes.values()) if (R.st !== 'menu') n++;
+  let n = 1; for (const R of MP.remotes.values()) if (R.st !== 'menu' && alive(R)) n++;
   const target = Math.min(420, 150 + 45 * (n - 1));
   XB = lerp(XB, target, 1 - Math.exp(-dt * 0.5));
 }
@@ -3360,9 +3367,9 @@ function updatePushHint() {
 }
 function updateBoard(dt) {
   boardT -= dt; if (boardT > 0) return; boardT = 0.25;
-  markTaken();
+  markTaken(); updateCount();
   const rows = [{ n: 'Tú', s: Math.floor(score), me: true }];
-  for (const R of MP.remotes.values()) if (R.st !== 'menu') rows.push({ n: R.nm || R.ch.name, s: R.sc || 0 });
+  for (const R of MP.remotes.values()) if (R.st !== 'menu' && alive(R)) rows.push({ n: R.nm || R.ch.name, s: R.sc || 0 });
   boardEl.hidden = rows.length < 2 || hud.hidden || state === 'duel';
   if (boardEl.hidden) return;
   rows.sort((a, b) => b.s - a.s);
@@ -3450,6 +3457,30 @@ micBtn.addEventListener('pointerup', stopRec);
 micBtn.addEventListener('pointercancel', stopRec);
 micBtn.addEventListener('pointerleave', stopRec);
 micBtn.addEventListener('contextmenu', e => e.preventDefault());
+
+// --- inactividad: si te coge la ola 10 veces seguidas sin tocar nada (o pasan 3 min), sales del agua ---
+MP.lastInput = performance.now(); MP.idleWaves = 0; MP.away = false; MP.prevSt = '';
+['pointerdown', 'keydown', 'touchstart'].forEach(ev => window.addEventListener(ev, () => {
+  MP.lastInput = performance.now(); MP.idleWaves = 0;
+  if (MP.away) { MP.away = false; MP.sendT = 0; }
+}, true));
+// al bloquear el móvil o cambiar de app, desapareces de la ola de los demás; al volver, apareces otra vez
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { if (MP.meRef) MP.meRef.remove().catch(() => {}); }
+  else MP.sendT = 0;
+});
+function checkIdle() {
+  if (MP.sim || state === 'title' || state === 'over' || state === 'duel') { MP.prevSt = state; return; }
+  const idle = performance.now() - MP.lastInput;
+  if (state === 'paddle' && MP.prevSt !== 'paddle' && idle > 6000) MP.idleWaves++;
+  MP.prevSt = state;
+  if (MP.idleWaves >= 10 || idle > 180000) {
+    MP.away = true; MP.idleWaves = 0;
+    if (MP.meRef) MP.meRef.remove().catch(() => {});
+    $('hudHome').click();
+    setTimeout(() => toast('Te hemos sacado del agua por inactividad. Pulsa «¡A surfear!» para volver.'), 700);
+  }
+}
 
 // --- conexión ---
 (function connect() {
@@ -3732,7 +3763,7 @@ window.__surf = { spawnDolphins, upsertPeer, onMsg, MP, startDuel, DUEL, duelSwi
 </script>
 
 <script>
-const BUILD_ID = '1792495772';
+const BUILD_ID = '1792497058';
 (function () {
   try {
     fetch(location.pathname + '?b=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => {
