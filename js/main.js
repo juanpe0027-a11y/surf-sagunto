@@ -1,0 +1,3667 @@
+// El juego (módulo). Se está partiendo en módulos más pequeños: ver docs/ARQUITECTURA.md
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const wrap = $('wrap'), canvas = $('c');
+if (!window.THREE) { wrap.insertAdjacentHTML('beforeend', '<div class="err">No se ha podido cargar el motor 3D. Revisa la conexión y recarga la página.</div>'); return; }
+
+// ---------- utilidades ----------
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const sm = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const lerp = (a, b, t) => a + (b - a) * t;
+const rnd = (a, b) => a + Math.random() * (b - a);
+const TAU = Math.PI * 2;
+const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+
+// ---------- motor ----------
+let renderer;
+// móviles (iPhone/Android): menos resolución de partida y efectos más ligeros; luego se ajusta solo según los fps
+const LOWQ = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) || (window.matchMedia && matchMedia('(pointer: coarse)').matches);
+const PQ = LOWQ ? 0.55 : 1;   // cantidad de spray y espuma
+try { renderer = new THREE.WebGLRenderer({ canvas, antialias: !LOWQ, powerPreference: 'high-performance' }); }
+catch (e) { wrap.insertAdjacentHTML('beforeend', '<div class="err">Tu navegador no tiene WebGL activado, y el juego lo necesita.</div>'); return; }
+let pixRatio = Math.min(window.devicePixelRatio || 1, LOWQ ? 1.4 : 1.75);
+renderer.setPixelRatio(pixRatio);
+renderer.outputColorSpace = THREE.LinearSRGBColorSpace;   // mismo color que el juego original
+// calidad automática: si va a menos de ~48 fps, se baja la resolución poco a poco hasta que vaya fluido
+const perf = { t: 0, n: 0, last: 0, cool: 3 };
+function adaptQuality(now) {
+  if (!perf.last) { perf.last = now; return; }
+  const d = now - perf.last; perf.last = now;
+  if (document.hidden || d > 250) return;
+  perf.t += d; perf.n++;
+  if (perf.t < 2000) return;
+  const fps = perf.n * 1000 / perf.t; perf.t = 0; perf.n = 0;
+  if (perf.cool > 0) { perf.cool--; return; }        // los primeros segundos no cuentan (carga)
+  if (fps < 40 && pixRatio <= 0.75 && FX.on && FX.composer) { FX.on = false; perf.cool = 1; return; }
+  if (fps < 48 && pixRatio > 0.7) { pixRatio = Math.max(0.7, pixRatio - 0.15); renderer.setPixelRatio(pixRatio); resize(); perf.cool = 1; }
+  else if (fps > 58 && pixRatio < Math.min(window.devicePixelRatio || 1, LOWQ ? 1.4 : 1.75) - 0.05 && !LOWQ) { pixRatio += 0.1; renderer.setPixelRatio(pixRatio); resize(); perf.cool = 2; }
+}
+const scene = new THREE.Scene();
+const FOG = 0.00040;
+const fogHex = 0xf0d2b0;
+scene.fog = new THREE.FogExp2(fogHex, FOG);
+const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 9000);
+// Todo el mundo va dentro de un grupo espejado en X: el surfista avanza hacia la izquierda de la
+// pantalla y el tubo y el Pantalán quedan a la derecha, como en el vídeo de referencia.
+const world = new THREE.Group(); world.scale.x = -1; scene.add(world); world.updateMatrixWorld();
+const sunDirInt = V3(-0.32, 0.16, -1).normalize();            // coordenadas internas
+const sunDir = V3(-sunDirInt.x, sunDirInt.y, sunDirInt.z);     // coordenadas de mundo (shaders)
+
+const hemi = new THREE.HemisphereLight(0xcfe0ff, 0x1d5866, 0.85 * Math.PI); scene.add(hemi);
+const sunL = new THREE.DirectionalLight(0xffd2a0, 1.25 * Math.PI); sunL.position.copy(sunDirInt).multiplyScalar(100); world.add(sunL);
+const fillL = new THREE.DirectionalLight(0xbcd6ff, 0.5 * Math.PI); fillL.position.set(-0.3, 0.6, 1); world.add(fillL);
+
+let pxScale = 500, aspect = 1;
+function resize() {
+  const r = wrap.getBoundingClientRect();
+  const w = Math.max(1, r.width), h = Math.max(1, r.height);
+  renderer.setSize(w, h, false);
+  aspect = w / h;
+  camera.aspect = aspect;
+  camera.fov = aspect < 0.9 ? 68 : 50;
+  camera.updateProjectionMatrix();
+  pxScale = renderer.domElement.height / (2 * Math.tan(camera.fov * Math.PI / 360));
+  if (partMat) partMat.uniforms.uScale.value = pxScale;
+  if (FX.composer) FX.composer.setSize(w, h, false);
+}
+
+// ---------- efectos de cámara de cine (librería postprocessing) ----------
+// brillo del sol y de la espuma, color más vivo, viñeta y, en ordenador, fondo desenfocado y bordes suaves
+const FX = { composer: null, on: true, dof: null };
+function setupFX() {
+  const P = window.POSTFX; if (!P) return;
+  try {
+    const c = new P.EffectComposer(renderer, { frameBufferType: LOWQ ? THREE.UnsignedByteType : THREE.HalfFloatType });
+    c.addPass(new P.RenderPass(scene, camera));
+    const fx = [];
+    if (!LOWQ) fx.push(new P.SMAAEffect());
+    if (!LOWQ) { FX.dof = new P.DepthOfFieldEffect(camera, { focusDistance: 20, focusRange: 30, bokehScale: 2.0, resolutionScale: 0.5 }); fx.push(FX.dof); }
+    fx.push(new P.BloomEffect({ intensity: LOWQ ? 0.45 : 0.6, luminanceThreshold: 0.86, luminanceSmoothing: 0.12, mipmapBlur: true, radius: 0.6 }));
+    fx.push(new P.HueSaturationEffect({ saturation: 0.14 }));
+    fx.push(new P.BrightnessContrastEffect({ contrast: 0.09 }));
+    fx.push(new P.VignetteEffect({ offset: 0.32, darkness: 0.42 }));
+    c.addPass(new P.EffectPass(camera, ...fx));
+    FX.composer = c;
+  } catch (e) { FX.composer = null; }
+}
+const fxV = new THREE.Vector3();
+function renderFrame(dt) {
+  if (FX.composer && FX.on) {
+    if (FX.dof) { boardRoot.getWorldPosition(fxV); FX.dof.cocMaterial.focusDistance = state === 'duel' ? camPos.distanceTo(camLook) : Math.max(4, camera.position.distanceTo(fxV)); }
+    FX.composer.render(dt);
+  } else renderer.render(scene, camera);
+}
+
+// ---------- GLSL compartido ----------
+const GLSL_COMMON = `
+uniform vec3 sunDir;
+uniform float time;
+uniform vec3 fogColor;
+uniform float fogDensity;
+float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float noise(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f*f*(3.0-2.0*f);
+  return mix(mix(hash(i), hash(i+vec2(1.0,0.0)), u.x), mix(hash(i+vec2(0.0,1.0)), hash(i+vec2(1.0,1.0)), u.x), u.y); }
+float fbm(vec2 p){ float v = 0.0, a = 0.5; for (int i = 0; i < 4; i++){ v += a*noise(p); p = p*2.03 + 1.7; a *= 0.5; } return v; }
+vec3 skyCol(vec3 d){
+  d = normalize(d);
+  float h = d.y;
+  vec3 zen = vec3(0.22, 0.40, 0.66);
+  vec3 mid = vec3(0.60, 0.70, 0.82);
+  vec3 hor = vec3(1.00, 0.84, 0.68);
+  vec3 c;
+  if (h > 0.0) c = mix(mix(hor, mid, smoothstep(0.0, 0.16, h)), zen, smoothstep(0.12, 0.75, h));
+  else c = mix(hor*0.9, vec3(0.10, 0.30, 0.42), smoothstep(0.0, 0.2, -h));
+  float sd = max(dot(d, sunDir), 0.0);
+  c += vec3(1.0, 0.68, 0.38) * pow(sd, 6.0) * 0.40;
+  c += vec3(1.0, 0.86, 0.62) * pow(sd, 64.0) * 0.70;
+  return c;
+}
+vec3 applyFog(vec3 col, vec3 wp){
+  float d = length(cameraPosition - wp);
+  float f = 1.0 - exp(-pow(d * fogDensity, 2.0));
+  return mix(col, fogColor, clamp(f, 0.0, 1.0));
+}
+vec3 tone(vec3 c){ c = max(c, 0.0); return c / (1.0 + 0.18*max(max(c.r, c.g), c.b)) * 1.06; }
+`;
+const commonUniforms = () => ({
+  sunDir: { value: sunDir }, time: { value: 0 },
+  fogColor: { value: new THREE.Color(fogHex) }, fogDensity: { value: FOG }
+});
+
+// ---------- cielo ----------
+const skyMat = new THREE.ShaderMaterial({
+  uniforms: commonUniforms(), side: THREE.BackSide, depthWrite: false, fog: false,
+  vertexShader: `varying vec3 vDir; void main(){ vDir = (modelMatrix * vec4(position, 0.0)).xyz; vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }`,
+  fragmentShader: GLSL_COMMON + `varying vec3 vDir;
+  void main(){
+    vec3 d = normalize(vDir);
+    vec3 c = skyCol(d);
+    float sd = max(dot(d, sunDir), 0.0);
+    c += vec3(1.0, 0.94, 0.80) * smoothstep(0.99935, 0.99965, sd) * 1.6;
+    if (d.y > 0.0) {
+      vec2 uv = d.xz / (d.y + 0.12);
+      float cl = fbm(uv * vec2(0.9, 2.6) + vec2(time * 0.004, 0.0));
+      cl = smoothstep(0.55, 0.85, cl) * smoothstep(0.0, 0.08, d.y) * (1.0 - smoothstep(0.25, 0.6, d.y));
+      vec3 cc = mix(vec3(1.0, 0.72, 0.62), vec3(1.0, 0.9, 0.78), pow(sd, 4.0));
+      c = mix(c, cc, cl * 0.75);
+    }
+    gl_FragColor = vec4(tone(c), 1.0);
+  }`
+});
+const sky = new THREE.Mesh(new THREE.SphereGeometry(5000, 32, 16), skyMat);
+sky.renderOrder = -1; world.add(sky);
+
+// ---------- mar ----------
+const oceanMat = new THREE.ShaderMaterial({
+  uniforms: commonUniforms(), fog: false,
+  vertexShader: `varying vec3 vPos; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vPos = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  fragmentShader: GLSL_COMMON + `varying vec3 vPos;
+  void main(){
+    vec2 p = vPos.xz;
+    float dist = length(cameraPosition - vPos);
+    vec2 drift = vec2(time*0.06, time*0.35);
+    float e = 0.35;
+    float h0 = fbm(p*0.22 + drift), hx = fbm((p+vec2(e,0.0))*0.22 + drift), hz = fbm((p+vec2(0.0,e))*0.22 + drift);
+    vec3 N = normalize(vec3((h0-hx)*2.4, 1.0, (h0-hz)*2.4));
+    N = normalize(mix(N, vec3(0.0,1.0,0.0), smoothstep(80.0, 1400.0, dist)));
+    vec3 V = normalize(cameraPosition - vPos);
+    float fres = 0.03 + 0.97*pow(1.0 - max(dot(N, V), 0.0), 5.0);
+    vec3 deep = vec3(0.02, 0.15, 0.26);
+    float shore = smoothstep(30.0, 78.0, vPos.z);
+    vec3 body = mix(deep, vec3(0.10, 0.45, 0.48), shore);
+    body += vec3(0.05, 0.25, 0.25) * pow(max(dot(-V, sunDir), 0.0), 3.0) * 0.4;
+    vec3 col = mix(body, skyCol(reflect(-V, N)), fres);
+    float sp = pow(max(dot(reflect(-sunDir, N), V), 0.0), 380.0);
+    col += vec3(1.0, 0.86, 0.6) * sp * 3.0;
+    col += vec3(1.0, 0.75, 0.5) * pow(max(dot(reflect(-sunDir, N), V), 0.0), 30.0) * 0.18;
+    float sf = smoothstep(70.0, 79.0, vPos.z) * smoothstep(0.45, 0.65, fbm(vec2(p.x*0.15 + time*0.2, p.y*0.6)));
+    col = mix(col, vec3(0.95), sf * 0.85);
+    // espumas de olas anteriores en primer plano, avanzando hacia la orilla
+    float ph = fract((vPos.z - time * 1.7) / 13.0);
+    float band = smoothstep(0.0, 0.1, ph) * (1.0 - smoothstep(0.1, 0.42, ph));
+    float fw = band * smoothstep(9.0, 15.0, vPos.z) * (1.0 - smoothstep(45.0, 72.0, vPos.z))
+             * smoothstep(0.3, 0.62, fbm(vec2(p.x * 0.11, vPos.z * 0.25 - time * 0.2)));
+    col = mix(col, vec3(0.92, 0.96, 0.96), fw * 0.85);
+    col = applyFog(col, vPos);
+    gl_FragColor = vec4(tone(col), 1.0);
+  }`
+});
+const ocean = new THREE.Mesh(new THREE.PlaneGeometry(9000, 9000, 1, 1), oceanMat);
+ocean.rotation.x = -Math.PI / 2; ocean.position.y = -0.05; world.add(ocean);
+
+// ---------- la ola ----------
+const HW = 3.4;           // altura de la ola en metros
+const NX = LOWQ ? 220 : 360, XA = -48, NF = LOWQ ? 48 : 65, NB = 16;
+let XB = 150;           // largo de la ola por delante del tubo (en el online crece con los surfistas que haya)
+function makeStrip(nx, ns) {
+  const g = new THREE.BufferGeometry(), n = (nx + 1) * ns;
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+  g.setAttribute('foam', new THREE.BufferAttribute(new Float32Array(n), 1));
+  g.setAttribute('thin', new THREE.BufferAttribute(new Float32Array(n), 1));
+  g.setAttribute('sv', new THREE.BufferAttribute(new Float32Array(n), 1));
+  const idx = [];
+  for (let i = 0; i < nx; i++) for (let j = 0; j < ns - 1; j++) {
+    const a = i * ns + j, b = (i + 1) * ns + j, c = b + 1, d = a + 1;
+    idx.push(a, b, d, b, c, d);
+  }
+  g.setIndex(idx);
+  return g;
+}
+const waveMat = new THREE.ShaderMaterial({
+  uniforms: Object.assign(commonUniforms(), { hq: { value: LOWQ ? 0 : 1 } }), side: THREE.DoubleSide, fog: false,
+  vertexShader: `attribute float foam; attribute float thin; attribute float sv;
+    varying vec3 vPos; varying vec3 vN; varying float vFoam; varying float vThin; varying float vS;
+    void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vPos = w.xyz; vN = mat3(modelMatrix) * normal; vFoam = foam; vThin = thin; vS = sv; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  fragmentShader: GLSL_COMMON + `varying vec3 vPos; varying vec3 vN; varying float vFoam; varying float vThin; varying float vS; uniform float hq;
+  vec2 hash2(vec2 p){ p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3))); return fract(sin(p) * 43758.5453); }
+  // encaje de espuma: bordes de celdas (F2 - F1) que se deforman despacio
+  float lace(vec2 uv){
+    vec2 ip = floor(uv), fp = fract(uv); float d1 = 8.0, d2 = 8.0;
+    for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+      vec2 g = vec2(float(x), float(y)); vec2 o = hash2(ip + g);
+      o = 0.5 + 0.42 * sin(time * 0.5 + 6.2831 * o);
+      vec2 r = g + o - fp; float d = dot(r, r);
+      if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+    }
+    return sqrt(d2) - sqrt(d1);
+  }
+  void main(){
+    vec3 V = normalize(cameraPosition - vPos);
+    vec3 N = normalize(vN);
+    if (dot(N, V) < 0.0) N = -N;
+    // rizado fino del agua que sube por la cara
+    float n1 = fbm(vec2(vPos.x*0.8 + time*0.25, vS*26.0 - time*0.7));
+    float n2 = fbm(vec2(vPos.x*0.8 + 5.3, vS*26.0 + 2.1 - time*0.7));
+    float n3 = noise(vec2(vPos.x*3.5, vS*70.0 - time*2.2));
+    N = normalize(N + vec3((n1-0.5)*0.30 + (n3-0.5)*0.10, 0.0, (n2-0.5)*0.30));
+    float fres = 0.02 + 0.98*pow(1.0 - max(dot(N, V), 0.0), 5.0);
+    // color: azul profundo en la cara, más claro abajo y turquesa translúcido arriba
+    vec3 trough = vec3(0.10, 0.34, 0.55);
+    vec3 deep   = vec3(0.02, 0.13, 0.33);
+    vec3 upper  = vec3(0.05, 0.30, 0.52);
+    vec3 lipc   = vec3(0.12, 0.50, 0.62);
+    vec3 body = mix(trough, deep, smoothstep(0.02, 0.30, vS));
+    body = mix(body, upper, smoothstep(0.35, 0.62, vS));
+    body = mix(body, lipc, smoothstep(0.62, 0.78, vS) * vThin);
+    float tr = pow(max(dot(-V, sunDir), 0.0), 2.0) * smoothstep(0.5, 0.8, vS) * vThin;
+    body += vec3(0.10, 0.48, 0.50) * tr * 0.55;
+    float diff = max(dot(N, sunDir), 0.0);
+    body *= 0.80 + 0.35*diff;
+    vec3 col = mix(body, skyCol(reflect(-V, N)) * vec3(0.85, 0.92, 1.0), fres * 0.65);
+    float sp = pow(max(dot(reflect(-sunDir, N), V), 0.0), 220.0);
+    col += vec3(1.0, 0.92, 0.78) * sp * 2.4;
+    // vetas de agua estirada hacia la cresta
+    float st = noise(vec2(vPos.x*3.0, vS*110.0 - time*2.4));
+    col += vec3(0.45, 0.75, 0.90) * smoothstep(0.75, 0.97, st) * 0.10 * vThin;
+    // encaje de espuma: denso abajo y en la zona rota, suelto en la cara
+    float fpatch = fbm(vec2(vPos.x*0.18 - time*0.05, vS*3.0));
+    // en móvil el encaje se hace con ruido simple (mucho más barato)
+    float lw = hq > 0.5 ? 1.0 - smoothstep(0.0, 0.06, lace(vec2(vPos.x*0.6 - time*0.08, vS*11.0 + time*0.12))) : smoothstep(0.66, 0.74, noise(vec2(vPos.x*1.1 - time*0.1, vS*16.0 + time*0.15)));
+    float lw2 = hq > 0.5 ? 1.0 - smoothstep(0.0, 0.045, lace(vec2(vPos.x*1.4 + 3.1, vS*24.0 - time*0.2))) : 0.0;
+    float laceMask = (1.0 - smoothstep(0.10, 0.42, vS)) * 0.85 + smoothstep(0.45, 0.75, fpatch) * 0.45 * (1.0 - smoothstep(0.55, 0.7, vS));
+    float laceA = clamp(max(lw * 0.8, lw2 * 0.5) * laceMask * smoothstep(0.35, 0.7, fpatch + 0.2) + vFoam * lw * 0.5, 0.0, 1.0);
+    // espuma sólida donde rompe
+    float fn = fbm(vec2(vPos.x*1.2 - time*0.5, vS*30.0 + time*0.9));
+    float foam = smoothstep(0.38, 0.78, vFoam * (0.55 + fn));
+    // cortina del labio: chorros blancos verticales que caen
+    float lipZ = smoothstep(0.72, 0.84, vS) * vThin;
+    float curtain = noise(vec2(vPos.x*8.0 + fn*2.0, vS*5.0 - time*3.2));
+    curtain = smoothstep(0.35, 0.85, curtain * 0.7 + noise(vec2(vPos.x*21.0, vS*9.0 - time*4.0)) * 0.45);
+    vec3 foamCol = vec3(0.93, 0.96, 0.98) * (0.85 + 0.22*diff);
+    col = mix(col, foamCol * 0.95, laceA * 0.2 * smoothstep(0.35, 0.75, fn + 0.2));
+    col = mix(col, foamCol, clamp(foam + lipZ * curtain * 0.85, 0.0, 1.0));
+    col = applyFog(col, vPos);
+    // el labio es translúcido entre los chorros: deja ver al surfista dentro del tubo
+    float a = mix(1.0, 0.5 + 0.5 * curtain, lipZ * (1.0 - clamp(foam, 0.0, 1.0)));
+    gl_FragColor = vec4(tone(col), a);
+  }`
+});
+waveMat.transparent = true;
+const frontGeo = makeStrip(NX, NF), backGeo = makeStrip(NX, NB);
+const frontMesh = new THREE.Mesh(frontGeo, waveMat), backMesh = new THREE.Mesh(backGeo, waveMat);
+frontMesh.frustumCulled = false; backMesh.frustumCulled = false;
+world.add(frontMesh, backMesh);
+
+let curlX = 0, grow = 1, pm = 1, gtime = 0;
+const prm = { p: 0, g: 0, br: 0, dx: 0, H: 0, sz: 1 };
+function wparams(x, o) {
+  const dx = x - curlX;
+  let p, g, br;
+  if (dx >= 0) { p = 1 - sm(0, 18, dx); g = 1 - 0.45 * sm(XB * 0.33, XB * 0.93, dx); br = 0; }
+  else { br = sm(0, 2.0, -dx); p = 1 - 0.8 * sm(2, 20, -dx); g = 1 - 0.62 * sm(0.5, 24, -dx); }
+  g *= sm(XA, XA + 12, dx) * (1 - sm(XB - 16, XB, dx));
+  o.p = p * pm; o.g = g * grow; o.br = br * pm; o.dx = dx;
+  o.H = HW * o.g; o.sz = 0.35 + 0.65 * o.g;
+  return o;
+}
+const P = Array.from({ length: 9 }, () => [0, 0]);
+const BP = Array.from({ length: 5 }, () => [0, 0]);
+function ctrl(o) {
+  const H = o.H, sz = o.sz, p = o.p;
+  P[0][0] = 22; P[0][1] = -0.08;
+  P[1][0] = 12; P[1][1] = 0.02 * H;
+  P[2][0] = 5.0 * sz; P[2][1] = 0.12 * H;
+  P[3][0] = (3.4 - 0.5 * p) * sz; P[3][1] = 0.45 * H;
+  P[4][0] = (2.0 - 0.6 * p) * sz; P[4][1] = 0.82 * H;
+  P[5][0] = (1.0 + 0.1 * p) * sz; P[5][1] = H;
+  P[6][0] = (1.0 + 2.9 * p) * sz; P[6][1] = H * (1 + 0.09 * p);
+  P[7][0] = (1.0 + 5.2 * p) * sz; P[7][1] = H * (1 - 0.42 * p);
+  P[8][0] = (1.0 + 6.6 * p) * sz; P[8][1] = H * (1 - 0.9 * p);
+  BP[0][0] = P[4][0]; BP[0][1] = P[4][1];
+  BP[1][0] = P[5][0]; BP[1][1] = P[5][1];
+  BP[2][0] = -2.6 * sz; BP[2][1] = 0.55 * H;
+  BP[3][0] = -7 * sz; BP[3][1] = 0.12 * H;
+  BP[4][0] = -16; BP[4][1] = -0.08;
+}
+const cro = [0, 0];
+function cr(Pts, i, u, out) {
+  const n = Pts.length;
+  const p0 = Pts[Math.max(i - 1, 0)], p1 = Pts[i], p2 = Pts[Math.min(i + 1, n - 1)], p3 = Pts[Math.min(i + 2, n - 1)];
+  const u2 = u * u, u3 = u2 * u;
+  for (let k = 0; k < 2; k++) out[k] = 0.5 * (2 * p1[k] + (-p0[k] + p2[k]) * u + (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k]) * u2 + (-p0[k] + 3 * p1[k] - 3 * p2[k] + p3[k]) * u3);
+  return out;
+}
+
+function updateWave() {
+  const fp = frontGeo.attributes.position.array, ff = frontGeo.attributes.foam.array, ft = frontGeo.attributes.thin.array, fs = frontGeo.attributes.sv.array;
+  const bp = backGeo.attributes.position.array, bf = backGeo.attributes.foam.array, bt = backGeo.attributes.thin.array, bs = backGeo.attributes.sv.array;
+  for (let i = 0; i <= NX; i++) {
+    const x = curlX + XA + (XB - XA) * i / NX;
+    wparams(x, prm); ctrl(prm);
+    const br = prm.br, p = prm.p;
+    for (let j = 0; j < NF; j++) {
+      const t = j / (NF - 1) * 8, seg = Math.min(7, Math.floor(t)), u = t - seg;
+      cr(P, seg, u, cro);
+      let y = cro[1];
+      if (br > 0) y += br * sm(1, 5, t) * (Math.sin(x * 1.3 + gtime * 4 + t) * 0.22 + Math.sin(x * 0.55 - gtime * 2.6 + t * 0.5) * 0.25);
+      const k = i * NF + j;
+      fp[k * 3] = x; fp[k * 3 + 1] = y; fp[k * 3 + 2] = cro[0];
+      ft[k] = sm(1.5, 4.8, t);
+      fs[k] = t / 8;
+      ff[k] = br * (0.55 + 0.5 * sm(2, 5, t)) + p * sm(6.9, 8, t) * 0.9 + 0.2 * sm(4.75, 5, t) * (1 - sm(5, 5.3, t)) * prm.g;
+    }
+    for (let j = 0; j < NB; j++) {
+      const t = 1 + j / (NB - 1) * 3, seg = Math.min(3, Math.floor(t)), u = t - seg;
+      cr(BP, seg, u, cro);
+      const k = i * NB + j;
+      bp[k * 3] = x; bp[k * 3 + 1] = cro[1]; bp[k * 3 + 2] = cro[0];
+      bt[k] = 0.7 * (1 - sm(1, 3, t));
+      bs[k] = 0.6 + t * 0.1;
+      bf[k] = br * 0.8 * (1 - sm(1.5, 4, t));
+    }
+  }
+  for (const g of [frontGeo, backGeo]) {
+    g.attributes.position.needsUpdate = true; g.attributes.foam.needsUpdate = true;
+    g.attributes.thin.needsUpdate = true; g.attributes.sv.needsUpdate = true;
+    g.computeVertexNormals();
+  }
+}
+
+// punto de la cara de la ola a una altura h (0 = seno, 1 = cresta)
+const face = { y: 0, z: 0, ty: 1, tz: 0, Hc: 1, p: 0, dx: 0 };
+const fy = new Float32Array(48), fz = new Float32Array(48);
+function faceAt(x, h) {
+  wparams(x, prm); ctrl(prm);
+  const n = 48;
+  for (let j = 0; j < n; j++) {
+    const t = j / (n - 1) * 5, seg = Math.min(4, Math.floor(t)), u = t - seg;
+    cr(P, seg, u, cro); fy[j] = cro[1]; fz[j] = cro[0];
+  }
+  const Hc = Math.max(0.3, P[5][1]), target = h * Hc;
+  let j = 1;
+  while (j < n - 1 && fy[j] < target) j++;
+  const y0 = fy[j - 1], y1 = fy[j], k = y1 > y0 ? clamp((target - y0) / (y1 - y0), 0, 1) : 1;
+  face.y = lerp(y0, y1, k); face.z = lerp(fz[j - 1], fz[j], k);
+  let ty = y1 - y0, tz = fz[j] - fz[j - 1];
+  if (ty < 0.05) { ty = 0.05; tz = -Math.max(Math.abs(tz), 0.3); }   // en la cresta la tangente nunca da la vuelta
+  const l = Math.hypot(ty, tz) || 1;
+  face.ty = ty / l; face.tz = tz / l; face.Hc = Hc; face.p = prm.p; face.dx = prm.dx;
+  return face;
+}
+
+// ---------- partículas (espuma, spray) ----------
+const PN = 3600;
+const pPos = new Float32Array(PN * 3), pVel = new Float32Array(PN * 3), pLife = new Float32Array(PN), pMax = new Float32Array(PN);
+const pSize0 = new Float32Array(PN), pAlpha0 = new Float32Array(PN), pGrav = new Float32Array(PN);
+const pSize = new Float32Array(PN), pAlpha = new Float32Array(PN);
+const partGeo = new THREE.BufferGeometry();
+partGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+partGeo.setAttribute('size', new THREE.BufferAttribute(pSize, 1));
+partGeo.setAttribute('alpha', new THREE.BufferAttribute(pAlpha, 1));
+var partMat = new THREE.ShaderMaterial({
+  uniforms: Object.assign(commonUniforms(), { uScale: { value: pxScale } }),
+  transparent: true, depthWrite: false, fog: false,
+  vertexShader: `attribute float size; attribute float alpha; uniform float uScale; varying float vA; varying vec3 vPos;
+    void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = min(size * uScale / -mv.z, 260.0); gl_Position = projectionMatrix * mv; vA = alpha * smoothstep(2.0, 7.0, -mv.z); vPos = (modelMatrix * vec4(position, 1.0)).xyz; }`,
+  fragmentShader: GLSL_COMMON + `varying float vA; varying vec3 vPos;
+    void main(){ vec2 c = gl_PointCoord - 0.5; float d = length(c); if (d > 0.5) discard;
+      float a = smoothstep(0.5, 0.05, d) * vA;
+      vec3 V = normalize(cameraPosition - vPos);
+      vec3 col = vec3(0.92, 0.95, 0.97) + vec3(0.25, 0.18, 0.08) * pow(max(dot(-V, sunDir), 0.0), 3.0);
+      col = applyFog(col, vPos);
+      gl_FragColor = vec4(tone(col), a); }`
+});
+const particles = new THREE.Points(partGeo, partMat);
+particles.frustumCulled = false; particles.renderOrder = 5; world.add(particles);
+let pHead = 0;
+function emit(x, y, z, vx, vy, vz, life, size, alpha, grav) {
+  const i = pHead; pHead = (pHead + 1) % PN;
+  pPos[i * 3] = x; pPos[i * 3 + 1] = y; pPos[i * 3 + 2] = z;
+  pVel[i * 3] = vx; pVel[i * 3 + 1] = vy; pVel[i * 3 + 2] = vz;
+  pLife[i] = life; pMax[i] = life; pSize0[i] = size; pAlpha0[i] = alpha; pGrav[i] = grav;
+}
+function updateParticles(dt) {
+  const drag = 1 - 0.9 * dt;
+  for (let i = 0; i < PN; i++) {
+    if (pLife[i] <= 0) { pAlpha[i] = 0; pSize[i] = 0; continue; }
+    pLife[i] -= dt;
+    const k = i * 3;
+    pVel[k + 1] -= 9.8 * pGrav[i] * dt;
+    pVel[k] *= drag; pVel[k + 1] *= drag; pVel[k + 2] *= drag;
+    pPos[k] += pVel[k] * dt; pPos[k + 1] += pVel[k + 1] * dt; pPos[k + 2] += pVel[k + 2] * dt;
+    const f = Math.max(0, pLife[i] / pMax[i]);
+    pSize[i] = pSize0[i] * (1 + 0.8 * (1 - f));
+    pAlpha[i] = pAlpha0[i] * Math.min(1, f * 2.2) * Math.min(1, (1 - f) * 8 + 0.2);
+  }
+  partGeo.attributes.position.needsUpdate = true; partGeo.attributes.size.needsUpdate = true; partGeo.attributes.alpha.needsUpdate = true;
+}
+const acc = { crest: 0, curl: 0, wash: 0, board: 0 };
+function emitWave(dt) {
+  if (grow > 0.6) {
+    acc.crest += dt * 560 * grow * PQ;
+    while (acc.crest >= 1) {
+      acc.crest--;
+      const x = curlX + rnd(0.5, XB - 25); wparams(x, prm); ctrl(prm);
+      if (prm.H < 0.8) continue;
+      emit(x, P[5][1] + 0.05, P[5][0] - 0.1, rnd(-0.3, 0.3), rnd(2.5, 5.5), rnd(-7, -3), rnd(0.5, 1.0), rnd(0.25, 0.8) * prm.g, 0.42, 0.55);   // abanico de spray que el viento levanta de la cresta
+    }
+  }
+  if (pm > 0.55) {
+    acc.curl += dt * 120 * pm * PQ;
+    while (acc.curl >= 1) {
+      acc.curl--;
+      const x = curlX + rnd(-1.5, 1.5); wparams(x + 1.5, prm); ctrl(prm);
+      emit(x, rnd(0, 0.6), P[8][0] + rnd(-0.6, 0.8), rnd(-2.5, 2.5), rnd(3, 9.5), rnd(-0.5, 4), rnd(0.9, 1.6), rnd(1.3, 3.4), 0.55, 1);
+    }
+    // cortina: gotas que caen del labio a lo largo del tubo
+    acc.lip = (acc.lip || 0) + dt * 260 * pm * PQ;
+    while (acc.lip >= 1) {
+      acc.lip--;
+      const x = curlX + rnd(0, 18); wparams(x, prm); ctrl(prm);
+      if (prm.p < 0.15) continue;
+      const k = rnd(0.6, 1);
+      emit(x, P[7][1] * k + P[8][1] * (1 - k), P[7][0] * k + P[8][0] * (1 - k) + rnd(-0.2, 0.2), rnd(-0.3, 0.3), rnd(-2.5, -0.5), rnd(0.2, 1.2), rnd(0.35, 0.7), rnd(0.12, 0.35), 0.75, 1);
+    }
+    acc.wash += dt * 260 * pm * PQ;
+    while (acc.wash >= 1) {
+      acc.wash--;
+      const x = curlX - rnd(0.5, 32); wparams(x, prm); ctrl(prm);
+      emit(x, rnd(0.1, prm.H * 0.9), rnd(-0.5, 7.5), rnd(-1.5, 1.5), rnd(0.5, 3), rnd(-0.5, 2.5), rnd(0.8, 1.4), rnd(1.3, 3.6), 0.38, 0.25);
+    }
+  }
+}
+function splash(pos, n, power) {
+  for (let i = 0; i < n; i++) emit(pos.x + rnd(-0.4, 0.4), pos.y + rnd(0, 0.3), pos.z + rnd(-0.4, 0.4), rnd(-3, 3) * power, rnd(2, 7) * power, rnd(-3, 3) * power, rnd(0.7, 1.4), rnd(0.4, 1.6), 0.8, 1);
+}
+
+// ---------- el surfista ----------
+const boardRoot = new THREE.Group(); world.add(boardRoot);
+let boardMesh = null; const finMeshes = [];
+const matBoard = new THREE.MeshStandardMaterial({ color: 0xf6f1e6, roughness: 0.35 });
+const matStripe = new THREE.MeshStandardMaterial({ color: 0xff5a4e, roughness: 0.4 });
+const matSuit = new THREE.MeshStandardMaterial({ color: 0x18222e, roughness: 0.55 });
+const matShorts = new THREE.MeshStandardMaterial({ color: 0xe8743b, roughness: 0.7 });
+const matSkin = new THREE.MeshStandardMaterial({ color: 0xc58a62, roughness: 0.65 });
+const matHair = new THREE.MeshStandardMaterial({ color: 0x2b1b12, roughness: 0.9 });
+const matShin = new THREE.MeshStandardMaterial({ color: 0xc58a62, roughness: 0.65 });     // piel o neopreno largo
+const matForearm = new THREE.MeshStandardMaterial({ color: 0xc58a62, roughness: 0.65 });
+const matUpperArm = new THREE.MeshStandardMaterial({ color: 0x18222e, roughness: 0.55 });  // paneles de hombro (Bruno: azul)
+// pecho del neopreno con su dibujo (Bruno: negro con raya verde fosforito)
+const torsoCv = document.createElement('canvas'); torsoCv.width = torsoCv.height = 64;
+const torsoTex = new THREE.CanvasTexture(torsoCv);
+const TORSOS = {
+  juanp(x) { x.fillStyle = '#ee6a3a'; x.fillRect(0, 0, 64, 64); x.fillStyle = '#16171a'; for (const y of [18, 32, 46]) x.fillRect(0, y, 64, 5); x.fillRect(28, 0, 8, 64); },
+  bruno(x) { x.fillStyle = '#111214'; x.fillRect(0, 0, 64, 64); x.fillStyle = '#7dff3a'; x.fillRect(0, 10, 64, 4); x.fillStyle = '#1e3f9e'; x.fillRect(0, 0, 64, 6); }
+};
+
+// ---------- diseños pintados de tablas y quillas ----------
+const deckCv = document.createElement('canvas'); deckCv.width = 1024; deckCv.height = 300;
+const deckTex = new THREE.CanvasTexture(deckCv); deckTex.anisotropy = 4;
+matBoard.map = deckTex; matBoard.color.set(0xffffff);
+const finCv = [0, 1, 2].map(() => { const c = document.createElement('canvas'); c.width = c.height = 128; return c; });
+const finTex = finCv.map(c => new THREE.CanvasTexture(c));
+const matFins = finTex.map(t => new THREE.MeshStandardMaterial({ map: t, roughness: 0.4, side: THREE.DoubleSide }));
+
+// texto legible aunque el mundo vaya espejado
+function mirroredText(x, txt, px, py, font, color) {
+  x.save(); x.translate(px, py); x.scale(-1, 1); x.font = font; x.fillStyle = color; x.textAlign = 'center'; x.fillText(txt, 0, 0); x.restore();
+}
+function skeleton(x, cx, cy, len, col) {
+  // esqueleto tumbado a lo largo del grip
+  x.save(); x.strokeStyle = col; x.fillStyle = col; x.lineWidth = 3; x.lineCap = 'round';
+  const s = len / 180;
+  x.beginPath(); x.arc(cx + 80 * s, cy, 11 * s, 0, Math.PI * 2); x.fill();
+  x.beginPath(); x.moveTo(cx + 68 * s, cy); x.lineTo(cx - 10 * s, cy); x.stroke();
+  for (let i = 0; i < 5; i++) { const rx = cx + (55 - i * 9) * s; x.beginPath(); x.moveTo(rx, cy - 12 * s); x.quadraticCurveTo(rx - 4 * s, cy, rx, cy + 12 * s); x.stroke(); }
+  x.beginPath(); x.moveTo(cx + 60 * s, cy - 4 * s); x.lineTo(cx + 25 * s, cy - 28 * s); x.lineTo(cx - 5 * s, cy - 30 * s); x.stroke();
+  x.beginPath(); x.moveTo(cx + 60 * s, cy + 4 * s); x.lineTo(cx + 25 * s, cy + 28 * s); x.lineTo(cx - 5 * s, cy + 30 * s); x.stroke();
+  x.beginPath(); x.moveTo(cx - 10 * s, cy - 6 * s); x.lineTo(cx - 55 * s, cy - 16 * s); x.lineTo(cx - 95 * s, cy - 14 * s); x.stroke();
+  x.beginPath(); x.moveTo(cx - 10 * s, cy + 6 * s); x.lineTo(cx - 55 * s, cy + 16 * s); x.lineTo(cx - 95 * s, cy + 14 * s); x.stroke();
+  x.restore();
+}
+function tailPad(x, px, py, w, h, bg, fg) {
+  x.fillStyle = bg; x.fillRect(px, py, w, h);
+  x.strokeStyle = 'rgba(0,0,0,.18)'; x.lineWidth = 2;
+  for (let k = -h; k < w; k += 10) { x.beginPath(); x.moveTo(px + k, py + h); x.lineTo(px + k + h * 0.6, py); x.stroke(); }
+  skeleton(x, px + w * 0.5, py + h * 0.5, w * 0.92, fg);
+}
+// tablas sacadas directamente de la foto de su dueño (ya giradas y recortadas a su silueta)
+const BOARD_PHOTOS = {
+  jowi: 'img/personajes/jowi/tabla.jpg',
+  gutty: 'img/personajes/gutty/tabla.jpg',
+  xitano: 'img/personajes/xitano/tabla.jpg',
+  alex: 'img/personajes/alex/tabla.jpg'
+};
+const boardImg = {};
+for (const k in BOARD_PHOTOS) {
+  const im = new Image();
+  im.onload = () => { if (typeof deckPrev !== 'undefined') delete deckPrev[k]; if (typeof CH !== 'undefined' && CH.id === k) paintBoard(CH); };
+  im.src = BOARD_PHOTOS[k]; boardImg[k] = im;
+}
+const DECKS = {
+  // Jowi: tabla NL Surfboard blanca, larguero, logo arcoíris hacia la punta y dos grips de esqueletos en la cola
+  jowi(x, W, H) {
+    x.fillStyle = '#f7f7f3'; x.fillRect(0, 0, W, H);
+    x.strokeStyle = '#c8b086'; x.lineWidth = 3; x.beginPath(); x.moveTo(0, H / 2); x.lineTo(W, H / 2); x.stroke();
+    x.fillStyle = '#8f8f8f'; x.fillRect(0, 22, 26, H - 44);
+    tailPad(x, 26, 24, 200, H / 2 - 26, '#d9d7d0', '#2f2f2f');
+    tailPad(x, 26, H / 2 + 2, 200, H / 2 - 26, '#1d1d1d', '#e9e9e4');
+    const cx = W * 0.74, cy = H * 0.66;
+    ['#e94a8a', '#f2a33a', '#f4e04d', '#45b36b', '#3a8fd6', '#7b4bc4'].forEach((c, i) => { x.strokeStyle = c; x.lineWidth = 4; x.beginPath(); x.arc(cx, cy, 30 - i * 3.5, 0, Math.PI * 2); x.stroke(); });
+    mirroredText(x, 'N', cx, cy + 8, 'bold 22px Arial', '#2c5a60');
+    mirroredText(x, 'NL SURFBOARD', W * 0.42, H * 0.86, 'italic bold 34px Arial', '#1f5058');
+  },
+  // Litos: tabla Bradley blanca, grip negro en la cola, rayas negras en los cantos de la cola y logo negro
+  litos(x, W, H) {
+    x.fillStyle = '#f6f6f2'; x.fillRect(0, 0, W, H);
+    x.strokeStyle = '#cdbf9f'; x.lineWidth = 3; x.beginPath(); x.moveTo(0, H / 2); x.lineTo(W, H / 2); x.stroke();
+    x.fillStyle = '#151515';
+    for (let i = 0; i < 6; i++) {
+      const u = 40 + i * 30;
+      x.beginPath(); x.moveTo(u, 0); x.lineTo(u + 14, 0); x.lineTo(u + 44, 46); x.lineTo(u + 30, 46); x.fill();
+      x.beginPath(); x.moveTo(u, H); x.lineTo(u + 14, H); x.lineTo(u + 44, H - 46); x.lineTo(u + 30, H - 46); x.fill();
+    }
+    x.fillStyle = '#161616'; x.fillRect(20, 58, 175, H - 116);
+    x.strokeStyle = '#3a3a3a'; x.lineWidth = 4;
+    for (let v = 70; v < H - 64; v += 16) { x.beginPath(); x.moveTo(26, v); x.lineTo(188, v); x.stroke(); }
+    x.fillStyle = '#2b2b2b'; x.fillRect(150, 58, 45, H - 116);
+    const cx = W * 0.62, cy = H * 0.5;
+    x.fillStyle = '#161616'; x.beginPath(); x.arc(cx + 95, cy, 20, 0, Math.PI * 2); x.fill();
+    x.fillStyle = '#f6f6f2'; x.beginPath(); x.arc(cx + 95, cy, 9, 0, Math.PI * 2); x.fill();
+    mirroredText(x, 'Bradley', cx, cy + 12, 'italic bold 36px Georgia', '#161616');
+  },
+  photo(x, W, H, c) {
+    const im = boardImg[c.id];
+    if (im && im.complete && im.naturalWidth) x.drawImage(im, 0, 0, W, H);
+    else (DECKS[c.deckFallback] || DECKS.plain)(x, W, H, c);
+  },
+  // Jowi (foto nueva): Bradley «Bell» de cantos negros, cubierta con entramado de rombos, banda gris central
+  // con «Bradley» y el logo triangular BELL, protector negro en la punta y grip negro de tres piezas
+  jowiBell(x, W, H) {
+    x.fillStyle = '#e4e8e5'; x.fillRect(0, 0, W, H);
+    x.strokeStyle = '#3a403d'; x.lineWidth = 1.6;
+    for (let k = -H; k < W + H; k += 13) {
+      x.beginPath(); x.moveTo(k, 0); x.lineTo(k + H, H); x.stroke();
+      x.beginPath(); x.moveTo(k, H); x.lineTo(k + H, 0); x.stroke();
+    }
+    x.strokeStyle = 'rgba(58,64,61,.35)'; x.lineWidth = 1;
+    for (let u = 0; u < W; u += 6.5) { x.beginPath(); x.moveTo(u, 0); x.lineTo(u, H); x.stroke(); }
+    const g = x.createLinearGradient(0, H * 0.38, 0, H * 0.62);
+    g.addColorStop(0, '#5f6461'); g.addColorStop(0.5, '#8c918e'); g.addColorStop(1, '#5f6461');
+    x.fillStyle = g; x.fillRect(150, H * 0.38, W * 0.78, H * 0.24);
+    // logo circular y «Bradley» a lo largo de la banda
+    const lx = W * 0.62, ly = H * 0.5;
+    x.fillStyle = '#121212'; x.beginPath(); x.arc(lx + 120, ly, 17, 0, Math.PI * 2); x.fill();
+    x.fillStyle = '#e4e8e5'; x.beginPath(); x.arc(lx + 120, ly, 7, 0, Math.PI * 2); x.fill();
+    mirroredText(x, 'Bradley', lx, ly + 11, 'bold 34px Arial', '#121212');
+    // logo BELL
+    const bx = W * 0.36;
+    x.save(); x.translate(bx, ly); x.rotate(Math.PI / 2);
+    x.strokeStyle = '#121212'; x.lineWidth = 8; x.lineJoin = 'round';
+    x.beginPath(); x.moveTo(-30, 22); x.lineTo(0, -26); x.lineTo(30, 22); x.closePath(); x.stroke();
+    x.restore();
+    mirroredText(x, 'BELL', bx - 52, ly + 10, 'bold 26px Arial', '#121212');
+    // cantos negros y protector de la punta
+    x.fillStyle = '#121212'; x.fillRect(0, 0, W, 16); x.fillRect(0, H - 16, W, 16);
+    x.beginPath(); x.moveTo(W * 0.93, 0); x.lineTo(W, 0); x.lineTo(W, H); x.lineTo(W * 0.93, H); x.quadraticCurveTo(W * 0.885, H / 2, W * 0.93, 0); x.fill();
+    // grip negro de tres piezas
+    x.fillStyle = '#141414';
+    x.beginPath(); x.moveTo(6, 18); x.lineTo(185, 34); x.lineTo(192, H / 2 - 36); x.lineTo(6, H / 2 - 28); x.fill();
+    x.fillRect(6, H / 2 - 22, 196, 44);
+    x.beginPath(); x.moveTo(6, H - 18); x.lineTo(185, H - 34); x.lineTo(192, H / 2 + 36); x.lineTo(6, H / 2 + 28); x.fill();
+    x.strokeStyle = '#333'; x.lineWidth = 3;
+    for (let u = 26; u < 190; u += 20) { x.beginPath(); x.moveTo(u, H / 2 - 16); x.lineTo(u, H / 2 + 16); x.stroke(); }
+  },
+  // Froskin: tabla blanca, círculo turquesa con hoja en la punta y la mitad de abajo pintada a mano en cuadros de colores
+  zodiac(x, W, H) {
+    x.fillStyle = '#d8212b'; x.fillRect(0, 0, W, H);
+    x.fillStyle = '#e9e9e6'; x.fillRect(W * 0.1, H * 0.3, W * 0.78, H * 0.4);
+    x.fillStyle = '#3a3d42'; x.fillRect(0, H * 0.35, W * 0.1, H * 0.3);
+    x.fillStyle = '#fff'; x.font = 'bold 64px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('S.O.S', W * 0.5, H * 0.5);
+  },
+  kayak(x, W, H) {
+    x.fillStyle = '#f2621f'; x.fillRect(0, 0, W, H);
+    x.fillStyle = '#d24d12'; x.fillRect(0, H * 0.82, W, H * 0.18);
+    x.fillStyle = '#16171a'; x.beginPath(); x.ellipse(W * 0.45, H * 0.5, W * 0.11, H * 0.3, 0, 0, Math.PI * 2); x.fill();
+    x.fillStyle = '#fff'; x.font = 'bold 60px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('jackson', W * 0.75, H * 0.5);
+  },
+  jetski(x, W, H) {
+    x.fillStyle = '#f2f2f0'; x.fillRect(0, 0, W, H);
+    x.fillStyle = '#15171a'; x.fillRect(0, 0, W, H * 0.1); x.fillRect(0, H * 0.9, W, H * 0.1);
+    x.fillStyle = '#c8f230'; x.beginPath(); x.moveTo(W * 0.55, H * 0.12); x.lineTo(W, H * 0.5); x.lineTo(W * 0.55, H * 0.88); x.closePath(); x.fill();
+    x.fillStyle = '#26b33a'; x.fillRect(W * 0.12, H * 0.3, W * 0.38, H * 0.4);
+    x.fillStyle = '#15171a'; x.fillRect(W * 0.5, H * 0.15, W * 0.03, H * 0.7);
+  },
+  galluBB(x, W, H) {
+    const g = x.createLinearGradient(0, 0, W, 0); g.addColorStop(0, '#2b2a7a'); g.addColorStop(1, '#5a2f8e');
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    x.fillStyle = '#e8432e'; x.fillRect(0, 0, W, H * 0.12); x.fillRect(0, H * 0.88, W, H * 0.12);
+    x.strokeStyle = 'rgba(255,255,255,.55)'; x.lineWidth = 5;
+    x.beginPath(); x.ellipse(W * 0.55, H * 0.5, 110, 46, 0, 0, Math.PI * 2); x.stroke();
+    x.fillStyle = 'rgba(255,255,255,.7)'; x.font = 'bold 54px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('GALLU', W * 0.55, H * 0.5);
+    for (let i = 0; i < 6; i++) { x.fillStyle = 'rgba(0,0,0,.18)'; x.fillRect(W * (0.1 + i * 0.05), H * 0.2, 6, H * 0.6); }   // ranuras de la cola
+  },
+  joseNL(x, W, H) {
+    x.fillStyle = '#e9ec4a'; x.fillRect(0, 0, W, H);
+    x.fillStyle = '#a8e6cf'; x.fillRect(0, 0, W * 0.3, H);
+    x.fillStyle = '#16181c'; x.fillRect(W * 0.3, 0, W * 0.045, H);
+    // logo de plumas sobre la franja
+    x.save(); x.translate(W * 0.37, H * 0.5); x.fillStyle = '#16181c'; x.strokeStyle = '#f2f2ee'; x.lineWidth = 3;
+    x.beginPath(); x.ellipse(0, 0, 44, 20, 0, 0, Math.PI * 2); x.fill(); x.stroke();
+    for (let i = -3; i <= 3; i++) { x.beginPath(); x.moveTo(-30, i * 4); x.lineTo(32, i * 5.5); x.stroke(); }
+    x.restore();
+    // desgaste: manchas de cera y arena
+    for (let i = 0; i < 70; i++) { x.fillStyle = 'rgba(190,170,120,' + (0.08 + Math.random() * 0.18) + ')'; x.beginPath(); x.ellipse(Math.random() * W, Math.random() * H, 6 + Math.random() * 30, 4 + Math.random() * 14, Math.random() * 3, 0, Math.PI * 2); x.fill(); }
+  },
+  froskin(x, W, H) {
+    x.fillStyle = '#f4f1e8'; x.fillRect(0, 0, W, H);
+    x.strokeStyle = '#cbbd96'; x.lineWidth = 3; x.beginPath(); x.moveTo(0, H / 2); x.lineTo(W, H / 2); x.stroke();
+    // cuadros pintados con rotulador (de la cola hasta la mitad)
+    const cols = ['#d9534f', '#2f5fb3', '#2e9e6e', '#f4f1e8', '#2f5fb3', '#d9534f', '#2e9e6e', '#3aa6a0'];
+    const words = ['LOVE', 'OLA', 'YOUR', 'SURF', 'END', 'TIME', 'FROS', 'MAR'];
+    let n = 0;
+    for (let u = 120; u < W * 0.56; u += 92) for (let v = 0; v < H; v += 75, n++) {
+      x.fillStyle = cols[(n * 3 + (u / 92 | 0)) % cols.length]; x.globalAlpha = 0.85;
+      x.fillRect(u + (n % 3) * 3, v + 4, 90, 72); x.globalAlpha = 1;
+      x.strokeStyle = 'rgba(20,20,20,.55)'; x.lineWidth = 2;
+      for (let s = 0; s < 6; s++) { x.beginPath(); x.moveTo(u + 6 + s * 14, v + 8); x.lineTo(u + 12 + s * 14, v + 70); x.stroke(); }
+      mirroredText(x, words[n % words.length], u + 45, v + 48, 'bold 22px "Comic Sans MS", Arial', 'rgba(15,15,15,.75)');
+    }
+    // grip negro en la cola
+    x.fillStyle = '#121212'; x.beginPath(); x.moveTo(4, 30); x.lineTo(118, 40); x.lineTo(118, H - 40); x.lineTo(4, H - 30); x.fill();
+    x.strokeStyle = '#2f2f2f'; x.lineWidth = 3;
+    for (let v = 50; v < H - 40; v += 18) { x.beginPath(); x.moveTo(12, v); x.lineTo(110, v + 6); x.stroke(); }
+    // círculo turquesa y hoja hacia la punta
+    const cx = W * 0.8, cy = H * 0.56;
+    x.fillStyle = '#39b3b8'; x.beginPath(); x.arc(cx, cy, 70, 0, Math.PI * 2); x.fill();
+    x.strokeStyle = '#1d4f5a'; x.lineWidth = 4; x.stroke();
+    x.fillStyle = '#5fc7c4'; x.strokeStyle = '#1d4f5a'; x.lineWidth = 3;
+    x.beginPath(); x.ellipse(cx + 95, cy - 58, 40, 14, -0.6, 0, Math.PI * 2); x.fill(); x.stroke();
+  },
+  // Bruno (foto nueva): tabla blanca, larguero dorado, pegatina MADHATTER, logo triangular BELL y grip negro de tres piezas
+  bruno(x, W, H) {
+    x.fillStyle = '#f5f4ef'; x.fillRect(0, 0, W, H);
+    x.strokeStyle = '#c9a54a'; x.lineWidth = 3; x.beginPath(); x.moveTo(0, H / 2); x.lineTo(W, H / 2); x.stroke();
+    // grip de tres piezas con ranuras
+    x.fillStyle = '#141414';
+    x.beginPath(); x.moveTo(8, 40); x.lineTo(190, 52); x.lineTo(196, H / 2 - 40); x.lineTo(8, H / 2 - 30); x.fill();
+    x.fillRect(8, H / 2 - 24, 200, 48);
+    x.beginPath(); x.moveTo(8, H - 40); x.lineTo(190, H - 52); x.lineTo(196, H / 2 + 40); x.lineTo(8, H / 2 + 30); x.fill();
+    x.strokeStyle = '#3a3a3a'; x.lineWidth = 3;
+    for (let u = 30; u < 190; u += 22) { x.beginPath(); x.moveTo(u, H / 2 - 18); x.lineTo(u, H / 2 + 18); x.stroke(); }
+    // logo BELL: triángulo con hueco
+    const bx = W * 0.38, by = H * 0.5;
+    x.save(); x.translate(bx, by); x.rotate(Math.PI / 2);
+    x.strokeStyle = '#141414'; x.lineWidth = 9; x.lineJoin = 'round';
+    x.beginPath(); x.moveTo(-36, 26); x.lineTo(0, -32); x.lineTo(36, 26); x.closePath(); x.stroke();
+    x.restore();
+    mirroredText(x, 'BELL', bx - 62, by + 12, 'bold 34px Arial', '#141414');
+    // pegatina MADHATTER hacia la punta
+    const mx = W * 0.7, my = H * 0.5;
+    x.fillStyle = '#ffffff'; x.fillRect(mx - 95, my - 34, 190, 68);
+    x.strokeStyle = '#141414'; x.lineWidth = 3; x.strokeRect(mx - 95, my - 34, 190, 68);
+    mirroredText(x, 'MADHATTER', mx, my - 2, 'bold 30px Arial', '#141414');
+    mirroredText(x, 'SURF & SKATE SUPPLY', mx, my + 24, 'bold 15px Arial', '#141414');
+  },
+  plain(x, W, H, c) {
+    x.fillStyle = c.deckColor || '#ffffff'; x.fillRect(0, 0, W, H);
+    x.strokeStyle = 'rgba(0,0,0,.25)'; x.lineWidth = 3; x.beginPath(); x.moveTo(0, H / 2); x.lineTo(W, H / 2); x.stroke();
+    x.fillStyle = '#1d1d1d'; x.fillRect(10, 30, 190, H - 60);
+    mirroredText(x, c.name.toUpperCase(), W * 0.6, H * 0.6, 'bold 46px Arial', 'rgba(0,0,0,.5)');
+  }
+};
+const FINS = {
+  black(x) { x.fillStyle = '#17181b'; x.fillRect(0, 0, 128, 128); },
+  smoke(x) { x.fillStyle = '#3c4a45'; x.fillRect(0, 0, 128, 128); },
+  jowiA(x) { x.fillStyle = '#2f6fd0'; x.fillRect(0, 0, 128, 128); x.fillStyle = '#f6c431'; x.beginPath(); x.ellipse(70, 70, 70, 34, -0.7, 0, Math.PI * 2); x.fill(); x.fillStyle = '#111'; x.fillRect(40, 92, 18, 14); },
+  jowiB(x) { x.fillStyle = '#121212'; x.fillRect(0, 0, 128, 128); x.strokeStyle = '#f2f2f2'; x.lineWidth = 7; for (let y = 10; y < 128; y += 24) { x.beginPath(); for (let k = 0; k <= 128; k += 16) x.lineTo(k, y + (k / 16 % 2 ? 9 : -9)); x.stroke(); } },
+  jowiC(x) { x.fillStyle = '#121212'; x.fillRect(0, 0, 128, 128); x.fillStyle = '#e6e3da'; x.beginPath(); x.arc(64, 70, 26, 0, Math.PI * 2); x.fill(); x.fillRect(52, 88, 24, 16); x.fillStyle = '#121212'; x.beginPath(); x.arc(54, 68, 7, 0, Math.PI * 2); x.arc(74, 68, 7, 0, Math.PI * 2); x.fill(); x.fillStyle = '#f6c431'; x.fillRect(20, 100, 20, 20); },
+  litos(x) { x.fillStyle = '#2e3032'; x.fillRect(0, 0, 128, 128); x.strokeStyle = 'rgba(240,240,235,.75)'; x.lineWidth = 3; for (let k = -128; k < 128; k += 18) { x.beginPath(); x.moveTo(k, 128); x.lineTo(k + 128, 0); x.stroke(); } x.fillStyle = '#e9e7df'; x.fillRect(14, 96, 40, 10); },
+  froskin(x) { x.fillStyle = '#ecebe6'; x.fillRect(0, 0, 128, 128); x.fillStyle = '#39b3b8'; x.fillRect(0, 100, 128, 10); },
+  bruno(x) { x.fillStyle = '#26282b'; x.fillRect(0, 0, 128, 128); x.fillStyle = 'rgba(255,255,255,.18)'; x.fillRect(0, 0, 128, 20); },
+  plain(x, c) { x.fillStyle = c.finColor || '#222'; x.fillRect(0, 0, 128, 128); }
+};
+// neopreno con rayas blancas (Litos): textura con una franja a lo largo de cada pieza
+const stripeCv = document.createElement('canvas'); stripeCv.width = stripeCv.height = 64;
+{ const x = stripeCv.getContext('2d'); x.fillStyle = '#ffffff'; x.fillRect(0, 0, 64, 64); x.fillStyle = '#121314'; x.fillRect(0, 0, 64, 64);
+  x.fillStyle = '#f2f2ee'; x.fillRect(38, 0, 5, 64); x.fillRect(46, 0, 2, 64); }
+const stripeTex = new THREE.CanvasTexture(stripeCv);
+function setSuitMap(mat, on, color) {
+  const want = on ? stripeTex : null;
+  if (mat.map !== want) { mat.map = want; mat.needsUpdate = true; }
+  mat.color.setHex(on ? 0xffffff : color);
+}
+function paintBoard(c) {
+  const x = deckCv.getContext('2d');
+  (DECKS[c.deck] || DECKS.plain)(x, deckCv.width, deckCv.height, c);
+  deckTex.needsUpdate = true;
+  (c.fins || []).forEach((f, i) => { const fx = finCv[i].getContext('2d'); (FINS[f] || FINS.plain)(fx, c); finTex[i].needsUpdate = true; });
+}
+{
+  const s = new THREE.Shape();
+  s.moveTo(-0.97, 0);
+  s.bezierCurveTo(-0.97, 0.15, -0.7, 0.26, -0.2, 0.265);
+  s.bezierCurveTo(0.4, 0.265, 0.86, 0.15, 0.99, 0);
+  s.bezierCurveTo(0.86, -0.15, 0.4, -0.265, -0.2, -0.265);
+  s.bezierCurveTo(-0.7, -0.26, -0.97, -0.15, -0.97, 0);
+  const g = new THREE.ExtrudeGeometry(s, { depth: 0.035, bevelEnabled: true, bevelThickness: 0.018, bevelSize: 0.022, bevelSegments: 3, curveSegments: 20 });
+  g.rotateX(-Math.PI / 2); g.translate(0, 0.018, 0);
+  // UV de la tabla: u a lo largo (cola → punta), v a lo ancho; así se pinta el diseño de cada surfista
+  const pos = g.attributes.position, uv = g.attributes.uv;
+  for (let i = 0; i < pos.count; i++) uv.setXY(i, (pos.getX(i) + 0.99) / 1.98, (pos.getZ(i) + 0.29) / 0.58);
+  uv.needsUpdate = true;
+  boardMesh = new THREE.Mesh(g, matBoard); boardRoot.add(boardMesh);
+  // tres quillas (thruster), cada una con su dibujo
+  const fs = new THREE.Shape();
+  fs.moveTo(0, 0); fs.quadraticCurveTo(0.015, 0.075, -0.065, 0.125); fs.quadraticCurveTo(0.045, 0.095, 0.1, 0); fs.lineTo(0, 0);
+  const fg = new THREE.ExtrudeGeometry(fs, { depth: 0.008, bevelEnabled: false, curveSegments: 10 });
+  const fp = fg.attributes.position, fu = fg.attributes.uv;
+  for (let i = 0; i < fp.count; i++) fu.setXY(i, (fp.getX(i) + 0.065) / 0.165, fp.getY(i) / 0.125);
+  fg.translate(0, 0, -0.004); fg.rotateX(Math.PI);
+  [[-0.6, 0.165, 0.08], [-0.6, -0.165, -0.08], [-0.86, 0, 0]].forEach(([x, z, toe], i) => {
+    const m = new THREE.Mesh(fg, matFins[i]); m.position.set(x, 0.005, z); m.rotation.y = toe; m.userData.p = [x, z]; boardRoot.add(m); finMeshes.push(m);
+  });
+}
+// zodiac de rescate (Krre): tubos rojos, casco blanco, motor fueraborda con la bandera y rótulos S.O.S
+const zodiacG = new THREE.Group(); boardRoot.add(zodiacG); zodiacG.visible = false;
+{
+  const mR = new THREE.MeshStandardMaterial({ color: 0xd8212b, roughness: 0.45 });
+  const mW = new THREE.MeshStandardMaterial({ color: 0xe9e9e6, roughness: 0.4 });
+  const mG = new THREE.MeshStandardMaterial({ color: 0x9ea2a6, roughness: 0.5 });
+  const mM = new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 0.35, metalness: 0.2 });
+  // casco rígido en V (blanco)
+  const sh = new THREE.Shape(); sh.moveTo(-1.35, -0.48); sh.lineTo(0.7, -0.5); sh.quadraticCurveTo(1.45, -0.35, 1.6, 0); sh.quadraticCurveTo(1.45, 0.35, 0.7, 0.5); sh.lineTo(-1.35, 0.48); sh.lineTo(-1.35, -0.48);
+  const hg = new THREE.ExtrudeGeometry(sh, { depth: 0.16, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.04, bevelSegments: 2, curveSegments: 14 });
+  hg.rotateX(-Math.PI / 2); const hull = new THREE.Mesh(hg, mW); hull.position.y = 0.02; zodiacG.add(hull);
+  // tubos neumáticos: laterales y la proa redonda
+  for (const z of [-0.52, 0.52]) {
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.21, 2.15, 18), mR); t.rotation.z = Math.PI / 2; t.position.set(-0.27, 0.3, z); zodiacG.add(t);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.21, 16, 10), mR); cap.position.set(-1.35, 0.3, z); zodiacG.add(cap);
+    const rub = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 2.3, 8), mG); rub.rotation.z = Math.PI / 2; rub.position.set(-0.25, 0.24, z * 1.38); zodiacG.add(rub);
+  }
+  const bow = new THREE.Mesh(new THREE.TorusGeometry(0.52, 0.21, 14, 24, Math.PI), mR); bow.rotation.x = Math.PI / 2; bow.rotation.z = -Math.PI / 2; bow.position.set(0.8, 0.3, 0); zodiacG.add(bow);
+  // suelo
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.04, 0.85), mG); floor.position.set(-0.3, 0.2, 0); zodiacG.add(floor);
+  // rótulos en los costados
+  const cv = document.createElement('canvas'); cv.width = 512; cv.height = 96; const cx = cv.getContext('2d');
+  cx.fillStyle = '#d8212b'; cx.fillRect(0, 0, 512, 96); cx.fillStyle = '#fff'; cx.font = 'bold 56px sans-serif'; cx.textBaseline = 'middle'; cx.fillText('S.O.S', 14, 50);
+  cx.fillRect(200, 14, 300, 68); cx.fillStyle = '#111'; cx.font = 'bold 26px sans-serif'; cx.fillText('AJUNTAMENT', 214, 34); cx.fillText('SAGUNT IV', 214, 64);
+  const lt = new THREE.CanvasTexture(cv);
+  for (const z of [-1, 1]) {
+    const pl = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.18), new THREE.MeshStandardMaterial({ map: lt, roughness: 0.5 }));
+    pl.position.set(-0.75, 0.33, z * 0.735); if (z < 0) pl.rotation.y = Math.PI; zodiacG.add(pl);
+  }
+  // motor fueraborda con la bandera
+  const mot = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.36, 0.3), mM); mot.position.set(-1.55, 0.62, 0); zodiacG.add(mot);
+  const top = new THREE.Mesh(new THREE.SphereGeometry(0.19, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), mM); top.scale.set(1, 0.6, 0.85); top.position.set(-1.55, 0.8, 0); zodiacG.add(top);
+  const leg = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.55, 0.08), mM); leg.position.set(-1.55, 0.2, 0); zodiacG.add(leg);
+  const tiller = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.6, 8), mM); tiller.rotation.z = Math.PI / 2 - 0.25; tiller.position.set(-1.1, 0.62, 0); zodiacG.add(tiller);
+  const fc = document.createElement('canvas'); fc.width = 60; fc.height = 40; const fx = fc.getContext('2d');
+  fx.fillStyle = '#c60b1e'; fx.fillRect(0, 0, 60, 40); fx.fillStyle = '#ffc400'; fx.fillRect(0, 10, 60, 20);
+  const ft = new THREE.CanvasTexture(fc);
+  for (const z of [-1, 1]) { const fl = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.1), new THREE.MeshBasicMaterial({ map: ft })); fl.position.set(-1.55, 0.66, z * 0.152); if (z < 0) fl.rotation.y = Math.PI; zodiacG.add(fl); }
+}
+// kayak (Raúl): casco naranja alargado, bañera negra con cubrebañeras y pala de doble hoja
+const kayakG = new THREE.Group(); boardRoot.add(kayakG); kayakG.visible = false;
+{
+  const mO = new THREE.MeshStandardMaterial({ color: 0xf2621f, roughness: 0.38 });
+  const mK = new THREE.MeshStandardMaterial({ color: 0x15161a, roughness: 0.6 });
+  const hull = new THREE.Mesh(new THREE.SphereGeometry(1, 40, 16), mO); hull.scale.set(1.25, 0.2, 0.33); hull.position.y = 0.16; kayakG.add(hull);
+  const deck = new THREE.Mesh(new THREE.SphereGeometry(1, 40, 12, 0, Math.PI * 2, 0, Math.PI / 2), mO); deck.scale.set(1.1, 0.16, 0.3); deck.position.set(0.05, 0.2, 0); kayakG.add(deck);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.03, 8, 28), mK); rim.rotation.x = Math.PI / 2; rim.scale.set(1.5, 1, 1); rim.position.set(-0.12, 0.33, 0); kayakG.add(rim);
+  const skirt = new THREE.Mesh(new THREE.CircleGeometry(0.24, 28), mK); skirt.rotation.x = -Math.PI / 2; skirt.scale.set(1.5, 1, 1); skirt.position.set(-0.12, 0.335, 0); kayakG.add(skirt);
+}
+const matPaddle = new THREE.MeshStandardMaterial({ color: 0x141518, roughness: 0.45 });
+const paddle = new THREE.Group(); paddle.visible = false;
+{
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 2.0, 8), matPaddle); paddle.add(shaft);
+  for (const sgn of [-1, 1]) {
+    const bl = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.44, 0.014), matPaddle);
+    bl.position.y = sgn * 0.98; bl.rotation.y = sgn * 0.55; paddle.add(bl);
+  }
+}
+// casco blanco de kayak
+const matHelmet = new THREE.MeshStandardMaterial({ color: 0xf1f1ef, roughness: 0.35 });
+const helmet = new THREE.Group(); helmet.visible = false;
+{
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.142, 22, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), matHelmet); dome.position.y = 0.012; helmet.add(dome);
+  const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.146, 0.146, 0.035, 22, 1, true), matHelmet); brim.position.y = 0.0; helmet.add(brim);
+  for (const z of [-0.06, 0, 0.06]) { const v = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.012, 0.018), new THREE.MeshStandardMaterial({ color: 0x222326 })); v.position.set(-0.02, 0.135, z); helmet.add(v); }
+}
+// moto de agua (JuanP): casco negro, cuerpo blanco, cubierta y capó lima, asiento verde y manillar
+const jetG = new THREE.Group(); boardRoot.add(jetG); jetG.visible = false;
+{
+  const mW = new THREE.MeshStandardMaterial({ color: 0xf2f2f0, roughness: 0.35 });
+  const mK = new THREE.MeshStandardMaterial({ color: 0x15171a, roughness: 0.5 });
+  const mL = new THREE.MeshStandardMaterial({ color: 0xc8f230, roughness: 0.35 });
+  const mS = new THREE.MeshStandardMaterial({ color: 0x26b33a, roughness: 0.7 });
+  const hull = (k) => { const sh = new THREE.Shape();
+    sh.moveTo(-1.3 * k, -0.5 * k); sh.lineTo(0.55 * k, -0.56 * k); sh.quadraticCurveTo(1.35 * k, -0.4 * k, 1.6 * k, 0);
+    sh.quadraticCurveTo(1.35 * k, 0.4 * k, 0.55 * k, 0.56 * k); sh.lineTo(-1.3 * k, 0.5 * k); sh.lineTo(-1.3 * k, -0.5 * k); return sh; };
+  const ext = (sh, h, mat, y) => { const g = new THREE.ExtrudeGeometry(sh, { depth: h, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.03, bevelSegments: 2, curveSegments: 12 });
+    g.rotateX(-Math.PI / 2); const m = new THREE.Mesh(g, mat); m.position.y = y; jetG.add(m); return m; };
+  ext(hull(0.92), 0.14, mK, 0.0);
+  ext(hull(1.0), 0.2, mW, 0.14);
+  ext(hull(0.88), 0.03, mL, 0.36);
+  const hood = new THREE.Shape(); hood.moveTo(0.4, -0.36); hood.lineTo(0.95, -0.3); hood.quadraticCurveTo(1.35, -0.12, 1.42, 0); hood.quadraticCurveTo(1.35, 0.12, 0.95, 0.3); hood.lineTo(0.4, 0.36); hood.lineTo(0.4, -0.36);
+  ext(hood, 0.2, mL, 0.38);
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.17, 0.38), mS); seat.position.set(-0.42, 0.48, 0); jetG.add(seat);
+  const col = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.32, 8), mK); col.position.set(0.4, 0.66, 0); col.rotation.z = 0.35; jetG.add(col);
+  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.66, 8), mK); bar.rotation.x = Math.PI / 2; bar.position.set(0.36, 0.8, 0); jetG.add(bar);
+  for (const z of [-0.535, 0.535]) { const st = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.05, 0.01), mK); st.position.set(-0.3, 0.25, z); jetG.add(st);
+    const ls = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.09, 0.012), mL); ls.position.set(0.55, 0.26, z * 0.98); ls.rotation.y = z > 0 ? -0.2 : 0.2; jetG.add(ls); }
+  jetG.position.x = -0.15;
+}
+// longboard: 9 pies (2,75 m), algo más ancha y con una sola quilla grande
+function setBoardShape(c) {
+  const lg = c.board === 'long', bb = c.board === 'body', jet = c.board === 'jet', kay = c.board === 'kayak', zod = c.board === 'zodiac';
+  boardMesh.visible = !jet && !kay && !zod; jetG.visible = jet; kayakG.visible = kay; zodiacG.visible = zod;
+  matHelmet.color.setHex(c.helmetColor || 0xf1f1ef); paddle.visible = kay; helmet.visible = !!c.helmet;
+  boardMesh.scale.set(lg ? 1.4 : bb ? 0.56 : 1, bb ? 1.7 : 1, lg ? 1.1 : bb ? 1.18 : 1);
+  boardMesh.position.x = bb ? 0.18 : 0;
+  finMeshes.forEach((m, i) => {
+    const [fx, fz] = m.userData.p;
+    if (bb || jet || kay || zod) { m.visible = false; }
+    else if (lg) { m.visible = i === 2; m.position.set(-1.25, 0.005, 0); m.scale.setScalar(1.7); }
+    else { m.visible = true; m.position.set(fx, 0.005, fz); m.scale.setScalar(1); }
+  });
+}
+const rider = new THREE.Group(); boardRoot.add(rider);
+rider.add(paddle);
+const cyl = new THREE.CylinderGeometry(1, 1, 1, 10, 1);
+const sph = new THREE.SphereGeometry(1, 14, 10);
+const UP = V3(0, 1, 0), tv = V3(0, 0, 0);
+function limb(mat, r) { const m = new THREE.Mesh(cyl, mat); m.userData.r = r; rider.add(m); return m; }
+function ball(mat, r) { const m = new THREE.Mesh(sph, mat); m.scale.setScalar(r); rider.add(m); return m; }
+function setLimb(m, a, b) {
+  tv.subVectors(b, a); const len = tv.length() || 0.001;
+  m.position.copy(a).addScaledVector(tv, 0.5);
+  m.scale.set(m.userData.r, len, m.userData.r * 0.92);
+  m.quaternion.setFromUnitVectors(UP, tv.divideScalar(len));
+}
+const L = {
+  thB: limb(matShorts, 0.085), thF: limb(matShorts, 0.085), shB: limb(matShin, 0.058), shF: limb(matShin, 0.058), pony: limb(matHair, 0.05),
+  torso: limb(matSuit, 0.15), neck: limb(matSkin, 0.05), hips: limb(matShorts, 0.11), shoulders: limb(matSuit, 0.075),
+  uaB: limb(matUpperArm, 0.055), uaF: limb(matUpperArm, 0.055), faB: limb(matForearm, 0.045), faF: limb(matForearm, 0.045)
+};
+const J = {
+  kB: ball(matShorts, 0.075), kF: ball(matShorts, 0.075), eB: ball(matSuit, 0.05), eF: ball(matSuit, 0.05),
+  hB: ball(matSkin, 0.05), hF: ball(matSkin, 0.05), head: ball(matSkin, 0.115), chest: ball(matSuit, 0.16)
+};
+const hair = new THREE.Mesh(new THREE.SphereGeometry(0.125, 18, 8, 0, TAU, 0, Math.PI * 0.42), matHair); rider.add(hair);
+// complementos de la cabeza (gafas de sol, barba, pelo despeinado); la cara mira hacia donde va
+const headG = new THREE.Group(); rider.add(headG);
+const faceYaw = new THREE.Quaternion().setFromAxisAngle(V3(0, 1, 0), 0.9);
+let faceTurn = 0.9;   // 0 = mira a la cámara, 0.9 = mira hacia donde va
+const matGlass = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.15, metalness: 0.4 });
+const glasses = new THREE.Group(); headG.add(glasses);
+for (const sx of [-0.047, 0.047]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.045, 0.014), matGlass); l.position.set(sx, 0.02, 0.112); glasses.add(l); }
+{ const br = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.012, 0.012), matGlass); br.position.set(0, 0.03, 0.114); glasses.add(br);
+  for (const sx of [-0.098, 0.098]) { const t = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.01, 0.11), matGlass); t.position.set(sx, 0.025, 0.06); glasses.add(t); } }
+// gorra plana con su logo
+const matCap = new THREE.MeshStandardMaterial({ color: 0x1b2440, roughness: 0.8 });
+const cap = new THREE.Group(); headG.add(cap); cap.visible = false;
+headG.add(helmet);
+{ const dome = new THREE.Mesh(new THREE.SphereGeometry(0.134, 20, 8, 0, TAU, 0, Math.PI * 0.46), matCap); dome.position.set(0, 0.022, 0); cap.add(dome);
+  const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.012, 20, 1, false, -Math.PI / 2, Math.PI), matCap);
+  brim.scale.set(1.05, 1, 1.25); brim.position.set(0, 0.07, 0.085); brim.rotation.x = 0.08; cap.add(brim);
+  const logo = new THREE.Mesh(new THREE.CircleGeometry(0.03, 16), new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.6 }));
+  logo.position.set(0, 0.105, 0.098); logo.rotation.x = -0.75; cap.add(logo); }
+const matBeard = new THREE.MeshStandardMaterial({ color: 0x2a1c12, roughness: 1 });
+const beard = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10, Math.PI / 2 - 1.15, 2.3, Math.PI * 0.45, Math.PI * 0.42), matBeard);
+beard.scale.set(0.108, 0.11, 0.108); beard.position.set(0, 0.005, 0.012); headG.add(beard);
+// cara real: la foto de cada surfista pegada en la parte frontal de la cabeza
+const faceMat = new THREE.MeshStandardMaterial({ roughness: 0.75 });
+const faceMesh = new THREE.Mesh(new THREE.SphereGeometry(0.119, 28, 18, Math.PI / 2 - 1.0, 2.0, Math.PI * 0.3, Math.PI * 0.56), faceMat);
+faceMesh.visible = false; headG.add(faceMesh);
+const faceTex = {};
+// melena de surfero: pelo que cae por detrás y por los lados hasta las orejas
+const mane = new THREE.Mesh(new THREE.SphereGeometry(0.13, 18, 10, Math.PI * 1.5 - 1.75, 3.5, Math.PI * 0.15, Math.PI * 0.55), matHair);
+mane.scale.set(1.04, 1.25, 1.05); mane.position.set(0, -0.005, -0.005); headG.add(mane);
+// melena larga (Froskin): mechones que cuelgan quieta y ondean hacia atrás con el viento al surfear
+const strandG = new THREE.Group(); rider.add(strandG); strandG.visible = false;
+const NSTR = 9, NSEG = 6, SEGL = 0.075, strands = [];
+for (let i = 0; i < NSTR; i++) {
+  const segs = [];
+  for (let k = 0; k < NSEG; k++) { const m = new THREE.Mesh(cyl, matHair); m.userData.r = 0.034 * (1 - k / NSEG * 0.55); strandG.add(m); segs.push(m); }
+  strands.push(segs);
+}
+let windAmt = 0.2;
+const sA = V3(0, 0, 0), sB = V3(0, 0, 0), sD = V3(0, 0, 0);
+function updateStrands(o) {
+  if (!strandG.visible) return;
+  const t = performance.now() / 1000;
+  for (let i = 0; i < NSTR; i++) {
+    const a = (i / (NSTR - 1) - 0.5) * 2.4;          // reparto alrededor de la nuca
+    sA.set(o.hd.x - 0.05 - Math.cos(a) * 0.04, o.hd.y + 0.04 - Math.abs(a) * 0.035, o.hd.z - 0.03 + Math.sin(a) * 0.1);
+    for (let k = 0; k < NSEG; k++) {
+      const flap = Math.sin(t * 9 + k * 0.9 + i * 1.7) * 0.4 * windAmt;
+      sD.set(-(0.2 + 1.1 * windAmt), -(1.0 - 0.8 * windAmt) + Math.cos(t * 7 + k + i) * 0.18 * windAmt, Math.sin(a) * 0.28 + flap).normalize();
+      sB.copy(sA).addScaledVector(sD, SEGL);
+      setLimb(strands[i][k], sA, sB); sA.copy(sB);
+    }
+  }
+}
+const spikes = new THREE.Group(); headG.add(spikes);
+for (let i = 0; i < 9; i++) {
+  const sp = new THREE.Mesh(new THREE.ConeGeometry(0.032, 0.1, 5), matHair);
+  const a = i / 9 * TAU, r = 0.05 + (i % 3) * 0.02;
+  sp.position.set(Math.cos(a) * r, 0.1, Math.sin(a) * r + 0.02);
+  sp.rotation.set(Math.sin(a) * 0.5 + 0.3, 0, -Math.cos(a) * 0.5);
+  spikes.add(sp);
+}
+const footGeo = new THREE.BoxGeometry(0.11, 0.06, 0.25);
+const footB = new THREE.Mesh(footGeo, matSkin), footF = new THREE.Mesh(footGeo, matSkin); rider.add(footB, footF);
+const matFlipper = new THREE.MeshStandardMaterial({ color: 0x1f2a22, roughness: 0.5 });
+
+const KEYS_POSE = ['hB', 'hF', 'kB', 'kF', 'fB', 'fF', 'ch', 'hd', 'sB', 'sF', 'eB', 'eF', 'aB', 'aF', 'fw'];
+const mkPose = () => { const o = {}; for (const k of KEYS_POSE) o[k] = V3(0, 0, 0); return o; };
+const poseA = mkPose(), poseB = mkPose(), poseOut = mkPose();
+// c = flexión (0 de pie, 1 agachado a tope); lean = inclinación del cuerpo hacia la ola (-) o hacia fuera (+)
+function stance(o, c, grab, t, lean, twist) {
+  lean = lean || 0;
+  const hy = 0.98 - 0.42 * c, lz = lean * 0.12;
+  o.fw.set(0, 0, 1);
+  o.hB.set(-0.13 + 0.02 * c, hy, 0.02 + lz); o.hF.set(0.1 - 0.02 * c, hy, 0.02 + lz);
+  o.fB.set(-0.42, 0.1, 0); o.fF.set(0.34, 0.1, 0);
+  o.kB.set(-0.31, 0.54 - 0.18 * c, 0.13 + 0.22 * c + lz * 0.6); o.kF.set(0.24, 0.54 - 0.18 * c, 0.13 + 0.22 * c + lz * 0.6);
+  o.ch.set(0.03 + 0.1 * c, hy + 0.5 - 0.13 * c, 0.05 + 0.26 * c + lean * 0.22);
+  o.hd.set(o.ch.x + 0.09, o.ch.y + 0.26 - 0.03 * c, o.ch.z + 0.06);
+  o.sB.set(o.ch.x - 0.17, o.ch.y - 0.02, o.ch.z - 0.02); o.sF.set(o.ch.x + 0.17, o.ch.y - 0.02, o.ch.z + 0.02);
+  o.eB.set(-0.45, o.ch.y - 0.16 - 0.05 * c, o.ch.z + 0.1 - lean * 0.12);
+  o.aB.set(-0.7, o.ch.y - 0.32 + 0.05 * Math.sin(t * 2) - 0.1 * c, o.ch.z + 0.14 - lean * 0.3);
+  o.eF.set(0.44, o.ch.y - 0.06 - 0.06 * c, o.ch.z + 0.14 + lean * 0.1);
+  o.aF.set(0.74, o.ch.y - 0.12 + 0.04 * Math.sin(t * 2 + 1) - 0.12 * c, o.ch.z + 0.22 + lean * 0.3);
+  if (grab > 0) {
+    o.eF.lerp(V3(0.2, o.ch.y - 0.28, o.ch.z + 0.22), grab);
+    o.aF.lerp(V3(0.12, 0.12, 0.27), grab);
+  }
+  if (twist) {
+    // los hombros y los brazos se adelantan al giro (la tabla sigue a la mirada)
+    const cs = Math.cos(twist), sn = Math.sin(twist);
+    for (const k of TWIST_KEYS) {
+      const p = o[k], dx = p.x - o.ch.x, dz = p.z - o.ch.z;
+      p.x = o.ch.x + dx * cs - dz * sn; p.z = o.ch.z + dx * sn + dz * cs;
+    }
+  }
+  return o;
+}
+const TWIST_KEYS = ['sB', 'sF', 'eB', 'eF', 'aB', 'aF', 'hd'];
+// saludo surfero (shaka) con la mano de delante
+function shaka(o) {
+  o.eF.set(o.ch.x + 0.24, o.ch.y - 0.04, o.ch.z + 0.26);
+  o.aF.set(o.ch.x + 0.22, o.ch.y + 0.2, o.ch.z + 0.44);
+  return o;
+}
+function prone(o, ph, power) {
+  o.fw.set(0, -1, 0);
+  o.hB.set(-0.28, 0.2, -0.1); o.hF.set(-0.28, 0.2, 0.1);
+  o.kB.set(-0.68, 0.17, -0.09); o.kF.set(-0.68, 0.17, 0.09);
+  o.fB.set(-1.05, 0.22 + 0.06 * Math.sin(ph * 2), -0.08); o.fF.set(-1.05, 0.22 + 0.06 * Math.cos(ph * 2), 0.08);
+  o.ch.set(0.22, 0.31, 0); o.hd.set(0.5, 0.47, 0);
+  o.sB.set(0.27, 0.33, -0.19); o.sF.set(0.27, 0.33, 0.19);
+  const arm = (a, e, s, phi, zs) => {
+    a.set(0.25 + 0.5 * Math.cos(phi), 0.05 - 0.32 * Math.sin(phi) * (0.6 + 0.4 * power), zs * 0.4);
+    e.set((s.x + a.x) / 2, Math.max(s.y, a.y) + 0.08, zs * 0.32);
+  };
+  arm(o.aB, o.eB, o.sB, ph, -1); arm(o.aF, o.eF, o.sF, ph + Math.PI, 1);
+  return o;
+}
+function bodyRide(o, c, grab, t, lean, twist) {
+  lean = lean || 0; c = c || 0;
+  const lz = lean * 0.1, kick = Math.sin(t * 6) * 0.05;
+  o.fw.set(0, -1, 0);
+  o.hB.set(-0.24, 0.17, -0.1 - lz); o.hF.set(-0.24, 0.17, 0.1 - lz);
+  o.kB.set(-0.6, 0.2, -0.13 - lz); o.kF.set(-0.6, 0.2, 0.13 - lz);
+  o.fB.set(-0.9, 0.36 + kick, -0.12 - lz); o.fF.set(-0.9, 0.36 - kick, 0.12 - lz);
+  o.ch.set(0.17, 0.32 + 0.05 * (1 - c), lz); o.hd.set(0.45, 0.55 + 0.04 * (1 - c), lz * 1.2);
+  o.sB.set(0.22, 0.35, -0.19 + lz); o.sF.set(0.22, 0.35, 0.19 + lz);
+  o.eB.set(0.27, 0.2, -0.33); o.eF.set(0.27, 0.2, 0.33);
+  o.aB.set(0.62, 0.08, -0.2); o.aF.set(0.62, 0.08, 0.2);
+  if (grab > 0) { o.fB.y += 0.2 * grab; o.fF.y += 0.2 * grab; o.kB.y += 0.08 * grab; o.kF.y += 0.08 * grab; }
+  return o;
+}
+const SUPERMAN = { hB: [-0.62, 1.04, -0.1], hF: [-0.62, 1.04, 0.1], kB: [-1.0, 1.1, -0.13], kF: [-1.0, 1.1, 0.13], fB: [-1.38, 1.14, -0.15], fF: [-1.38, 1.14, 0.15],
+  ch: [-0.16, 1.02, 0], hd: [0.2, 1.14, 0], fw: [0.15, -1, 0], sB: [0.04, 1.02, -0.2], sF: [0.04, 1.02, 0.2], eB: [0.22, 0.95, -0.3], eF: [0.22, 0.95, 0.3], aB: [0.36, 0.82, -0.3], aF: [0.36, 0.82, 0.3] };
+function jetRide(o, c, grab, t, lean, twist) {
+  lean = lean || 0; c = c || 0; grab = grab || 0; t = t || 0;
+  jetSeat(o, c, t, lean);
+  if (grab > 0.001) for (const k in SUPERMAN) { const p = SUPERMAN[k]; o[k].x += (p[0] - o[k].x) * grab; o[k].y += (p[1] - o[k].y) * grab; o[k].z += (p[2] - o[k].z) * grab; }
+  return o;
+}
+function jetSeat(o, c, t, lean) {
+  o.fw.set(1, 0, 0);
+  const up = 0.14 * (1 - c), lz = lean * 0.12, bob = Math.sin(t * 7) * 0.012;
+  o.hB.set(-0.38, 0.66 + up, -0.12); o.hF.set(-0.38, 0.66 + up, 0.12);
+  o.kB.set(-0.05, 0.66 + up * 0.5, -0.25); o.kF.set(-0.05, 0.66 + up * 0.5, 0.25);
+  o.fB.set(-0.2, 0.44, -0.3); o.fF.set(-0.2, 0.44, 0.3);
+  o.ch.set(-0.18, 1.14 + up + bob, lz); o.hd.set(-0.08, 1.42 + up + bob, lz * 1.3);
+  o.sB.set(-0.16, 1.16 + up, -0.2 + lz); o.sF.set(-0.16, 1.16 + up, 0.2 + lz);
+  o.eB.set(0.1, 0.98 + up * 0.5, -0.32); o.eF.set(0.1, 0.98 + up * 0.5, 0.32);
+  o.aB.set(0.36, 0.82, -0.3); o.aF.set(0.36, 0.82, 0.3);
+  return o;
+}
+function kayakRide(o, c, grab, t, lean, twist) {
+  lean = lean || 0; c = c || 0; grab = grab || 0; t = t || 0;
+  const ph = t * 3.2, sn = Math.sin(ph), cs = Math.cos(ph), lz = lean * 0.1;
+  o.fw.set(1, 0, 0);
+  o.hB.set(-0.16, 0.36, -0.13); o.hF.set(-0.16, 0.36, 0.13);
+  o.kB.set(0.3, 0.52, -0.17); o.kF.set(0.3, 0.52, 0.17);
+  o.fB.set(0.72, 0.34, -0.12); o.fF.set(0.72, 0.34, 0.12);
+  o.ch.set(-0.05, 0.86 - 0.04 * c, lz); o.hd.set(0.03, 1.13 - 0.03 * c, lz * 1.2);
+  o.sB.set(-0.04 - 0.08 * sn, 0.88, -0.2 + lz); o.sF.set(-0.04 + 0.08 * sn, 0.88, 0.2 + lz);
+  // la pala barre de delante a atrás metiendo una hoja en el agua y luego la otra
+  const a = sn * 0.75;
+  const dx = 0.16 * cs, dy = -Math.sin(a), dz = Math.cos(a), l = Math.hypot(dx, dy, dz);
+  const cx = 0.3 + 0.1 * cs, cy = 0.8, cz = 0;
+  o.aF.set(cx + dx / l * 0.34, cy + dy / l * 0.34, cz + dz / l * 0.34);
+  o.aB.set(cx - dx / l * 0.34, cy - dy / l * 0.34, cz - dz / l * 0.34);
+  o.eB.set((o.sB.x + o.aB.x) / 2 - 0.05, (o.sB.y + o.aB.y) / 2 - 0.12, (o.sB.z + o.aB.z) / 2 - 0.1);
+  o.eF.set((o.sF.x + o.aF.x) / 2 - 0.05, (o.sF.y + o.aF.y) / 2 - 0.12, (o.sF.z + o.aF.z) / 2 + 0.1);
+  if (grab > 0.001) for (const k in SUPERMAN) { if (k[0] === 'a' || k[0] === 'e') continue; const p = SUPERMAN[k]; o[k].x += (p[0] - 0.2 - o[k].x) * grab; o[k].y += (p[1] - 0.3 - o[k].y) * grab; o[k].z += (p[2] - o[k].z) * grab; }
+  return o;
+}
+function zodiacRide(o, c, grab, t, lean, twist) {
+  lean = lean || 0; c = c || 0; grab = grab || 0; t = t || 0;
+  const lz = lean * 0.12, bob = Math.sin(t * 6) * 0.015, up = 0.1 * (1 - c);
+  o.fw.set(1, 0, 0);
+  o.hB.set(-0.55, 0.62 + up, -0.12); o.hF.set(-0.55, 0.62 + up, 0.12);
+  o.kB.set(-0.2, 0.3, -0.2); o.kF.set(-0.2, 0.3, 0.2);
+  o.fB.set(-0.62, 0.24, -0.18); o.fF.set(-0.62, 0.24, 0.18);
+  o.ch.set(-0.42, 1.12 + up + bob, lz); o.hd.set(-0.32, 1.4 + up + bob, lz * 1.3);
+  o.sB.set(-0.44, 1.14 + up, -0.2 + lz); o.sF.set(-0.44, 1.14 + up, 0.2 + lz);
+  o.eB.set(-0.72, 0.88, -0.24); o.eF.set(-0.1, 0.95, 0.3);
+  o.aB.set(-0.85, 0.66, -0.06); o.aF.set(0.18, 0.72, 0.34);
+  if (grab > 0.001) for (const k in SUPERMAN) { const p = SUPERMAN[k]; o[k].x += (p[0] - 0.4 - o[k].x) * grab; o[k].y += (p[1] - o[k].y) * grab; o[k].z += (p[2] - o[k].z) * grab; }
+  return o;
+}
+// colocar la pala entre las dos manos
+const pdA = V3(0, 0, 0), pdB = V3(0, 0, 0);
+function placePaddle(pd, o) {
+  if (!pd.visible) return;
+  pd.position.addVectors(o.aB, o.aF).multiplyScalar(0.5);
+  pdA.subVectors(o.aF, o.aB).normalize();
+  pd.quaternion.setFromUnitVectors(UP, pdA);
+}
+const seatedC = c => !!(c.jetski || c.kayak || c.zodiac);
+// postura de pie (surf), tumbado (bodyboard) o sentado (moto de agua / kayak) según el personaje
+function poseFor(c) { return c.jetski ? jetRide : c.zodiac ? zodiacRide : c.kayak ? kayakRide : c.bodyboard ? bodyRide : stance; }
+function riderStance(o, c, grab, t, lean, twist) { return poseFor(CH)(o, c, grab, t, lean, twist); }
+function lerpPose(a, b, t, out) { for (const k of KEYS_POSE) out[k].lerpVectors(a[k], b[k], t); return out; }
+const hipC = V3(0, 0, 0);
+// ---------- cuerpo humano realista: modelo con esqueleto que se mueve con nuestras posturas ----------
+// El modelo (cuerpo.glb) tiene huesos de verdad; cada fotograma se ponen en reposo y se orientan hacia las
+// articulaciones que calculan stance/prone/bodyRide/jetRide. La cabeza es la nuestra (foto, pelo, gafas, gorra).
+const BODY_URL = 'modelos/cuerpo.glb';
+const HUMAN = { tpl: null, local: null, legLen: 0.888 };
+window.__HUMAN = HUMAN;
+const H_BONES = ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'LeftShoulder', 'RightShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightArm', 'RightForeArm', 'RightHand',
+  'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase', 'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase'];
+function boneCat(n) {
+  n = n.replace(/^mixamorig:?/, '');
+  if (/Hand|Thumb|Index|Middle|Ring|Pinky|Head|Neck|Eye/.test(n)) return 0;   // piel
+  if (/ForeArm/.test(n)) return 1;                                               // antebrazo
+  if (/Arm/.test(n)) return 2;                                                   // brazo
+  if (/Hips|UpLeg/.test(n)) return 4;                                            // bañador / muslos
+  if (/Leg/.test(n)) return 5;                                                   // espinillas
+  if (/Foot|Toe/.test(n)) return 6;                                              // pies
+  return 3;                                                                      // tronco
+}
+function humanColors(c) {
+  const hx = x => new THREE.Color(x);
+  const suit = c.suit, skin = c.skin;
+  return [hx(skin), hx(c.forearm || (c.longSuit && !c.sleeveless ? suit : skin)), hx(c.upperArm || suit), hx(suit), hx(c.shorts || suit),
+    hx(c.longSuit ? (c.legs || suit) : skin), hx(c.bodyboard ? 0x1f2a22 : skin)];
+}
+function makeHuman(c) {
+  if (!HUMAN.tpl) return null;
+  const sc = THREE.SkeletonUtils.clone(HUMAN.tpl);
+  const root = new THREE.Group(); root.add(sc);
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.05 });
+  const meshes = [];
+  sc.traverse(o => { if (o.isSkinnedMesh) { o.geometry = o.geometry.clone(); o.material = mat; o.frustumCulled = false; o.castShadow = false; meshes.push(o); } });
+  const b = {};
+  for (const n of H_BONES) b[n] = sc.getObjectByName('mixamorig' + n);
+  const h = { root, sc, b, meshes, mat, rest: {} };
+  for (const n of H_BONES) h.rest[n] = b[n].quaternion.clone();
+  b.Head.scale.setScalar(0.001);                 // la cabeza la ponemos nosotros (con la foto)
+  colorHuman(h, c);
+  return h;
+}
+// lee la componente k del vértice i (r128 no trae getComponent; los pesos pueden venir normalizados en bytes)
+const ATTR_GET = ['getX', 'getY', 'getZ', 'getW'];
+function attrComp(at, i, k) {
+  let v = at[ATTR_GET[k]](i);
+  if (at.normalized) { const arr = at.array; v /= arr instanceof Uint8Array ? 255 : arr instanceof Uint16Array ? 65535 : 1; }
+  return v;
+}
+function colorHuman(h, c) {
+  if (!h) return;
+  const cols = humanColors(c);
+  for (const m of h.meshes) {
+    const g = m.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, n = si.count;
+    if (!m.userData.cat) m.userData.cat = m.skeleton.bones.map(bn => boneCat(bn.name));
+    const cat = m.userData.cat;
+    let col = g.attributes.color;
+    if (!col) { col = new THREE.BufferAttribute(new Float32Array(n * 3), 3); g.setAttribute('color', col); }
+    const a = col.array;
+    for (let i = 0; i < n; i++) {
+      let r = 0, gg = 0, bb = 0;
+      for (let k = 0; k < 4; k++) {
+        const w = attrComp(sw, i, k); if (!w) continue;
+        const cc = cols[cat[attrComp(si, i, k)]] || cols[3];
+        r += cc.r * w; gg += cc.g * w; bb += cc.b * w;
+      }
+      a[i * 3] = r; a[i * 3 + 1] = gg; a[i * 3 + 2] = bb;
+    }
+    col.needsUpdate = true;
+  }
+  h.mat.roughness = c.longSuit || /suit/.test(c.tag || '') ? 0.42 : 0.55;
+}
+// ---- orientar huesos hacia las articulaciones de la postura ----
+// Todo se calcula en el espacio del propio cuerpo (no en el del mundo, que va espejado en X).
+const hv = { a: V3(0, 0, 0), b: V3(0, 0, 0), c: V3(0, 0, 0), d: V3(0, 0, 0), t: V3(0, 0, 0), X: V3(0, 0, 0), Y: V3(0, 0, 0), Z: V3(0, 0, 0), m: new THREE.Matrix4() };
+const hq = { a: new THREE.Quaternion(), b: new THREE.Quaternion(), c: new THREE.Quaternion(), r: new THREE.Quaternion() };
+const hM = { inv: new THREE.Matrix4(), t: new THREE.Matrix4(), s: V3(0, 0, 0) };
+function relPos(obj, out) { return out.setFromMatrixPosition(obj.matrixWorld).applyMatrix4(hM.inv); }
+function relQuat(obj, out) { hM.t.multiplyMatrices(hM.inv, obj.matrixWorld); hM.t.decompose(hv.d, out, hM.s); return out; }
+function setBoneRelQuat(bone, q) { relQuat(bone.parent, hq.c); bone.quaternion.copy(hq.c.invert()).multiply(q); bone.updateMatrixWorld(true); }
+// gira el hueso para que su hijo apunte al punto T
+function aimBone(bone, child, T) {
+  relPos(bone, hv.a); relPos(child, hv.b);
+  hv.b.sub(hv.a); hv.t.copy(T).sub(hv.a);
+  if (hv.b.lengthSq() < 1e-10 || hv.t.lengthSq() < 1e-10) return;
+  hq.a.setFromUnitVectors(hv.b.normalize(), hv.t.normalize());
+  relQuat(bone, hq.b);
+  setBoneRelQuat(bone, hq.a.multiply(hq.b));
+}
+const hw = {}; for (const k of ['hB', 'hF', 'kB', 'kF', 'fB', 'fF', 'ch', 'hd', 'sB', 'sF', 'eB', 'eF', 'aB', 'aF', 'hip', 'sh', 'toeL', 'toeR', 'fw']) hw[k] = V3(0, 0, 0);
+function poseHuman(h, o, par) {
+  if (!h) return;
+  const b = h.b;
+  par.updateMatrix();
+  // articulaciones en el espacio del cuerpo (el cuerpo cuelga del mismo padre que el surfista)
+  for (const k of ['hB', 'hF', 'kB', 'kF', 'fB', 'fF', 'ch', 'hd', 'sB', 'sF', 'eB', 'eF', 'aB', 'aF']) hw[k].copy(o[k]).applyMatrix4(par.matrix);
+  hw.hip.addVectors(hw.hB, hw.hF).multiplyScalar(0.5);
+  hw.sh.addVectors(hw.sB, hw.sF).multiplyScalar(0.5);
+  hw.fw.copy(o.fw || V3(0, 0, 1)).add(o.hB).applyMatrix4(par.matrix).sub(hw.hB).normalize();
+  // base del cuerpo: arriba = cadera → hombros; delante = hacia donde mira el pecho; X = su izquierda
+  hv.Y.subVectors(hw.sh, hw.hip).normalize();
+  hv.Z.copy(hw.fw).addScaledVector(hv.Y, -hw.fw.dot(hv.Y)).normalize();
+  hv.X.crossVectors(hv.Y, hv.Z).normalize();
+  const fLeft = hv.a.subVectors(hw.hF, hw.hB).dot(hv.X) >= 0;
+  const L = fLeft ? 'F' : 'B', R = fLeft ? 'B' : 'F';
+  // todo en reposo
+  for (const n of H_BONES) b[n].quaternion.copy(h.rest[n]);
+  h.root.updateMatrixWorld(true);
+  hM.inv.copy(h.root.matrixWorld).invert();
+  // cadera: posición y orientación (en reposo el modelo mira +Z con la izquierda en +X)
+  hM.t.multiplyMatrices(hM.inv, b.Hips.parent.matrixWorld).invert();
+  b.Hips.position.copy(hw.hip).applyMatrix4(hM.t);
+  b.Hips.updateMatrixWorld(true);
+  relQuat(b.Hips, hq.r);
+  hv.m.makeBasis(hv.X, hv.Y, hv.Z); hq.a.setFromRotationMatrix(hv.m);
+  setBoneRelQuat(b.Hips, hq.a.multiply(hq.r));
+  // columna hacia los hombros y giro para alinear la línea de hombros
+  aimBone(b.Spine, b.Neck, hw.sh);
+  relPos(b.LeftArm, hv.a); relPos(b.RightArm, hv.b);
+  const sp = hv.c.subVectors(hw.sh, hw.hip).normalize();
+  const cur = hv.a.sub(hv.b); cur.addScaledVector(sp, -cur.dot(sp)).normalize();
+  const tgt = hv.t.subVectors(hw['s' + L], hw['s' + R]); tgt.addScaledVector(sp, -tgt.dot(sp)).normalize();
+  if (cur.lengthSq() > 0.5 && tgt.lengthSq() > 0.5) { hq.a.setFromUnitVectors(cur, tgt); relQuat(b.Spine1, hq.b); setBoneRelQuat(b.Spine1, hq.a.multiply(hq.b)); }
+  aimBone(b.Neck, b.Head, hw.hd);
+  // brazos
+  aimBone(b.LeftArm, b.LeftForeArm, hw['e' + L]); aimBone(b.LeftForeArm, b.LeftHand, hw['a' + L]);
+  aimBone(b.RightArm, b.RightForeArm, hw['e' + R]); aimBone(b.RightForeArm, b.RightHand, hw['a' + R]);
+  // piernas y pies (puntas hacia donde mira el cuerpo)
+  aimBone(b.LeftUpLeg, b.LeftLeg, hw['k' + L]); aimBone(b.LeftLeg, b.LeftFoot, hw['f' + L]);
+  aimBone(b.RightUpLeg, b.RightLeg, hw['k' + R]); aimBone(b.RightLeg, b.RightFoot, hw['f' + R]);
+  hw.toeL.copy(hw['f' + L]).addScaledVector(hv.Z, 0.16); hw.toeR.copy(hw['f' + R]).addScaledVector(hv.Z, 0.16);
+  aimBone(b.LeftFoot, b.LeftToeBase, hw.toeL); aimBone(b.RightFoot, b.RightToeBase, hw.toeR);
+}
+// partes del muñeco antiguo que sustituye el cuerpo nuevo
+function useHumanBody(on) {
+  for (const k in L) if (k !== 'pony') L[k].visible = !on;
+  for (const k in J) if (k !== 'head') J[k].visible = !on;
+}
+function loadHuman() {
+  if (!THREE.GLTFLoader || !THREE.SkeletonUtils) return;
+  const onBody = g => {
+    const sc = g.scene; sc.updateMatrixWorld(true);
+    const pa = V3(0, 0, 0), pb = V3(0, 0, 0), pc = V3(0, 0, 0);
+    sc.getObjectByName('mixamorigLeftUpLeg').getWorldPosition(pa); sc.getObjectByName('mixamorigLeftLeg').getWorldPosition(pb); sc.getObjectByName('mixamorigLeftFoot').getWorldPosition(pc);
+    HUMAN.legLen = pa.distanceTo(pb) + pb.distanceTo(pc);
+    sc.scale.setScalar(0.96 / HUMAN.legLen);      // misma longitud de pierna que nuestras posturas
+    HUMAN.tpl = sc;
+    HUMAN.local = makeHuman(CH);
+    boardRoot.add(HUMAN.local.root);
+    useHumanBody(true);
+    if (typeof rebuildRigs === 'function') rebuildRigs();
+  };
+  // si el servidor no sirve .glb (enlaces de Claude), el modelo va como texto en base64
+  const fromText = () => fetch('cuerpo.txt').then(r => r.ok ? r.text() : Promise.reject()).then(t => {
+    const bin = atob(t.trim()), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    new THREE.GLTFLoader().parse(u.buffer, '', onBody, () => {});
+  }).catch(() => {});
+  new THREE.GLTFLoader().load(BODY_URL, onBody, undefined, fromText);
+}
+
+function applyPose(o) {
+  hipC.addVectors(o.hB, o.hF).multiplyScalar(0.5);
+  setLimb(L.thB, o.hB, o.kB); setLimb(L.thF, o.hF, o.kF);
+  setLimb(L.shB, o.kB, o.fB); setLimb(L.shF, o.kF, o.fF);
+  setLimb(L.torso, hipC, o.ch); setLimb(L.neck, o.ch, o.hd);
+  setLimb(L.hips, o.hB, o.hF); setLimb(L.shoulders, o.sB, o.sF);
+  setLimb(L.uaB, o.sB, o.eB); setLimb(L.uaF, o.sF, o.eF);
+  setLimb(L.faB, o.eB, o.aB); setLimb(L.faF, o.eF, o.aF);
+  J.kB.position.copy(o.kB); J.kF.position.copy(o.kF); J.eB.position.copy(o.eB); J.eF.position.copy(o.eF);
+  J.hB.position.copy(o.aB); J.hF.position.copy(o.aF); J.head.position.copy(o.hd); J.chest.position.copy(o.ch);
+  hair.position.copy(o.hd);
+  tv.subVectors(o.hd, o.ch).normalize(); hair.quaternion.setFromUnitVectors(UP, tv);
+  faceYaw.setFromAxisAngle(UP, seatedC(CH) && faceTurn > 0.5 ? 1.5 * Math.sign(rider.scale.z) : faceTurn);
+  placePaddle(paddle, o);
+  headG.position.copy(o.hd); headG.quaternion.copy(hair.quaternion).multiply(faceYaw);
+  footB.position.copy(o.fB); footF.position.copy(o.fF);
+  updateStrands(o);
+  if (L.pony.visible) { ponyA.set(o.hd.x - 0.03, o.hd.y + 0.04, o.hd.z - 0.1); ponyB.set(o.hd.x - 0.07, o.hd.y - 0.2, o.hd.z - 0.27); setLimb(L.pony, ponyA, ponyB); }
+  if (HUMAN.local) poseHuman(HUMAN.local, o, rider);
+}
+const ponyA = V3(0, 0, 0), ponyB = V3(0, 0, 0);
+
+// ---------- la costa del Puerto de Sagunto ----------
+const coast = new THREE.Group(); world.add(coast);
+const north = new THREE.Group(); world.add(north);   // Pantalán, Alto Horno y puerto: -x interno = derecha de la pantalla
+const SM = (c, r = 0.9, m = 0) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: m, flatShading: true });
+function box(w, h, d, mat, x, y, z, parent) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); (parent || coast).add(m); return m; }
+function cylm(rt, rb, h, mat, x, y, z, parent, seg) { const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg || 16), mat); m.position.set(x, y, z); (parent || coast).add(m); return m; }
+{
+  // arena, paseo
+  // el pueblo (playa, paseo, fincas y palmeras) empieza al lado del Pantalán, en la dirección contraria al puerto
+  box(3000, 2, 130, SM(0xe2c08e), 1520, -0.6, 143, north);
+  box(70, 2, 160, SM(0xe2c08e), -14, -0.6, 158, north);           // arena a la derecha del espigón
+  box(70, 2, 8, SM(0xb99b6f), -14, -0.85, 79, north);
+  box(3000, 2, 8, SM(0xb99b6f), 1520, -0.85, 79, north);
+  box(3000, 1.6, 12, SM(0xcdb79a), 1520, 0.2, 213, north);
+  box(3000, 1, 60, SM(0xc9b38a, 1), 1520, -0.2, 245, north);   // franja abierta detrás del paseo
+  // fachada de apartamentos con ventanas
+  const cv = document.createElement('canvas'); cv.width = 64; cv.height = 64;
+  const c2 = cv.getContext('2d');
+  c2.fillStyle = '#ffffff'; c2.fillRect(0, 0, 64, 64);
+  c2.fillStyle = '#5d7486';
+  for (const yy of [6, 38]) for (const xx of [6, 38]) c2.fillRect(xx, yy, 20, 18);
+  c2.fillStyle = '#d8d2c8'; c2.fillRect(0, 27, 64, 4); c2.fillRect(0, 59, 64, 4);
+  const tex = new THREE.CanvasTexture(cv); tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  const facade = [0xf1e8d8, 0xe9d4b2, 0xf5f1ea, 0xdcc6a6, 0xeadccb].map(c => new THREE.MeshStandardMaterial({ color: c, map: tex, roughness: 0.85 }));
+  {
+    const houseGeo = new THREE.BoxGeometry(1, 1, 1), hu = houseGeo.attributes.uv;
+    for (let i = 0; i < hu.count; i++) hu.setXY(i, hu.getX(i) * 2, hu.getY(i) * 1.4);
+    const NH = 520, houses = new THREE.InstancedMesh(houseGeo, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85 }), NH);
+    const roofGeo = new THREE.ConeGeometry(0.75, 1, 4, 1); roofGeo.rotateY(Math.PI / 4);
+    const roofs = new THREE.InstancedMesh(roofGeo, new THREE.MeshStandardMaterial({ roughness: 0.9 }), NH);
+    const wallC = [0xf3ece0, 0xe9dcc4, 0xf6f3ee, 0xe2cfb2, 0xefe2cf, 0xd9c7a8].map(c => new THREE.Color(c));
+    const roofC = [0xb4583c, 0xa44d34, 0xc0684a, 0x9c4a33].map(c => new THREE.Color(c));
+    const od = new THREE.Object3D(), hide = new THREE.Matrix4().makeScale(0, 0, 0);
+    let nh = 0, nr = 0;
+    for (let row = 0; row < 4; row++) {
+      let x = 45 + rnd(0, 10);
+      while (x < 1500 && nh < NH) {
+        const tall = row < 2 && Math.random() < (x < 450 ? 0.03 : x < 700 ? 0.2 : 0.5);
+        const w = tall ? rnd(16, 26) : rnd(7, 14), dpt = tall ? 16 : rnd(8, 13), h = tall ? rnd(20, 32) : rnd(5.5, 9.5);
+        const z = 275 + row * 22 + rnd(-3, 3);
+        if (tall) {
+          const g = new THREE.BoxGeometry(w, h, dpt), uv = g.attributes.uv;
+          for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w / 7, uv.getY(i) * h / 6.5);
+          const m = new THREE.Mesh(g, facade[Math.floor(Math.random() * facade.length)]); m.position.set(x + w / 2, h / 2, z); north.add(m);
+        } else {
+          od.position.set(x + w / 2, h / 2, z); od.rotation.set(0, 0, 0); od.scale.set(w, h, dpt); od.updateMatrix();
+          houses.setMatrixAt(nh, od.matrix); houses.setColorAt(nh, wallC[(Math.random() * wallC.length) | 0]); nh++;
+          if (Math.random() < 0.7) {                     // tejado de teja a cuatro aguas; el resto, azotea
+            od.position.set(x + w / 2, h + 1.1, z); od.scale.set(w * 1.02, 2.2, dpt * 1.02); od.updateMatrix();
+            roofs.setMatrixAt(nr, od.matrix); roofs.setColorAt(nr, roofC[(Math.random() * roofC.length) | 0]); nr++;
+          }
+        }
+        x += w + rnd(0.5, 4);
+      }
+    }
+    for (let i = nh; i < NH; i++) houses.setMatrixAt(i, hide);
+    for (let i = nr; i < NH; i++) roofs.setMatrixAt(i, hide);
+    houses.instanceColor.needsUpdate = true; roofs.instanceColor.needsUpdate = true;
+    north.add(houses, roofs);
+  }
+  // palmeras del paseo
+  const n = 120, trunkGeo = new THREE.CylinderGeometry(0.22, 0.34, 9, 7); trunkGeo.translate(0, 4.5, 0);
+  const frondGeo = new THREE.ConeGeometry(0.55, 4.6, 4); frondGeo.translate(0, 2.3, 0); frondGeo.scale(1, 1, 0.25);
+  const trunks = new THREE.InstancedMesh(trunkGeo, SM(0x6b5640), n);
+  const fronds = new THREE.InstancedMesh(frondGeo, SM(0x3f6b3a), n * 7);
+  const d = new THREE.Object3D();
+  for (let i = 0; i < n; i++) {
+    const px = 40 + Math.floor(i / 2) * 22 + rnd(-3, 3), pz = i % 2 ? 204 : 221, lean = rnd(-0.08, 0.08);
+    d.position.set(px, 0.6, pz); d.rotation.set(lean, 0, rnd(-0.08, 0.08)); d.scale.setScalar(rnd(0.85, 1.15)); d.updateMatrix(); trunks.setMatrixAt(i, d.matrix);
+    for (let k = 0; k < 7; k++) {
+      d.position.set(px + lean * 9, 9.6 * d.scale.y, pz + lean * 9);
+      d.rotation.set(0, k / 7 * TAU + rnd(-0.2, 0.2), 0); d.rotateZ(rnd(1.2, 1.9));
+      d.updateMatrix(); fronds.setMatrixAt(i * 7 + k, d.matrix);
+    }
+  }
+  north.add(trunks, fronds);
+
+  // ---- lado norte (a la derecha mirando a la playa desde el agua): Pantalán, Alto Horno y puerto ----
+  const iron = SM(0x37302d, 0.75, 0.4), ironRust = SM(0x6a4232, 0.85, 0.3);
+  const steel = SM(0x4a4643, 0.7, 0.35), rust = SM(0x8a5236, 0.85, 0.25);
+
+  // El Pantalán (fotos de 2019–2024): tablero de hormigón a ~8 m sobre caballetes de patas de hierro
+  // abiertas, cada ~22 m. Primer tramo rehabilitado en 2024 (tarima, barandilla blanca, farolas, pérgolas);
+  // el resto con la barandilla tubular vieja a trozos y las tolvas de mineral oxidadas.
+  const pier = new THREE.Group(); pier.position.set(-34, 0, 0); north.add(pier);
+  {
+    const conc = SM(0xbdb6aa, 0.95), concDark = SM(0x8f897f, 0.95), leg = SM(0x2c2826, 0.8, 0.3);
+    const wood = SM(0xa77d55, 0.85), white = SM(0xf1f0eb, 0.5), oldRail = SM(0x5f5a54, 0.7, 0.4), black = SM(0x1d1d1f, 0.6, 0.3);
+    const Z0 = 82, LEN = 720, SPAN = 22, DY = 8.0, HALF = 4.2, NEW = 180;
+    const ROCK_END = -45;   // hasta aquí, desde la orilla, el Pantalán va sobre un espigón de rocas
+    const nSpans = Math.floor(LEN / SPAN);
+    const postGeo = new THREE.BoxGeometry(0.07, 1.1, 0.07), balGeo = new THREE.BoxGeometry(0.035, 1.0, 0.035);
+    const posts = [], bals = [];
+    for (let i = 0; i <= nSpans; i++) {
+      const z = Z0 - i * SPAN;
+      // caballete: viga ancha y 4 patas, las de fuera abiertas (solo donde ya no hay espigón de rocas)
+      if (z <= ROCK_END) {
+        box(11.5, 1.3, 1.8, concDark, 0, DY - 1.9, z, pier);
+        for (const [x0, x1] of [[-1.7, -1.7], [1.7, 1.7], [-4.6, -6.6], [4.6, 6.6]]) {
+          const top = V3(x0, DY - 2.5, z), bot = V3(x1, -2, z);
+          const m = new THREE.Mesh(cyl, leg); m.userData.r = 0.42; setLimb(m, top, bot); pier.add(m);
+        }
+      }
+      if (i === nSpans) break;
+      const zc = z - SPAN / 2, isNew = i * SPAN < NEW;
+      if (zc > ROCK_END) box(HALF * 2 - 0.4, 3.4, SPAN + 0.05, concDark, 0, DY - 2.4, zc, pier);   // muro sobre el espigón
+      // tablero
+      box(HALF * 2, 0.45, SPAN + 0.05, isNew ? wood : conc, 0, DY, zc, pier);
+      box(0.5, 1.5, SPAN, conc, -HALF + 0.25, DY - 0.95, zc, pier);
+      box(0.5, 1.5, SPAN, conc, HALF - 0.25, DY - 0.95, zc, pier);
+      box(HALF * 2 - 1, 0.2, SPAN, concDark, 0, DY - 1.5, zc, pier);
+      // barandillas
+      for (const sx of [-1, 1]) {
+        const x = sx * (HALF - 0.1);
+        if (isNew) {
+          box(0.09, 0.09, SPAN, white, x, DY + 1.25, zc, pier);
+          box(0.06, 0.06, SPAN, white, x, DY + 0.3, zc, pier);
+          for (let k = 0; k < SPAN; k += 0.14) bals.push([x, DY + 0.75, z - k]);
+        } else {
+          const r = Math.sin(i * 12.9898 + sx * 78.233) * 43758.5453 % 1;
+          if (Math.abs(r) < 0.62) {
+            box(0.08, 0.08, SPAN, oldRail, x, DY + 1.25, zc, pier);
+            box(0.06, 0.06, SPAN, oldRail, x, DY + 0.75, zc, pier);
+            for (let k = 0; k < SPAN; k += 2.2) posts.push([x, DY + 0.75, z - k]);
+          } else if (Math.abs(r) < 0.8) {
+            for (let k = 0; k < SPAN; k += 2.2) posts.push([x, DY + 0.75, z - k]);
+          }
+        }
+      }
+      // farolas negras en el tramo nuevo
+      if (isNew && i % 1 === 0) for (const sx of [-1, 1]) {
+        cylm(0.08, 0.1, 5, black, sx * (HALF - 0.5), DY + 2.7, zc, pier, 6);
+        box(0.6, 0.15, 0.25, black, sx * (HALF - 0.75), DY + 5.2, zc, pier);
+      }
+      // tolvas de mineral oxidadas en la parte vieja
+      if (!isNew && i % 3 === 1 && i * SPAN > 260) {
+        const t = new THREE.Group(); t.position.set(0.8, DY + 0.2, zc); pier.add(t);
+        for (const [px, pz] of [[-2.2, -2.2], [2.2, -2.2], [-2.2, 2.2], [2.2, 2.2]]) box(0.3, 4.2, 0.3, rust, px, 2.1, pz, t);
+        const hop = new THREE.Mesh(new THREE.ConeGeometry(3.6, 3.4, 4, 1, true), rust);
+        hop.rotation.set(Math.PI, Math.PI / 4, 0); hop.position.y = 4.2; hop.material.side = THREE.DoubleSide; t.add(hop);
+        const ch = box(1.2, 0.4, 7, rust, 2.6, 4.6, 2.5, t); ch.rotation.x = -0.45; ch.rotation.y = 0.5;
+      }
+    }
+    // barrotes blancos y postes viejos instanciados
+    const d = new THREE.Object3D();
+    const ib = new THREE.InstancedMesh(balGeo, white, bals.length);
+    bals.forEach((p, i) => { d.position.set(p[0], p[1], p[2]); d.updateMatrix(); ib.setMatrixAt(i, d.matrix); });
+    const ip = new THREE.InstancedMesh(postGeo, oldRail, posts.length);
+    posts.forEach((p, i) => { d.position.set(p[0], p[1], p[2]); d.updateMatrix(); ip.setMatrixAt(i, d.matrix); });
+    pier.add(ib, ip);
+    // pérgolas del arranque
+    for (const pz of [70, 52]) {
+      for (const [px, qz] of [[-2.6, -3], [2.6, -3], [-2.6, 3], [2.6, 3]]) cylm(0.12, 0.12, 3.4, black, px, DY + 1.9, pz + qz, pier, 6);
+      box(7.6, 0.25, 8.5, SM(0x3b2f2a), 0, DY + 3.7, pz, pier);
+    }
+    // asientos tipo huevo amarillos, negros y blancos
+    const eggs = [0xf4cc2a, 0x151515, 0xf4f3ee];
+    for (let k = 0; k < 9; k++) {
+      const e = new THREE.Mesh(sph, SM(eggs[k % 3], 0.35)); e.scale.set(0.45, 0.4, 0.45);
+      e.position.set((k % 2 ? 1 : -1) * rnd(1.5, 2.8), DY + 0.6, 40 - k * 14); pier.add(e);
+    }
+    // arranque en tierra y escollera
+    box(12, DY, 30, concDark, 0, DY / 2 - 0.5, Z0 + 14, pier);
+    box(HALF * 2, 0.45, 30, wood, 0, DY, Z0 + 14, pier);
+    // espigón: montón de rocas grandes, ancho abajo y estrecho arriba, con la punta redondeada
+    const rockGeo = new THREE.DodecahedronGeometry(1, 0);
+    const NR = 1300, top = DY - 2.8;
+    const rocksA = new THREE.InstancedMesh(rockGeo, SM(0x8c6f53), NR), rocksB = new THREE.InstancedMesh(rockGeo, SM(0x6b5440), NR);
+    for (let i = 0; i < NR * 2; i++) {
+      const z = rnd(ROCK_END - 7, Z0 + 26);
+      const endK = clamp((z - (ROCK_END - 7)) / 12, 0.25, 1);          // la punta se estrecha
+      const w = 12 * Math.sqrt(endK);
+      const xr = rnd(-1, 1), x = xr * w;
+      const hgt = top * (1 - Math.pow(Math.abs(xr), 1.5)) * Math.min(1, endK + 0.2) - rnd(0, 1.4);
+      d.position.set(x, Math.max(-1.2, hgt), z);
+      d.rotation.set(rnd(0, TAU), rnd(0, TAU), rnd(0, TAU));
+      const sc = rnd(1.1, 2.4); d.scale.set(sc * rnd(0.9, 1.3), sc * rnd(0.7, 1.0), sc * rnd(0.9, 1.3));
+      d.updateMatrix(); (i % 2 ? rocksB : rocksA).setMatrixAt(i >> 1, d.matrix);
+    }
+    pier.add(rocksA, rocksB);
+  }
+
+  {
+    // explanada de hormigón vacía justo detrás del arranque del Pantalán
+    box(170, 1.2, 150, SM(0xbcb7ad, 0.95), -131, -0.05, 158, north);
+    box(170, 0.12, 9, SM(0x5d5a56), -131, 0.6, 96, north);                       // vial junto a la escollera
+    for (let k = 0; k < 6; k++) box(0.4, 0.13, 150, SM(0xa8a399), -200 + k * 40, 0.6, 158, north);   // juntas del hormigón
+    // descampado: tierra con matorral bajo
+    box(320, 1, 1500, SM(0x9a8b62, 1), -110, -0.3, 980, north);
+    const shrub = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), SM(0x6f7a45, 1), 900);
+    const dd = new THREE.Object3D();
+    for (let i = 0; i < 900; i++) {
+      dd.position.set(rnd(-260, 42), 0.3, rnd(240, 1700)); dd.scale.set(rnd(1, 3.5), rnd(0.6, 1.6), rnd(1, 3.5));
+      dd.rotation.y = rnd(0, TAU); dd.updateMatrix(); shrub.setMatrixAt(i, dd.matrix);
+    }
+    north.add(shrub);
+    // escollera de rocas a lo largo de la orilla de la explanada
+    const rev = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), SM(0x7d6249), 520);
+    for (let i = 0; i < 520; i++) {
+      const xx = rnd(-215, -47), t = Math.random();
+      dd.position.set(xx, -0.6 + t * 1.8, 72 + t * 14 + rnd(-2, 2));
+      dd.rotation.set(rnd(0, TAU), rnd(0, TAU), rnd(0, TAU)); const sc = rnd(1.2, 2.4); dd.scale.set(sc, sc * 0.8, sc);
+      dd.updateMatrix(); rev.setMatrixAt(i, dd.matrix);
+    }
+    north.add(rev);
+    // el puerto: gran plataforma de hormigón ganada al mar, contenedores y los dos tanques blancos de gas
+    box(620, 3, 560, SM(0xb2ada3, 0.95), -540, -0.2, 40, north);
+    const cc = [0xa0453b, 0x2f6a8a, 0xc79a3c, 0x3d7a4f, 0xd8d4cc];
+    for (let i = 0; i < 70; i++) box(12, 2.6 * (1 + (i % 3)), 2.5, SM(cc[i % 5]), -300 - (i % 10) * 16, 1.3 + 1.3 * (i % 3), 60 + Math.floor(i / 10) * 12, north);
+    for (const [tx, tz] of [[-470, -150], [-525, -150]]) {
+      cylm(22, 22, 30, SM(0xf2f1ec, 0.5), tx, 16, tz, north, 32);
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(22, 32, 10, 0, TAU, 0, Math.PI * 0.32), SM(0xf2f1ec, 0.5)); dome.position.set(tx, 21, tz); north.add(dome);
+    }
+  }
+
+  // Alto Horno nº 2: torre única con estructura metálica y la rampa del skip
+  const ah = new THREE.Group(); ah.position.set(-60, 0, 760); ah.rotation.y = 0.5; ah.scale.setScalar(1.3); north.add(ah);
+  box(30, 3, 30, SM(0xc9c1b4), 0, 1.5, 0, ah);
+  const ctr = box(26, 9, 15, SM(0xf2efe8, 0.6), 22, 5, 14, ah); ctr.rotation.y = 0.35; ctr.rotation.z = 0.06;
+  const furnace = new THREE.Group(); ah.add(furnace);
+  const prof = [[4.6, 3], [5.4, 10], [5.8, 20], [5.0, 32], [4.0, 42], [3.2, 47]];
+  for (let i = 0; i < prof.length - 1; i++) {
+    const [r0, y0] = prof[i], [r1, y1] = prof[i + 1];
+    cylm(r1, r0, y1 - y0, i % 2 ? steel : rust, 0, (y0 + y1) / 2, 0, furnace, 20);
+  }
+  for (let y = 6; y < 46; y += 4) {
+    const t = new THREE.Mesh(new THREE.TorusGeometry(5.6 - Math.max(0, y - 22) * 0.07, 0.22, 6, 24), iron);
+    t.rotation.x = Math.PI / 2; t.position.y = y; ah.add(t);
+  }
+  // marco de cuatro pilares con plataformas
+  for (const [cx, cz] of [[-7, -7], [7, -7], [-7, 7], [7, 7]]) box(1.1, 52, 1.1, iron, cx, 29, cz, ah);
+  for (let y = 10; y <= 52; y += 8.4) {
+    box(15.2, 0.5, 1.6, iron, 0, y, -7, ah); box(15.2, 0.5, 1.6, iron, 0, y, 7, ah);
+    box(1.6, 0.5, 15.2, iron, -7, y, 0, ah); box(1.6, 0.5, 15.2, iron, 7, y, 0, ah);
+  }
+  for (const [cx, cz] of [[-3.5, -3.5], [3.5, -3.5], [-3.5, 3.5], [3.5, 3.5]]) box(0.8, 15, 0.8, iron, cx, 60, cz, ah);
+  box(8, 0.5, 8, iron, 0, 67.5, 0, ah);
+  box(4, 4, 4, steel, 0, 70, 0, ah);
+  for (const a of [0.8, 2.4, 3.9, 5.5]) {
+    const p = cylm(0.55, 0.55, 18, rust, Math.cos(a) * 2.4, 56, Math.sin(a) * 2.4, ah, 8);
+    p.rotation.z = Math.cos(a) * -0.08; p.rotation.x = Math.sin(a) * 0.08;
+  }
+  const dc = cylm(1.1, 1.1, 30, rust, 9, 50, 0, ah, 10); dc.rotation.z = -0.5;
+  // rampa del skip: celosía inclinada desde el suelo hasta la boca
+  {
+    const len = 72, ang = 0.72, sk = new THREE.Group();
+    sk.position.set(-6, 52, 0); sk.rotation.z = ang; ah.add(sk);
+    for (const sz of [-1.6, 1.6]) { box(len, 0.7, 0.5, iron, -len / 2, 0, sz, sk); box(len, 0.5, 0.5, iron, -len / 2, -2.4, sz, sk); }
+    for (let x = -2; x > -len; x -= 3.2) {
+      box(0.3, 2.4, 0.3, iron, x, -1.2, -1.6, sk); box(0.3, 2.4, 0.3, iron, x, -1.2, 1.6, sk);
+      box(0.3, 0.3, 3.4, iron, x, 0, 0, sk);
+    }
+    for (const x of [-26, -48]) box(1, 32, 1, iron, x, -16, 0, sk).rotation.z = -ang;
+  }
+  for (const [x, z] of [[-30, 20], [-22, 26], [30, -14], [34, 30]]) {
+    cylm(0.3, 0.4, 10, SM(0x6b5640), x, 5, z, ah, 7);
+    for (let k = 0; k < 7; k++) { const f = new THREE.Mesh(new THREE.ConeGeometry(0.6, 5, 4), SM(0x3f6b3a)); f.scale.z = 0.25; f.position.set(x, 10.3, z); f.rotation.set(0, k / 7 * TAU, 1.5); f.translateY(2.4); ah.add(f); }
+  }
+
+  {
+    const od = new THREE.Object3D();
+    // carretera detrás del paseo con coches aparcados
+    box(3000, 0.2, 11, SM(0x4a4947, 0.95), 1520, 0.35, 232, north);
+    const carC = [0xd9d9d6, 0x2b2f36, 0x8d1f1f, 0x274b7a, 0xa8a8a2, 0x1d1d1d].map(c => new THREE.Color(c));
+    const cars = new THREE.InstancedMesh(new THREE.BoxGeometry(4.3, 1.5, 1.9), new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.3 }), 140);
+    for (let i = 0; i < 140; i++) {
+      od.position.set(70 + i * 9.5 + rnd(-1.5, 1.5), 1.2, i % 3 ? 228.5 : 236); od.rotation.set(0, 0, 0); od.scale.set(1, 1, 1); od.updateMatrix();
+      cars.setMatrixAt(i, od.matrix); cars.setColorAt(i, carC[(Math.random() * carC.length) | 0]);
+    }
+    cars.instanceColor.needsUpdate = true; north.add(cars);
+    // sombrillas de colores en la playa ancha
+    const NP = 260, umbC = [0xe94b3c, 0x2f7fd8, 0xf2c230, 0x2fa36b, 0xffffff, 0xf07b2a, 0x9b59b6].map(c => new THREE.Color(c));
+    const umb = new THREE.InstancedMesh(new THREE.ConeGeometry(1.15, 0.55, 10), new THREE.MeshStandardMaterial({ roughness: 0.7 }), NP);
+    const poles = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.03, 0.03, 2.1, 5), SM(0xeeeeee), NP);
+    for (let i = 0; i < NP; i++) {
+      const ux = rnd(70, 1500), uz = rnd(112, 192);
+      od.position.set(ux, 2.6, uz); od.rotation.set(rnd(-0.12, 0.12), 0, rnd(-0.12, 0.12)); od.updateMatrix(); umb.setMatrixAt(i, od.matrix);
+      umb.setColorAt(i, umbC[(Math.random() * umbC.length) | 0]);
+      od.position.set(ux, 1.4, uz); od.rotation.set(0, 0, 0); od.updateMatrix(); poles.setMatrixAt(i, od.matrix);
+    }
+    umb.instanceColor.needsUpdate = true; north.add(umb, poles);
+    // entorno del Alto Horno: rotonda, carreteras y naves industriales en el descampado
+    const AHX = -60, AHZ = 760, asph = SM(0x4d4c4a, 0.95);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(40, 54, 48), asph); ring.rotation.x = -Math.PI / 2; ring.position.set(AHX, 0.25, AHZ); north.add(ring);
+    const isl = new THREE.Mesh(new THREE.CircleGeometry(40, 48), SM(0xcfc5b2)); isl.rotation.x = -Math.PI / 2; isl.position.set(AHX, 0.28, AHZ); north.add(isl);
+    box(12, 0.2, 420, asph, AHX, 0.24, AHZ - 260, north);                  // hacia la costa
+    box(12, 0.2, 420, asph, AHX, 0.24, AHZ + 260, north);                  // tierra adentro
+    box(520, 0.2, 12, asph, AHX + 310, 0.24, AHZ, north);                  // hacia el pueblo
+    box(520, 0.2, 12, asph, AHX - 310, 0.24, AHZ, north);                  // hacia el puerto
+    const naveC = [0xe3e6e8, 0xcfd8df, 0xe8e6df, 0xd5dde4];
+    [[AHX + 120, AHZ - 95, 90, 13, 45], [AHX - 130, AHZ - 80, 70, 11, 40], [AHX + 150, AHZ + 110, 110, 15, 55],
+     [AHX - 120, AHZ + 120, 80, 12, 50], [AHX + 30, AHZ + 190, 120, 14, 45], [AHX - 260, AHZ + 20, 60, 10, 35]].forEach(([nx, nz, w, hh, dz], i) => {
+      box(w, hh, dz, SM(naveC[i % 4], 0.7), nx, hh / 2, nz, north);
+      const r = box(w + 1, 1.4, dz / 2 + 1, SM(0xb9c2c9, 0.6), nx, hh + 0.5, nz - dz / 4, north); r.rotation.x = 0.12;
+      const r2 = box(w + 1, 1.4, dz / 2 + 1, SM(0xb9c2c9, 0.6), nx, hh + 0.5, nz + dz / 4, north); r2.rotation.x = -0.12;
+    });
+    // nave grande junto al arranque del espigón, en la explanada
+    box(70, 15, 42, SM(0xdedfdc, 0.7), -150, 7.5, 200, north);
+    const vault = new THREE.Mesh(new THREE.CylinderGeometry(21, 21, 70, 28, 1, false, -Math.PI / 2, Math.PI), SM(0xb7bcbf, 0.6));
+    vault.rotation.z = Math.PI / 2; vault.scale.set(1, 1, 0.35); vault.position.set(-150, 15, 200); north.add(vault);
+  }
+
+  // puerto: dique con grúas, más al norte
+  const concrete = SM(0xb9b1a4), craneBlue = SM(0x2f5f8f, 0.6, 0.3), craneWhite = SM(0xe8e6e0, 0.6, 0.2);
+  box(26, 6, 560, concrete, -300, 1, -190, north);
+  for (const cz of [-20, -90, -160]) {
+    const g = new THREE.Group(); g.position.set(-300, 4, cz); g.rotation.y = Math.PI; north.add(g);
+    box(2, 34, 2, craneBlue, -8, 17, -10, g); box(2, 34, 2, craneBlue, 8, 17, -10, g);
+    box(2, 34, 2, craneBlue, -8, 17, 10, g); box(2, 34, 2, craneBlue, 8, 17, 10, g);
+    box(20, 3, 24, craneWhite, 0, 35, 0, g);
+    box(70, 2.4, 3, craneBlue, -26, 40, 0, g);
+    box(2, 18, 2, craneBlue, 4, 46, 0, g);
+  }
+  box(18, 10, 140, SM(0x7b2d26), -326, 2, -110, north);
+  box(18, 12, 22, SM(0xf0ede6), -326, 13, -165, north);
+  // castillo de Sagunto en su monte
+  const hill = new THREE.Mesh(new THREE.SphereGeometry(1, 40, 14), SM(0x9c8b63)); hill.scale.set(650, 150, 260); hill.position.set(2300, -12, 3000); coast.add(hill);
+  const stone = SM(0xd8c094);
+  for (let xx = -470; xx <= 470; xx += 19) {
+    const y = 150 * Math.sqrt(Math.max(0, 1 - (xx / 650) ** 2)) - 14;
+    box(19.5, 12, 4, stone, 2300 + xx, y + 2, 3000 - 18);
+    if (Math.abs(xx) % 114 < 19) box(11, 24, 11, stone, 2300 + xx, y + 8, 3000 - 18);
+  }
+  // sierra Calderona al fondo
+  const ridge = (z, hmin, hmax, col, seed) => {
+    const pts = [], N = 140;
+    for (let i = 0; i <= N; i++) {
+      const xx = -7000 + i * 14000 / N;
+      const hh = hmin + (hmax - hmin) * (0.5 + 0.3 * Math.sin(xx * 0.0011 + seed) + 0.2 * Math.sin(xx * 0.0037 + seed * 2) + 0.1 * Math.sin(xx * 0.011));
+      pts.push(xx, 0, z, xx, hh, z + rnd(-40, 40));
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    const idx = []; for (let i = 0; i < N; i++) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+    g.setIndex(idx); g.computeVertexNormals();
+    coast.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide })));
+  };
+  ridge(2300, 60, 230, 0x8e8a86, 1); ridge(3400, 200, 520, 0x9c9db4, 4);
+}
+
+// ---------- estado del juego ----------
+const SESSION = 180;                       // segundos de sesión
+// surfistas: aspecto y estilo (1–5). vel = empuje de la ola, air = altura y giro, tubo = aguante y puntos en el tubo
+// fotos reales de cada surfista para su ficha de selección
+const PHOTOS = {
+  jowi: 'img/personajes/jowi/foto.jpg',
+  bruno: 'img/personajes/bruno/foto.jpg',
+  litos: 'img/personajes/litos/foto.jpg',
+  froskin: 'img/personajes/froskin/foto.jpg',
+  gutty: 'img/personajes/gutty/foto.jpg',
+  josenl: 'img/personajes/josenl/foto.jpg',
+  xitano: 'img/personajes/xitano/foto.jpg',
+  gallu: 'img/personajes/gallu/foto.jpg',
+  juanp: 'img/personajes/juanp/foto.jpg',
+  raul: 'img/personajes/raul/foto.jpg',
+  krre: 'img/personajes/krre/foto.jpg',
+  alex: 'img/personajes/alex/foto.jpg'
+};
+const FACES = {
+  jowi: 'img/personajes/jowi/cara.jpg',
+  bruno: 'img/personajes/bruno/cara.jpg',
+  litos: 'img/personajes/litos/cara.jpg',
+  froskin: 'img/personajes/froskin/cara.jpg',
+  gutty: 'img/personajes/gutty/cara.jpg',
+  josenl: 'img/personajes/josenl/cara.jpg',
+  xitano: 'img/personajes/xitano/cara.jpg',
+  gallu: 'img/personajes/gallu/cara.jpg',
+  raul: 'img/personajes/raul/cara.jpg',
+  krre: 'img/personajes/krre/cara.jpg',
+  alex: 'img/personajes/alex/cara.jpg'
+};
+const CHARS = [
+  // Jowi: neopreno largo azul con piernas azul marino, gafas de sol, barba y pelo despeinado; tabla NL Surfboard
+  { id: 'jowi', goofy: true,  name: 'Jowi',  tag: 'Tabla Bradley Bell · neopreno azul', skin: 0xc48c6e, hair: 0x3a2618, style: 'messy', beard: false, glasses: false,
+    suit: 0x1f4fc4, shorts: 0x172342, legs: 0x172342, longSuit: true, deck: 'photo', deckFallback: 'jowiBell', deckPhoto: true, fins: ['bruno', 'bruno', 'bruno'], sw: [0x1f4fc4, 0x172342, 0x8c918e], vel: 4, air: 3, tubo: 3 },
+  // Litos: melena castaña con puntas aclaradas, barba de pocos días, neopreno largo negro con rayas blancas; tabla Bradley
+  { id: 'litos', goofy: false, name: 'Litos', tag: 'Tabla Bradley · neopreno negro', skin: 0xd69c80, hair: 0x7a5636, style: 'surfer', beard: false, beardColor: 0x8a6748, glasses: false,
+    suit: 0x121314, shorts: 0x121314, legs: 0x121314, longSuit: true, suitStripes: true, deck: 'litos', fins: ['litos', 'litos', 'litos'], sw: [0x121314, 0xf2f2ee, 0xf6f6f2], vel: 3, air: 4, tubo: 3 },
+  // Bruno: pelo negro corto con degradado, barba negra poblada, neopreno negro con hombros azules y raya verde; tabla crema
+  { id: 'bruno', goofy: false, name: 'Bruno', tag: 'Tabla Bell · rey del aéreo', skin: 0xc9987c, hair: 0x14100d, style: 'fade', beard: false, beardFull: true, glasses: false,
+    suit: 0x111214, shorts: 0x111214, legs: 0x111214, upperArm: 0x1e3f9e, torso: 'bruno', longSuit: true, deck: 'bruno', fins: ['bruno', 'bruno', 'bruno'], sw: [0x111214, 0x1e3f9e, 0xf5f4ef], vel: 3, air: 5, tubo: 2 },
+  // Froskin: rubia con melena larga al viento, neopreno largo negro; tabla blanca pintada a mano con círculo turquesa
+  { id: 'froskin', goofy: true, name: 'Froskin', tag: 'Tabla pintada a mano', skin: 0xe2aa8c, hair: 0xd9b25f, style: 'long', beard: false, glasses: false,
+    suit: 0x121316, shorts: 0x121316, legs: 0x121316, longSuit: true, deck: 'froskin', fins: ['froskin', 'froskin', 'froskin'], sw: [0x121316, 0xd9b25f, 0x39b3b8], vel: 3, air: 3, tubo: 4 },
+  // Gutty: pelo canoso corto, neopreno negro sin mangas y piernas largas; longboard de resina multicolor (la más larga)
+  { id: 'gutty', goofy: false, name: 'Gutty', tag: 'Longboard multicolor · la más larga', skin: 0xc48c6c, hair: 0x8e8b88, style: 'fade', beard: false, glasses: false,
+    suit: 0x131416, shorts: 0x131416, legs: 0x2a2c30, longSuit: true, sleeveless: true, upperArm: 0xc48c6c, deck: 'photo', deckFallback: 'plain', deckPhoto: true,
+    board: 'long', fins: ['smoke', 'smoke', 'smoke'], sw: [0x131416, 0x2fa35a, 0xe23b2e, 0xf2b51d], vel: 2, air: 1, tubo: 5 },
+  // Jose NL: pelo moreno corto, top azul de manga corta con logo verde; longboard amarilla con la cola verde menta
+  { id: 'josenl', goofy: false, name: 'Jose NL', tag: 'Longboard amarilla y menta', skin: 0xcd9676, hair: 0x231a14, style: 'fade', beard: false, glasses: false,
+    suit: 0x1f3fae, shorts: 0x1a2240, upperArm: 0x1f3fae, deck: 'joseNL', board: 'long', fins: ['black', 'black', 'black'], sw: [0x1f3fae, 0xe9ec4a, 0xa8e6cf], vel: 2, air: 2, tubo: 4 },
+  // Xitano: gorra H2O, gafas de espejo, perilla canosa y melena revuelta; neopreno azul marino con hombros azules; longboard azul
+  { id: 'xitano', goofy: false, name: 'Xitano', tag: 'Longboard azul · gorra H2O', skin: 0xc48e70, hair: 0x4b4540, style: 'long', beard: false, glasses: false, cap: true,
+    suit: 0x14213d, shorts: 0x14213d, legs: 0x14213d, upperArm: 0x2c5fae, longSuit: true, deck: 'photo', deckFallback: 'plain', deckPhoto: true,
+    board: 'long', fins: ['black', 'black', 'black'], sw: [0x14213d, 0x2c5fae, 0x1c43b8], vel: 3, air: 2, tubo: 4 },
+  // Gallu: bodyboarder; calvo con barba, licra amarilla flúor; va tumbado con aletas y también hace trucos
+  { id: 'gallu', goofy: false, bodyboard: true, name: 'Gallu', tag: 'Bodyboard · va tumbado', skin: 0xc89270, hair: 0x1d1712, style: 'bald', beard: true, beardFull: true, beardColor: 0x1d1712, glasses: false,
+    suit: 0xd4f53c, shorts: 0x1d2140, upperArm: 0xd4f53c, deck: 'galluBB', board: 'body', fins: ['black', 'black', 'black'], sw: [0xd4f53c, 0x2b2a7a, 0xe8432e], vel: 3, air: 4, tubo: 5 },
+  // JuanP: no lleva tabla, va en su moto de agua Sea-Doo lima; barba, pelo rizado, gafas de sol y chaleco naranja
+  { id: 'juanp', goofy: false, jetski: true, name: 'JuanP', tag: 'Moto de agua Sea-Doo', skin: 0xb07a5c, hair: 0x17110d, style: 'curly', beard: true, beardFull: true, beardColor: 0x17110d, glasses: true,
+    suit: 0xee6a3a, torso: 'juanp', shorts: 0x15171a, upperArm: 0xb07a5c, deck: 'jetski', board: 'jet', fins: ['black', 'black', 'black'], sw: [0xc8f230, 0x26b33a, 0xee6a3a], vel: 5, air: 4, tubo: 2 },
+  // Raúl: kayak naranja Jackson, pala negra de doble hoja, casco blanco, chaleco rojo sobre top negro
+  { id: 'raul', goofy: false, kayak: true, helmet: true, name: 'Raúl', tag: 'Kayak Jackson naranja', skin: 0xbe886a, hair: 0x2a1d16, style: 'fade', beard: true, beardColor: 0x2a1d16, glasses: false,
+    suit: 0xb3263a, upperArm: 0x15171c, forearm: 0x15171c, shorts: 0x15171c, legs: 0x15171c, longSuit: true, deck: 'kayak', board: 'kayak', fins: ['black', 'black', 'black'], sw: [0xf2621f, 0xb3263a, 0x15171c], vel: 3, air: 4, tubo: 4 },
+  // Krre: zodiac de rescate roja (S.O.S Ajuntament de Sagunt); casco rojo, gafas de sol, chaleco naranja abierto y neopreno negro
+  { id: 'krre', goofy: false, zodiac: true, helmet: true, helmetColor: 0xd8262b, name: 'Krre', tag: 'Zodiac de rescate S.O.S', skin: 0xcd9674, hair: 0x231811, style: 'fade', beard: false, glasses: false,
+    suit: 0xf07a2c, upperArm: 0xcd9674, forearm: 0xcd9674, shorts: 0x15171c, legs: 0x15171c, longSuit: true, deck: 'zodiac', board: 'zodiac', fins: ['black', 'black', 'black'], sw: [0xd8212b, 0xf07a2c, 0x15171c], vel: 4, air: 3, tubo: 2 },
+  // Alex: melena larga morena al viento y barba; neopreno negro de manga larga y pierna corta; tabla Lemon color arena con cola de pez
+  { id: 'alex', goofy: true, name: 'Alex', tag: 'Tabla Lemon fish · melena al viento', skin: 0xc48c6c, hair: 0x2a1d14, style: 'long', beard: true, beardColor: 0x2a1d14, glasses: false,
+    suit: 0x121316, upperArm: 0x121316, forearm: 0x121316, shorts: 0x121316, deck: 'photo', deckFallback: 'plain', deckPhoto: true, fins: ['black', 'black', 'black'], sw: [0x121316, 0xcfc2a6, 0x2a1d14], vel: 3, air: 3, tubo: 5 }
+];
+let CH = CHARS[0];
+try { CH = CHARS.find(c => c.id === localStorage.getItem('surf-sagunto-char')) || CHARS[0]; } catch (e) {}
+let state = 'title';
+let score = 0, best = 0, sessionT = SESSION, waves = 0, bestWave = 0, wavePts = 0;
+let mult = 1, rideT = 0, curlSpeed = 8.5;
+try { best = +localStorage.getItem('surf-sagunto-best3d') || 0; } catch (e) {}
+let px = 0, h = 0.5, vh = 0, s = 1.3, air = false, airT = 0, spin = 0, flip = 0, aVy = 0, airTop = 0, launchY = 0, pxStart = 0;
+let rideAngle = 0, lastVh = 0, snapCD = 0;
+// la tabla tiene rumbo (theta: 0 = paralela a la orilla, + sube la ola, - baja) y velocidad v en m/s
+let turnW = 0, airBack = false, airSteer = 0, landSoft = 0, landV = 0;
+const LAND_A = 0.15, LAND_SOFT = 1.4;   // al caer: tabla casi horizontal y un rato de recepción suave
+let theta = 0, v = 10, omega = 0, crouch = 0.3, bank = 0, airVx = 10, twistAmt = 0, backT = 0, turnLock = 0;
+// aéreos: giros pedidos (spinT/flipT) que se completan solos, grab y recepción guiada sobre la ola
+let spinT = 0, flipT = 0, grab = 0, grabT = 0, airDur = 1, airHold = 0, launchZ = 0, landZ = 0, landT = 1, lastTrick = '', airHintShown = false;
+const qLandPose = new THREE.Quaternion(), qLand = new THREE.Quaternion(), qAirBase = new THREE.Quaternion();
+const aPos = V3(0, 0, 0), qLaunch = new THREE.Quaternion(), qRide = new THREE.Quaternion(), qTmp = new THREE.Quaternion(), qTmp2 = new THREE.Quaternion();
+let pt = 0, windowOpen = false, paddlePh = 0, popT = 0, missT = 0, wipeT = 0, tubeT = 0;
+const qPop0 = new THREE.Quaternion();
+const wVel = V3(0, 0, 0), wAxis = V3(1, 0, 0);
+let autoT = 1.3, autoSpin = 0, msgTimer = 0, titleT = 0, showT = 0;
+const keys = { up: false, down: false, left: false, right: false };
+const ptr = { down: false, id: null, x: 0, y: 0, ax: 0, ay: 0 };       // dedo izquierdo: trucos
+const stick = { id: null, x: 0, y: 0 };                                   // dedo derecho: rumbo de la tabla (-1..1)
+
+const hud = $('hud'), scoreEl = $('score'), clockEl = $('clock'), waveNEl = $('waveN'), tricksEl = $('tricks');
+const multv = $('multv'), multArc = $('multArc'), wavePtsEl = $('wavePts');
+const dial = $('dial'), dialArc = $('dialArc'), kmhEl = $('kmh'), angEl = $('ang'), distEl = $('dist');
+const bubble = $('bubble'), bubV = $('bubV'), bubL = $('bubL');
+const trickEl = $('trick'), ringbox = $('ringbox'), ringArc = $('ringArc'), ringTxt = $('ringTxt');
+const promptEl = $('prompt'), msgEl = $('msg');
+const overlay = $('overlay'), menuP = $('menu'), overP = $('over'), fadeEl = $('fade');
+const charsP = $('chars'), controlsP = $('controls'), cardsEl = $('cards');
+let menuView = 'main';
+
+// ---------- personajes ----------
+const hex = n => '#' + n.toString(16).padStart(6, '0');
+function applyChar(c) {
+  matSkin.color.setHex(c.skin); matHair.color.setHex(c.hair); matBeard.color.setHex(c.beardColor || c.hair);
+  const st = !!c.suitStripes;
+  setSuitMap(matSuit, st, c.suit); setSuitMap(matShorts, st, c.shorts);
+  setSuitMap(matUpperArm, st, c.upperArm || c.suit);
+  if (c.torso && TORSOS[c.torso]) { TORSOS[c.torso](torsoCv.getContext('2d')); torsoTex.needsUpdate = true; if (matSuit.map !== torsoTex) { matSuit.map = torsoTex; matSuit.needsUpdate = true; } matSuit.color.setHex(0xffffff); }
+  setSuitMap(matShin, st && c.longSuit, c.longSuit ? (c.legs || c.suit) : c.skin);
+  setSuitMap(matForearm, st && c.longSuit, c.longSuit && !c.sleeveless ? c.suit : c.skin);
+  paintBoard(c); setBoardShape(c);
+  rider.scale.z = c.goofy ? 1 : -1;
+  if (FACES[c.id] && !faceTex[c.id]) faceTex[c.id] = new THREE.TextureLoader().load(FACES[c.id]);
+  faceMesh.visible = !!faceTex[c.id];
+  if (faceTex[c.id] && faceMat.map !== faceTex[c.id]) { faceMat.map = faceTex[c.id]; faceMat.needsUpdate = true; }
+  L.pony.visible = c.style === 'pony';
+  spikes.visible = c.style === 'messy'; mane.visible = c.style === 'surfer' || c.style === 'long'; strandG.visible = c.style === 'long';
+  glasses.visible = !!c.glasses; beard.visible = !!c.beard; cap.visible = !!c.cap; hair.visible = !c.cap && !c.helmet && c.style !== 'bald';
+  colorHuman(HUMAN.local, c);
+  for (const ft of [footB, footF]) { ft.visible = !HUMAN.local || !!c.bodyboard; ft.material = c.bodyboard ? matFlipper : matSkin; ft.scale.set(c.bodyboard ? 1.3 : 1, 1, c.bodyboard ? 2.6 : 1); }
+  if (c.beardFull) beard.scale.set(0.122, 0.135, 0.122); else beard.scale.set(0.108, c.beardColor ? 0.1 : 0.11, c.beardColor ? 0.104 : 0.108);
+  const hs = c.style === 'curly' ? [1.28, 1.18, 1.28] : c.style === 'surfer' ? [1.08, 1.12, 1.08] : c.style === 'fade' ? [1.0, 0.82, 1.0] : [1, 1, 1];
+  hair.scale.set(hs[0], hs[1], hs[2]);
+  $('whoName').textContent = c.name;
+  $('whoSw').innerHTML = c.sw.map(x => '<i style="background:' + hex(x) + '"></i>').join('');
+}
+function pips(n) { let s = ''; for (let i = 1; i <= 5; i++) s += '<i class="' + (i <= n ? 'on' : '') + '"></i>'; return s; }
+// retratos de cada surfista: se renderizan con el propio motor 3D, posando con el shaka
+const portraits = {};
+function makePortraits() {
+  const W = 240, H = 300;
+  const rt = new THREE.WebGLRenderTarget(W, H), cam = new THREE.PerspectiveCamera(30, W / H, 0.1, 9000);
+  const buf = new Uint8Array(W * H * 4), cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const x = cv.getContext('2d'), img = x.createImageData(W, H);
+  const keepPos = boardRoot.position.clone(), keepQ = boardRoot.quaternion.clone(), keepVis = boardRoot.visible, keepTurn = faceTurn;
+  const bx = px, bz = 12.5;
+  boardRoot.visible = true; particles.visible = false;
+  boardRoot.position.set(bx, 0.05, bz); boardRoot.quaternion.setFromAxisAngle(UP, 0.12);
+  cam.position.set(-(bx + 0.12), 1.74, bz + 1.25); cam.lookAt(-(bx + 0.08), 1.56, bz);
+  world.updateMatrixWorld(true);
+  try {
+    for (const c of CHARS) {
+      applyChar(c); faceTurn = 0.05; applyPose(shaka(stance(poseA, 0.2, 0, 0, 0)));
+      world.updateMatrixWorld(true);
+      renderer.setRenderTarget(rt); renderer.render(scene, cam);
+      renderer.readRenderTargetPixels(rt, 0, 0, W, H, buf);
+      for (let y = 0; y < H; y++) img.data.set(buf.subarray((H - 1 - y) * W * 4, (H - y) * W * 4), y * W * 4);
+      x.putImageData(img, 0, 0);
+      portraits[c.id] = cv.toDataURL('image/jpeg', 0.86);
+    }
+  } catch (e) { /* sin retratos: las fichas siguen funcionando */ }
+  renderer.setRenderTarget(null); rt.dispose(); particles.visible = true;
+  // si alguna cara aún no había cargado, se repiten los retratos la próxima vez
+  const ready = CHARS.every(c => !faceTex[c.id] || (faceTex[c.id].image && faceTex[c.id].image.complete));
+  if (!ready) for (const k in portraits) delete portraits[k];
+  applyChar(CH); faceTurn = keepTurn;
+  boardRoot.position.copy(keepPos); boardRoot.quaternion.copy(keepQ); boardRoot.visible = keepVis;
+}
+// vista de la tabla de cada surfista para su ficha (el mismo diseño que lleva en el 3D)
+const deckPrev = {};
+function makeDeckPreviews() {
+  const x = deckCv.getContext('2d');
+  for (const c of CHARS) { (DECKS[c.deck] || DECKS.plain)(x, deckCv.width, deckCv.height, c); deckPrev[c.id] = deckCv.toDataURL('image/jpeg', 0.82); }
+  paintBoard(CH);
+}
+function renderCards() {
+  if (!deckPrev[CHARS[0].id]) makeDeckPreviews();
+  if (!CHARS.every(c => PHOTOS[c.id]) && !portraits[CHARS[0].id]) makePortraits();
+  cardsEl.textContent = '';
+  for (const c of CHARS) {
+    const b = document.createElement('button');
+    b.className = 'card' + (c === CH ? ' sel' : ''); b.setAttribute('aria-pressed', c === CH); b.dataset.id = c.id;
+    b.innerHTML = ((PHOTOS[c.id] || portraits[c.id]) ? '<img class="portrait" alt="Foto de ' + c.name + '" src="' + (PHOTOS[c.id] || portraits[c.id]) + '">' : '') + '<span class="deckprev' + (c.board === 'body' ? ' bb' : c.board === 'jet' || c.board === 'kayak' || c.board === 'zodiac' ? ' jet' : '') + '"' + (c.deckPhoto ? ' style="transform:scaleY(-1)"' : '') + '><img alt="Tabla de ' + c.name + '" src="' + deckPrev[c.id] + '"></span>' + '<span class="sws">' + c.sw.map(x => '<i style="background:' + hex(x) + '"></i>').join('') + '</span>' +
+      '<b>' + c.name + '</b><em>' + c.tag + '</em>' + '<span class="stance">' + (c.zodiac ? 'Zodiac de rescate · salta y empuja' : c.kayak ? 'Kayak · rema y salta' : c.jetski ? 'Moto de agua · salta y empuja' : c.bodyboard ? 'Bodyboard · tumbado con aletas' : c.goofy ? 'Goofy · pie derecho delante' : 'Regular · pie izquierdo delante') + '</span>' +
+      '<span class="st"><span>Velocidad</span><span class="pips">' + pips(c.vel) + '</span></span>' +
+      '<span class="st"><span>Aéreos</span><span class="pips">' + pips(c.air) + '</span></span>' +
+      '<span class="st"><span>Tubos</span><span class="pips">' + pips(c.tubo) + '</span></span>';
+    b.addEventListener('click', () => {
+      CH = c; applyChar(c); renderCards();
+      try { localStorage.setItem('surf-sagunto-char', c.id); } catch (e) {}
+    });
+    cardsEl.appendChild(b);
+  }
+}
+function showMenu(view) {
+  menuView = view;
+  menuP.hidden = view !== 'main'; charsP.hidden = view !== 'chars'; controlsP.hidden = view !== 'controls'; overP.hidden = true;
+  if (view === 'chars') { renderCards(); const s = cardsEl.querySelector('.sel'); if (s) s.focus({ preventScroll: true }); }
+  if (view === 'main') $('start').focus({ preventScroll: true });
+}
+$('toChars').addEventListener('click', () => showMenu('chars'));
+$('toControls').addEventListener('click', () => showMenu('controls'));
+$('charsOk').addEventListener('click', () => showMenu('main'));
+$('controlsOk').addEventListener('click', () => showMenu('main'));
+for (const c of CHARS) if (FACES[c.id] && !faceTex[c.id]) faceTex[c.id] = new THREE.TextureLoader().load(FACES[c.id]);
+applyChar(CH);
+
+// ---------- música: «Fiesta surfera» de Bruno Fumumo ----------
+const music = $('music'), musicBtn = $('musicBtn');
+music.volume = 0.55;
+let musicOn = true;
+try { musicOn = localStorage.getItem('surf-sagunto-music') !== 'off'; } catch (e) {}
+function setMusicBtn() {
+  musicBtn.textContent = 'Música: ' + (musicOn ? 'sí' : 'no'); musicBtn.setAttribute('aria-pressed', musicOn);
+  const hm = $('hudMute'); hm.setAttribute('aria-pressed', !musicOn); hm.setAttribute('aria-label', musicOn ? 'Silenciar música' : 'Activar música');
+}
+function tryPlay() { if (!musicOn || !music.paused || document.hidden) return; const p = music.play(); if (p && p.catch) p.catch(() => {}); }
+music.addEventListener('error', async () => {
+  // si el visor no deja reproducir el archivo directamente, se carga como blob
+  if (music.dataset.fallback) { $('nowPlaying').textContent = 'No se ha podido cargar la música'; return; }
+  music.dataset.fallback = '1';
+  try { const r = await fetch('audio/musica.mp4'); if (!r.ok) throw 0; music.src = URL.createObjectURL(await r.blob()); tryPlay(); }
+  catch (e) { $('nowPlaying').textContent = 'No se ha podido cargar la música'; }
+});
+function setMusic(on) {
+  musicOn = on; setMusicBtn();
+  try { localStorage.setItem('surf-sagunto-music', musicOn ? 'on' : 'off'); } catch (e) {}
+  if (musicOn) tryPlay(); else music.pause();
+}
+musicBtn.addEventListener('click', () => setMusic(!musicOn));
+$('hudMute').addEventListener('click', () => setMusic(!musicOn));
+// volumen
+const volEl = $('vol');
+try { const v = localStorage.getItem('surf-sagunto-vol'); if (v !== null) volEl.value = v; } catch (e) {}
+music.volume = volEl.value / 100;
+volEl.addEventListener('input', () => {
+  music.volume = volEl.value / 100;
+  try { localStorage.setItem('surf-sagunto-vol', volEl.value); } catch (e) {}
+  if (volEl.value > 0 && !musicOn) setMusic(true);
+});
+
+// ---------- pantalla completa ----------
+const fsBtn = $('fsBtn'), fsNote = $('fsNote');
+const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+function setFsLabel() { fsBtn.textContent = isFull() ? 'Salir de pantalla completa' : (IS_IOS && !IS_APP ? '📱 Pantalla completa en iPhone' : 'Pantalla completa'); }
+// iPhone/iPad: Safari no deja poner pantalla completa a una web; la forma es añadirla a la pantalla de inicio
+const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const IS_APP = navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+const iosGuide = $('iosGuide');
+function showIosGuide() { iosGuide.hidden = false; iosGuide.classList.toggle('land', innerWidth > innerHeight); }
+$('iosOk').addEventListener('click', () => { iosGuide.hidden = true; });
+if (IS_IOS && !IS_APP) fsBtn.textContent = '📱 Pantalla completa en iPhone';
+function fsFailed() {
+  if (IS_IOS && !IS_APP) { showIosGuide(); return; }
+  if (!overlay.hidden) fsNote.hidden = false; else say('Aquí no se puede poner pantalla completa: ábrelo con Chrome', 3);
+}
+async function toggleFull() {
+  if (IS_IOS && !IS_APP) { showIosGuide(); return; }
+  try {
+    if (isFull()) { await (document.exitFullscreen || document.webkitExitFullscreen).call(document); return; }
+    const el = document.documentElement, req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!req) throw new Error('sin API');
+    setTimeout(() => { if (!isFull()) fsFailed(); }, 1200);   // algunos visores ni aceptan ni rechazan
+    await req.call(el, { navigationUI: 'hide' });
+    fsNote.hidden = true;
+    try { await screen.orientation.lock('landscape'); } catch (e) {}
+  } catch (e) { fsFailed(); }
+}
+fsBtn.addEventListener('click', toggleFull);
+// móviles: al primer toque, pantalla completa y en horizontal (Android); en iPhone, aviso para girarlo
+const TOUCH = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+let fsByUser = false;
+fsBtn.addEventListener('click', () => { fsByUser = true; }, true);
+$('hudFs').addEventListener('click', () => { fsByUser = true; }, true);
+async function autoFull() {
+  if (!TOUCH || IS_IOS || IS_APP || isFull() || fsByUser) return;
+  const el = document.documentElement, req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!req) return;
+  try { await req.call(el, { navigationUI: 'hide' }); } catch (e) { return; }
+  try { await screen.orientation.lock('landscape'); } catch (e) {}
+}
+window.addEventListener('pointerdown', autoFull, true);
+$('rotateTxt').textContent = IS_IOS
+  ? (IS_APP ? 'El juego se ve en horizontal.' : 'El juego se ve en horizontal. Para verlo sin barras: Compartir → «Añadir a pantalla de inicio».')
+  : 'Toca la pantalla y se pondrá en horizontal y a pantalla completa.';
+$('hudFs').addEventListener('click', toggleFull);
+document.addEventListener('fullscreenchange', () => { setFsLabel(); resize(); });
+document.addEventListener('webkitfullscreenchange', () => { setFsLabel(); resize(); });
+window.addEventListener('pointerdown', tryPlay, true);
+window.addEventListener('keydown', tryPlay, true);
+document.addEventListener('visibilitychange', () => { if (document.hidden) music.pause(); else tryPlay(); });
+setMusicBtn();
+
+function showTrick(name, pts) {
+  $('trickName').textContent = name; $('trickPts').textContent = pts ? '+' + pts : '';
+  trickEl.classList.remove('show'); void trickEl.offsetWidth; trickEl.classList.add('show');
+}
+function say(t, dur) { msgEl.textContent = t; promptEl.hidden = false; msgTimer = dur || 1.8; }
+function chip(t) {
+  const c = document.createElement('span'); c.textContent = t; tricksEl.prepend(c);
+  while (tricksEl.children.length > 2) tricksEl.lastChild.remove();
+  setTimeout(() => c.remove(), 3500);
+}
+function bump(a) { mult = Math.min(3, mult + a); }
+function addPts(p) { const q = p * mult; score += q; wavePts += q; return Math.round(q); }
+function fade(cb) { fadeEl.style.opacity = 1; setTimeout(() => { cb(); fadeEl.style.opacity = 0; }, 300); }
+function fmtClock(t) { t = Math.max(0, Math.ceil(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); }
+
+function startTitleRide() {
+  state = 'title'; px = 0; curlX = -7; h = 0.5; vh = 0; s = 1.4; air = false; grow = 1; pm = 1; rideT = 30; theta = 0; v = 11;
+  boardRoot.visible = true; boardRoot.scale.setScalar(1); landT = 1;
+  hud.hidden = true; dial.hidden = true; bubble.hidden = true; ringbox.hidden = true; promptEl.hidden = true;
+}
+function newGame() {
+  score = 0; sessionT = SESSION; waves = 0; bestWave = 0;
+  overlay.hidden = true; hud.hidden = false; tricksEl.textContent = ''; clockEl.textContent = fmtClock(sessionT);
+  startPaddle();
+}
+function startPaddle() {
+  if (sessionT <= 0) { endSession(); return; }
+  state = 'paddle'; pt = 0; windowOpen = false; air = false; tubeT = 0; mult = 1; wavePts = 0;
+  curlX = px - 7; grow = 0.35; pm = 0; h = 0.04; vh = 0; s = 1.25; rideT = 0;
+  boardRoot.visible = true;
+  ringbox.hidden = false; ringbox.classList.remove('go'); ringTxt.textContent = 'Prepárate para tocar';
+  dial.hidden = true; bubble.hidden = true; promptEl.hidden = true;
+  waveNEl.textContent = 'Ola ' + (waves + 1);
+}
+function popUp() {
+  state = 'popup'; popT = 0; qPop0.copy(boardRoot.quaternion); ringbox.hidden = true; waves++;
+  const perfect = pt < 3.05;
+  v = perfect ? 10 : 9; theta = -0.45; omega = 0; backT = 0; twistAmt = 0; fs = null; btnTurn = null; s = v / 8.5; vh = 0; rideT = 0; curlX = Math.max(curlX, px - 5); pxStart = px;
+  if (perfect) { chip('Take-off perfecto'); addPts(150); bump(0.1); }
+}
+function missTakeoff(why) {
+  state = 'miss'; missT = 0; windowOpen = false; ringbox.hidden = true;
+  say(why, 2); splash(boardRoot.position, 60, 1.2); boardRoot.visible = false;
+}
+const LAND_H = 0.8;
+// cómo cae: más abajo en la cara, con la tabla hacia abajo y hacia delante, o hacia el tubo si saltaste hacia él
+function setLandPose() {
+  faceAt(px, LAND_H);
+  const a = airBack ? -Math.PI + LAND_A : -LAND_A;
+  vT.set(0, face.ty, face.tz);
+  vF.set(Math.cos(a), 0, 0).addScaledVector(vT, Math.sin(a)).normalize();
+  basisQuat(vF, V3(0, -face.tz, face.ty), qLandPose);
+}
+function launch() {
+  air = true; airT = 0; spin = 0; flip = 0; spinT = 0; flipT = 0; grab = 0; grabT = 0; airHold = 0; supT = 0;
+  faceAt(px, 1);
+  aPos.set(px, face.y + 0.05, face.z); launchY = aPos.y; launchZ = face.z; airTop = 0;
+  // arco estable: siempre hay tiempo para un truco y la ola no te adelanta en el aire
+  aVy = clamp(v * Math.sin(theta) * 0.9 + 1.6 + (CH.air - 3) * 0.45, 4.6, 10);
+  airDur = 2 * aVy / 9.8 + 0.15;
+  // el salto va siempre hacia delante, con la ola
+  airBack = false; airSteer = 0;
+  airVx = Math.max(v * Math.cos(theta), curlSpeed * 1.02);
+  faceAt(px + airVx * airDur, LAND_H);
+  landZ = face.z;
+  setLandPose();
+  qLaunch.copy(qRide);
+  splash(aPos, 25, 0.8);
+  ptr.ax = ptr.x; ptr.ay = ptr.y; ptr.moved = false;
+  if (state === 'title') spinT = TAU;
+  else if (!airHintShown) { airHintShown = true; say(seatedC(CH) ? 'TRUCO: 1 toque Superman · 2 Backflip · 3 360 · 4 Backflip + Superman' : 'TRUCO: 1 toque 360 · 2 rodeo · 3 720 · mantén = agarrar', 2.6); }
+}
+// 1 pulsación = 360 · 2 = rodeo · 3 = 720 · 4 = rodeo 360 (se pueden encadenar mientras dure el salto)
+let trickTaps = 0, trickWin = 0;
+let supT = 0;
+function doTrick(n) {
+  const dir = 1;
+  if (seatedC(CH)) {
+    if (n === 1) supT = 0.8;
+    else if (n === 2) flipT += TAU;
+    else if (n === 3) spinT += TAU;
+    else { flipT += TAU; supT = 0.9; }
+    spinT = clamp(spinT, -2 * TAU, 2 * TAU); flipT = Math.min(flipT, 2 * TAU);
+    return;
+  }
+  if (n === 1) spinT += TAU * dir;
+  else if (n === 2) flipT += TAU;
+  else if (n === 3) spinT += 2 * TAU * dir;
+  else { flipT += TAU; spinT += TAU * dir; }
+  spinT = clamp(spinT, -2 * TAU, 2 * TAU); flipT = Math.min(flipT, 2 * TAU);
+}
+// en la ola, TRUCO gira la tabla 180°: hacia el tubo (en contra de la ola) y, otra vez, hacia fuera
+let btnTurn = null, fs = null;
+function trickTap() {
+  if (state === 'duel') { if (typeof duelSwing === 'function') duelSwing(); return; }
+  if (state === 'ride' && !air) {
+    if (typeof tryPush === 'function' && tryPush()) return;     // modo online: pegado a otro surfista, TRUCO lo empuja
+    if (fs) return;
+    if (Math.cos(theta) >= 0) { fs = { ph: 1, t: 0, v0: Math.max(v, 8) }; theta = Math.min(theta, 0.4); btnTurn = null; }
+    else btnTurn = -0.35;                                     // si ya vas hacia el tubo, TRUCO te devuelve hacia fuera
+    turnLock = 0; return;
+  }
+  if (state !== 'ride' || !air) return;
+  trickTaps++; trickWin = 0.2;
+}
+function land() {
+  air = false; h = LAND_H; theta = airBack ? -Math.PI + LAND_A : -LAND_A; omega = 0; turnW = 0; backT = 0; fs = null; crouch = 1;
+  v = clamp(v * 0.7, 6.5, 9.5); landV = v; landSoft = LAND_SOFT;           // al tocar el agua frena: cae suave y controlable
+  const sErr = Math.abs(spinT - spin), fErr = Math.abs(flipT - flip);
+  faceAt(px, LAND_H); splash(V3(px, face.y, face.z), 34, 0.9);
+  qLand.copy(boardRoot.quaternion); landT = 0;
+  if (state === 'title') return;
+  if (sErr > 0.9 || fErr > 0.9) { wipeout(sErr > 0.9 ? 'No te ha dado tiempo a completar el giro' : 'No has cerrado el mortal'); return; }
+  spin = spinT; flip = flipT;
+  const ns = Math.round(Math.abs(spinT) / TAU), nf = Math.round(flipT / TAU), grabbed = grabT > 0.2;
+  const name = [];
+  const gName = seatedC(CH) ? 'Superman' : 'Indy';
+  if (grabbed) { name.push(grabT > 0.6 ? gName + ' largo' : gName); chip((seatedC(CH) ? '🦸 ' : '✋ ') + gName + ' ' + grabT.toFixed(1) + ' s'); }
+  if (ns > 0) { const n = (spinT < 0 ? 'Alley-oop ' : '') + ns * 360; name.push(n); chip('↻ ' + n); }
+  if (nf > 0) { const fn = seatedC(CH) ? 'Backflip' : 'Rodeo'; const n = nf > 1 ? 'Doble ' + fn : fn; name.push(n); chip('⟳ ' + n); }
+  if (!name.length) name.push('Aéreo');
+  chip('↑ ' + airTop.toFixed(1) + ' m');
+  let pts = 120 + airTop * 80 + ns * 450 + nf * 800 + (grabbed ? 150 + grabT * 300 : 0);
+  pts *= 1 + 0.3 * Math.max(0, name.length - 1);            // combinar trucos multiplica
+  const key = name.join(' + ');
+  if (key !== lastTrick) pts *= 1.2;                        // variar de truco premia
+  lastTrick = key;
+  const dx = px - curlX;
+  if (dx < 18) { pts += 100; chip('Reentrada'); }            // caer junto al tubo
+  const got = addPts(pts);
+  showTrick(key, got);
+  bump(0.1 + 0.08 * ns + 0.15 * nf + (grabbed ? 0.05 : 0));
+}
+let pivotAng = 0, sprayAcc = 0;
+// abanico de agua que lanza la cola de la tabla al pivotar en la cresta (por detrás de la ola)
+function lipSpray(dt) {
+  sprayAcc += dt * 950 * PQ * Math.min(1.4, Math.abs(omega) / 5) * Math.min(1.3, v / 9);
+  const b = boardRoot.position;
+  vF.set(1, 0, 0).applyQuaternion(boardRoot.quaternion);
+  while (sprayAcc >= 1) {
+    sprayAcc--;
+    const tl = rnd(0.3, 1.0);
+    emit(b.x - vF.x * tl, b.y + 0.15, b.z - vF.z * tl, -vF.x * rnd(1, 5) + rnd(-1.5, 1.5), rnd(7, 17), -rnd(4, 12), rnd(0.9, 1.6), rnd(0.1, 0.32), 0.9, 0.7);
+  }
+}
+function snap(ang) {
+  snapCD = 1.0;
+  vF.set(1, 0, 0).applyQuaternion(boardRoot.quaternion);
+  vN.set(0, 1, 0).applyQuaternion(boardRoot.quaternion);
+  const b = boardRoot.position;
+  for (let i = 0; i < 80; i++) {
+    const a = rnd(2, 7), c = rnd(4, 10);
+    emit(b.x - vF.x * 0.8, b.y + 0.2, b.z, -vF.x * a + rnd(-1, 1), vN.y * c + rnd(0, 3), vN.z * c - rnd(1, 4), rnd(0.6, 1.1), rnd(0.2, 0.7), 0.9, 1);
+  }
+  const deg = Math.round((ang || 1.2) * 57.3 / 5) * 5;
+  if (deg >= 150) v = Math.max(v, curlSpeed + 2.5);       // el labio te devuelve a la ola con fuerza
+  const name = deg >= 150 ? 'Re-entry ' + deg + '°' : 'Snap ' + deg + '°';
+  const pts = addPts(80 + deg * 2.2 + Math.abs(s) * 60); chip(name); if (deg >= 150) showTrick(name, pts); bump(deg >= 150 ? 0.15 : 0.06);
+  return pts;
+}
+function wipeout(why) {
+  if (state !== 'ride' && state !== 'popup') return;
+  state = 'wipe'; wipeT = 0; air = false; tubeT = 0;
+  say(why, 1.8);
+  wVel.set(s * 8.5 * 0.4, 4, 2.5); wAxis.set(rnd(-1, 1), rnd(-1, 1), rnd(-1, 1)).normalize();
+  splash(boardRoot.position, 70, 1.3);
+  dial.hidden = true; bubble.hidden = true;
+}
+function kickOut() {
+  if (state !== 'ride') return;
+  state = 'wipe'; wipeT = 0.6; tubeT = 0;
+  const v = addPts(150); say('Fin de la ola  +' + v, 1.8);
+  wVel.set(s * 8.5 * 0.3, 3, -1.5); wAxis.set(0, 1, 0);
+  splash(boardRoot.position, 30, 0.8);
+  dial.hidden = true; bubble.hidden = true;
+}
+function endSession() {
+  state = 'over';
+  const fs = Math.floor(score);
+  $('final').textContent = fs; $('bestWave').textContent = Math.floor(bestWave);
+  $('reason').textContent = waves + (waves === 1 ? ' ola surfeada' : ' olas surfeadas');
+  const isBest = fs > best;
+  if (isBest) { best = fs; try { localStorage.setItem('surf-sagunto-best3d', best); } catch (e) {} }
+  $('finalBest').textContent = best; $('newbest').hidden = !isBest || fs === 0;
+  overlay.hidden = false; menuP.hidden = true; overP.hidden = false;
+  hud.hidden = true; dial.hidden = true; bubble.hidden = true; ringbox.hidden = true; promptEl.hidden = true;
+  $('again').focus({ preventScroll: true });
+}
+
+// orientación de la tabla sobre la cara de la ola
+const vF = V3(0, 0, 0), vN = V3(0, 0, 0), vZ = V3(0, 0, 0), vT = V3(0, 0, 0), mB = new THREE.Matrix4();
+function basisQuat(F, Nn, out) {
+  vN.copy(Nn).addScaledVector(F, -F.dot(Nn)).normalize();
+  vZ.crossVectors(F, vN).normalize();
+  mB.makeBasis(F, vN, vZ); out.setFromRotationMatrix(mB); return out;
+}
+// la tabla apunta exactamente hacia donde va y se inclina sobre el canto según la fuerza del giro
+function rideOrientation() {
+  vT.set(0, face.ty, face.tz);
+  vF.set(Math.cos(theta), 0, 0).addScaledVector(vT, Math.sin(theta)).normalize();
+  basisQuat(vF, V3(0, -face.tz, face.ty), qRide);
+  qTmp.setFromAxisAngle(V3(1, 0, 0), bank);
+  qRide.multiply(qTmp);
+  rideAngle = Math.abs(theta) * 57.3;
+}
+function placeBoardOnFace() {
+  faceAt(px, h);
+  rideOrientation();
+  if (state !== 'popup') {
+    if (landT < 0.2) THREE.Quaternion.slerp(qLand, qRide, boardRoot.quaternion, sm(0, 0.2, landT));   // recepción suave
+    else boardRoot.quaternion.copy(qRide);
+  }
+  boardRoot.position.set(px, face.y + 0.02, face.z);
+}
+
+// el dedo marca la altura objetivo en la cara de la ola
+const prj = V3(0, 0, 0);
+function toScreen(x, y, z) {
+  prj.set(x, y, z).applyMatrix4(world.matrixWorld).project(camera);
+  return [(prj.x + 1) * 0.5 * wrap.clientWidth, (1 - prj.y) * 0.5 * wrap.clientHeight, prj.z];
+}
+// el dedo marca hacia dónde quieres que apunte la tabla (relativo al surfista en pantalla)
+function steerTarget() {
+  if (btnTurn !== null) {
+    if (air || state !== 'ride' || Math.abs(angDiff(btnTurn, theta)) < 0.12) btnTurn = null;
+    else return btnTurn;
+  }
+  // teclas: ← sigue la ola, → vuelve hacia el tubo, ↑ sube, ↓ baja (combinables)
+  if (keys.up || keys.down || keys.left || keys.right) {
+    const back = keys.right || (!keys.left && Math.cos(theta) < 0);
+    const a = keys.up ? 1.0 : keys.down ? -1.0 : 0;
+    return back ? (a >= 0 ? Math.PI - a : -Math.PI - a) : a;
+  }
+  // joystick: la punta de la tabla apunta hacia donde llevas el círculo
+  // (izquierda = sigue la ola, arriba = sube, abajo = baja, derecha = de punta hacia el tubo)
+  if (stick.id === null || stick.x * stick.x + stick.y * stick.y < 0.09) return null;
+  return Math.atan2(-stick.y, -stick.x);
+}
+// diferencia de ángulo más corta (-π..π)
+function angDiff(a, b) { let d = (a - b) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; }
+
+// ---------- física de la ola ----------
+function rideStep(dt, hT) {
+  rideT += dt;
+  curlSpeed = 8.5 + Math.min(3.5, rideT * 0.035);
+  curlX += curlSpeed * dt;
+  snapCD = Math.max(0, snapCD - dt);
+  if (!air) {
+    // giro: la tabla rota hacia el rumbo pedido con velocidad de giro limitada (trazadas en arco)
+    // giro: la tabla rota hacia el rumbo pedido por el camino más corto, con velocidad de giro
+    // limitada (trazadas en arco). Rumbo completo de 360°: se puede volver de punta hacia el tubo.
+    const prev = theta;
+    // tras caer, si no llevas el círculo, la tabla se endereza y sigue recta por la ola (no se va al plano)
+    if (hT === null && landSoft > 0 && !fs) hT = Math.cos(theta) < 0 ? Math.PI : 0;
+    if (fs) {
+      // maniobra TRUCO: 180 rápido en el sitio → recto hacia el tubo a la misma altura → 180 de vuelta
+      fs.t += dt;
+      const RATE = 10.5;                                      // ~0,3 s por cada 180
+      if (fs.ph === 1) {
+        theta -= RATE * dt;                                   // la punta barre hacia abajo y la cola lanza agua arriba
+        if (theta <= -Math.PI) { theta = Math.PI; fs.ph = 2; fs.t = 0; }
+      } else if (fs.ph === 2) {
+        theta = Math.PI;
+        if (fs.t > 0.9 || px - curlX < 7) { fs.ph = 3; fs.t = 0; theta = -Math.PI; }
+      } else {
+        theta += RATE * dt;
+        if (theta >= 0) {
+          theta = 0; fs = null; turnLock = 0; backT = -9;
+          const pts = addPts(450 + v * 30); chip('180 · 180 +' + pts); showTrick('Doble 180', pts); bump(0.15);
+        }
+      }
+    } else if (hT !== null) {
+      let d = angDiff(hT, theta);
+      // media vuelta: abajo se gira subiendo (bottom turn), arriba se gira bajando (cutback)
+      if (Math.abs(d) > 1.6) {
+        if (!turnLock) {
+          // abajo del todo: bottom turn subiendo. En el labio, si vuelves hacia el tubo: re-entry, la tabla
+          // pivota por encima de la cresta sin salir de la ola. En medio de la cara: cutback bajando.
+          // en medio de la cara: por el camino más corto (giro libre)
+          if (h >= 0.2 && h <= 0.72) turnLock = Math.sign(d);
+          else {
+            const wantUp = h < 0.2 || (h > 0.72 && Math.cos(hT) < 0);
+            turnLock = (Math.sin(theta + d / 2) > 0) === wantUp ? Math.sign(d) : -Math.sign(d);
+          }
+        }
+        if (Math.sign(d) !== turnLock) d -= Math.sign(d) * TAU;   // mantiene el sentido del giro empezado
+      } else turnLock = 0;
+      const rate = (6.2 + 0.18 * v) * (btnTurn !== null ? 1.35 : 1);   // más velocidad = giros más rápidos; TRUCO pivota aún más rápido
+      // la velocidad de giro arranca y frena suave (sin tirones)
+      turnW = lerp(turnW, clamp(d * 8, -rate, rate), 1 - Math.exp(-dt * 14));
+      theta += turnW * dt;
+    } else { turnW *= Math.exp(-dt * 10); theta += turnW * dt; }
+    theta = angDiff(theta, 0);
+    omega = lerp(omega, angDiff(theta, prev) / Math.max(dt, 1e-3), 1 - Math.exp(-dt * 10));
+    faceAt(px, h);
+    const Hc = face.Hc, dxw = px - curlX, cs = Math.cos(theta), sn = Math.sin(theta);
+    // energía: la gravedad en la pendiente de la cara y el empuje de la ola cerca del tubo
+    // la ola empuja en toda la cara (más cuanto más alta), y aún más en el pocket junto al tubo
+    const cv = 0.85 + 0.05 * CH.vel, hf = 0.5 + 0.5 * sm(0.1, 0.6, h), fwd = 0.55 + 0.45 * Math.max(cs, 0);
+    const pushNear = 4.0 * (1 - sm(4, 30, dxw)) * Math.max(pm, 0.4);
+    const pushFace = 4.6 * clamp(Hc / HW, 0.3, 1) * sm(-1, 3, dxw);
+    const push = (pushNear + pushFace) * cv * hf * fwd;
+    // bombear: subir y bajar con giros suaves en la cara da velocidad; los giros bruscos la quitan
+    const aw = Math.abs(omega), pump = (h > 0.15 && h < 0.9 ? 1 : 0.3) * (aw < 3 ? aw * 0.55 : 1.65 - (aw - 3) * 0.45);
+    // abajo, en el plano, la ola no empuja y el agua frena: te quedas más lento que la ola y el tubo te alcanza.
+    // A media altura y arriba de la cara se va más rápido.
+    const low = 1 - sm(0.2, 0.45, h);
+    const zone = -0.8 + 3.2 * sm(0.06, 0.5, h) - 1.0 * sm(0.9, 1, h);
+    // justo después de caer de un salto: la pendiente apenas tira y el agua frena un poco (recepción suave)
+    const soft = landSoft > 0 ? landSoft / LAND_SOFT : 0; landSoft = Math.max(0, landSoft - dt);
+    v += (-9.8 * 0.55 * sn * (1 - 0.8 * soft) + push * (1 - 0.45 * low) * (1 - 0.5 * soft) + pump + zone - 0.033 * v * v - 0.22 * v * low - 0.5 * v * soft) * dt;
+    v = clamp(v, 2, 19);
+    if (soft > 0) v = Math.min(v, landV + 3 * (1 - soft));      // tras caer, la velocidad vuelve poco a poco
+    if (fs) {
+      // misma línea: la altura no cambia y la tabla derrapa sin perder casi velocidad
+      v = Math.max(fs.v0 * (fs.ph === 2 ? 0.92 : 0.85), 6);
+      px += v * cs * (fs.ph === 2 ? 1 : 0.55) * dt;
+      if (fs.ph !== 2) lipSpray(dt * 0.8);
+    } else {
+      px += v * cs * dt;
+      h += v * sn / (Hc * 1.25) * dt;
+    }
+    vh = v * sn / (Hc * 1.25);
+    if (h < 0.03) { h = 0.03; if (sn < -0.05) theta = cs >= 0 ? -0.05 : -Math.PI + 0.05; }
+    if (h >= 1) {
+      if (sn > 0.35 && v > 6.5 && !turnLock && state !== 'popup' && state !== 'title' || (state === 'title' && sn > 0.35)) launch();
+      else { h = 1; if (!turnLock && sn > -0.05) theta = cs >= 0 ? -0.05 : -Math.PI + 0.05; v *= 1 - (turnLock ? 0.9 : 0.5) * dt; }
+    }
+    // giro en el labio: mientras la tabla pivota arriba, abanico de spray; al bajar se puntúa
+    if (!air && state === 'ride') {
+      const pivoting = h > 0.72 && (turnLock !== 0 || Math.abs(omega) > 2.5);
+      if (pivoting) { pivotAng += Math.abs(angDiff(theta, prev)); if (Math.abs(omega) > 2) lipSpray(dt); }
+      else if (pivotAng > 0) {
+        if (snapCD <= 0 && pivotAng > 1.0) snap(pivotAng);
+        pivotAng = 0;
+      }
+    }
+    // rebote en la espuma: si vuelves de punta hacia el tubo y llegas a la espuma, rebotas y sigues
+    // en el labio, junto al tubo, la ola te arrastra mientras giras (re-entry en el pocket)
+    if (!air && state === 'ride' && h > 0.75 && (turnLock || pivotAng > 0) && px - curlX < 3) px = curlX + 3;
+    if (!air && state === 'ride' && h <= 0.75 && Math.cos(theta) < -0.2 && px - curlX < 1.2) {
+      if (v > 5) {
+        if (backT > 0.35) { const c = addPts(200 + v * 25); chip('Cutback +' + c); showTrick('Cutback + rebote', c); bump(0.12); }
+        theta = Math.PI - theta; theta = angDiff(theta, 0); omega = 0; crouch = 1; backT = 0; turnLock = 0;
+        v = Math.max(v * 0.9, curlSpeed + 3.5);           // la espuma te empuja y sales disparado
+        splash(boardRoot.position, 40, 1.1);
+        const p = addPts(250); chip('Rebote en la espuma +' + p); bump(0.12);
+      } else wipeout('Te has metido en la espuma sin velocidad');
+    }
+    s = v * Math.cos(theta) / 8.5;
+    // inclinación sobre el canto y flexión de rodillas según la fuerza del giro
+    const g = omega * v;
+    bank = lerp(bank, clamp(-g * 0.05, -0.85, 0.85), 1 - Math.exp(-dt * 8));
+    twistAmt = lerp(twistAmt, clamp(omega * 0.32, -0.7, 0.7), 1 - Math.exp(-dt * 6));
+    crouch = lerp(crouch, clamp(0.25 + Math.abs(g) * 0.06 + (h < 0.15 ? 0.15 : 0), 0, 1), 1 - Math.exp(-dt * 7));
+    // cutback: completar una vuelta de cara al tubo y volver a salir
+    if (state === 'ride' && !fs) {
+      if (Math.cos(theta) < -0.3) backT += dt;
+      else if (backT > 0.25 && Math.cos(theta) > 0.3) {
+        const p = addPts(200 + v * 25); chip('Cutback +' + p); showTrick('Cutback', p); bump(0.12); backT = 0;
+      } else if (Math.cos(theta) > 0.3) backT = 0;
+    }
+  } else {
+    airT += dt;
+    aVy -= 9.8 * dt; aPos.y += aVy * dt; airTop = Math.max(airTop, aPos.y - launchY);
+    let grabbing = false;
+    if (state !== 'title') {
+      // gestos: deslizar a un lado = 360 en ese sentido (hasta 720), deslizar abajo = rodeo, dedo quieto = grab
+      // botón TRUCO: las pulsaciones seguidas eligen el truco; mantenerlo pulsado agarra la tabla
+      if (trickTaps && (trickWin -= dt) <= 0) { doTrick(trickTaps); trickTaps = 0; }
+      if (ptr.down) airHold += dt; else airHold = 0;
+      supT = Math.max(0, supT - dt);
+      grabbing = (ptr.down && airHold > 0.22) || keys.up || supT > 0;
+    }
+    // giros suaves: arrancan con fuerza y frenan justo al cerrar, siempre a tiempo de caer
+    const left = Math.max(0.22, (airDur - airT) * 0.8);
+    const sR = Math.max(8, Math.abs(spinT - spin) / left) * (0.9 + 0.03 * CH.air), fR = Math.max(7, Math.abs(flipT - flip) / left);
+    spin += clamp((spinT - spin) * 10 * dt, -sR * dt, sR * dt);
+    flip += clamp((flipT - flip) * 10 * dt, -fR * dt, fR * dt);
+    if (Math.abs(spinT - spin) < 0.02) spin = spinT;
+    if (Math.abs(flipT - flip) < 0.02) flip = flipT;
+    grab = lerp(grab, grabbing ? 1 : 0, 1 - Math.exp(-dt * 12));
+    if (grabbing) grabT += dt;
+  }
+  if (air) {
+    px += airVx * dt;
+    crouch = lerp(crouch, 0.95, 1 - Math.exp(-dt * 6));
+    aPos.x = px;
+    faceAt(px, LAND_H);
+    aPos.z = lerp(launchZ, face.z, sm(0, airDur, airT));
+    if (aVy < 0 && aPos.y <= face.y + 0.1) land();
+  }
+}
+
+// ---------- bucle principal ----------
+let camFast = 0;
+const camPos = V3(8, 5, 20), camLook = V3(0, 1, 0), desPos = V3(0, 0, 0), desLook = V3(0, 0, 0);
+let clock = 0;
+
+// ---------- delfines: de vez en cuando salta un grupo en el mar ----------
+const dolphins = [], dolMat = new THREE.MeshStandardMaterial({ color: 0x5b6773, roughness: 0.35, metalness: 0.1 });
+const dolBelly = new THREE.MeshStandardMaterial({ color: 0xc9cfd3, roughness: 0.4 });
+function makeDolphin() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12), dolMat); body.scale.set(1.15, 0.3, 0.3); g.add(body);
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 8), dolBelly); belly.scale.set(0.95, 0.22, 0.24); belly.position.set(0.05, -0.08, 0); g.add(belly);
+  const beak = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.09, 0.35, 8), dolMat); beak.rotation.z = Math.PI / 2; beak.position.set(1.22, -0.04, 0); g.add(beak);
+  const fin = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.5, 4), dolMat); fin.scale.z = 0.25; fin.rotation.z = -0.55; fin.position.set(-0.05, 0.38, 0); g.add(fin);
+  const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.16, 0.5, 8), dolMat); ped.rotation.z = Math.PI / 2; ped.position.set(-1.25, 0, 0); g.add(ped);
+  const fluke = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.04, 0.85), dolMat); fluke.position.set(-1.52, 0, 0); g.add(fluke);
+  for (const sz of [-1, 1]) { const fl = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.03, 0.22), dolMat); fl.position.set(0.45, -0.18, sz * 0.3); fl.rotation.set(sz * 0.4, 0, -0.3); g.add(fl); }
+  g.visible = false; world.add(g);
+  return { g, t: -1, x: 0, z: 0, dx: 1, dz: 0, delay: 0, vy: 7, sp: 8, splashed: false };
+}
+for (let i = 0; i < 3; i++) dolphins.push(makeDolphin());
+let dolTimer = 6 + Math.random() * 6;
+const dFwd = V3(0, 0, 0);
+function spawnDolphins() {
+  // delante de la cámara, en el agua (nunca en tierra)
+  dFwd.subVectors(camLook, camPos); dFwd.y = 0; if (dFwd.lengthSq() < 1e-4) dFwd.set(0, 0, -1); dFwd.normalize();
+  let bx, bz;
+  if (state === 'title') {
+    // en el menú: siempre en el lado del mar, delante de la cámara
+    if (dFwd.z > 0.2) { bx = camPos.x + rnd(-30, 30); bz = camPos.z - rnd(22, 45); }
+    else { const dist = rnd(30, 60), side = rnd(-15, 15); bx = camPos.x + dFwd.x * dist - dFwd.z * side; bz = Math.min(40, camPos.z + dFwd.z * dist + dFwd.x * side); }
+  } else {
+    // surfeando: por delante de la ola, un poco más adelante del surfista (se ven a la izquierda de la pantalla)
+    bx = camPos.x + rnd(7, 15); bz = camPos.z - rnd(11, 16);
+  }
+  const ang = state === 'title' ? rnd(0, TAU) : rnd(-0.35, 0.35), n = 2 + (Math.random() < 0.5 ? 1 : 0);
+  for (let i = 0; i < 3; i++) {
+    const d = dolphins[i];
+    if (i >= n) { d.t = -1; d.g.visible = false; continue; }
+    d.x = bx + rnd(-3, 3) - Math.cos(ang) * i * 2.2; d.z = bz + rnd(-3, 3) - Math.sin(ang) * i * 2.2;
+    d.dx = Math.cos(ang); d.dz = Math.sin(ang); d.delay = i * 0.28 + rnd(0, 0.1); d.t = 0; d.vy = rnd(6.5, 8); d.sp = rnd(7, 9.5); d.splashed = false;
+  }
+}
+function updateDolphins(dt) {
+  dolTimer -= dt;
+  if (dolTimer <= 0) { spawnDolphins(); dolTimer = rnd(12, 24); }
+  for (const d of dolphins) {
+    if (d.t < 0) continue;
+    if (d.delay > 0) { d.delay -= dt; continue; }
+    d.t += dt;
+    const air = 2 * d.vy / 9.8, t = d.t;
+    if (t > air + 0.1) { d.t = -1; d.g.visible = false; splash(V3(d.x + d.dx * d.sp * air, 0.1, d.z + d.dz * d.sp * air), 24, 0.6); continue; }
+    if (!d.splashed) { d.splashed = true; splash(V3(d.x, 0.1, d.z), 18, 0.5); }
+    const y = -0.4 + d.vy * t - 4.9 * t * t, vy = d.vy - 9.8 * t;
+    d.g.visible = true;
+    d.g.position.set(d.x + d.dx * d.sp * t, y, d.z + d.dz * d.sp * t);
+    d.g.rotation.set(0, -Math.atan2(d.dz, d.dx), Math.atan2(vy, d.sp));
+  }
+}
+
+function update(dt) {
+  clock += dt; gtime += dt;
+  for (const m of [skyMat, oceanMat, waveMat, partMat]) m.uniforms.time.value = clock;
+  if (msgTimer > 0) { msgTimer -= dt; if (msgTimer <= 0) promptEl.hidden = true; }
+  if (state !== 'title' && state !== 'over' && state !== 'duel') { sessionT -= dt; clockEl.textContent = fmtClock(sessionT); }
+  let pose = null;
+
+  if (state === 'title' && menuView === 'chars') {
+    // escaparate del personaje: posando sobre la tabla delante de la ola
+    showT += dt; air = false; curlX += 0;
+    boardRoot.position.set(px, 0.05 + Math.sin(clock * 1.6) * 0.04, 12.5);
+    qTmp.setFromAxisAngle(UP, Math.sin(showT * 0.45) * 0.3 + (CH.goofy ? 0 : Math.PI));
+    qTmp2.setFromAxisAngle(V3(1, 0, 0), Math.sin(clock * 1.3) * 0.05);
+    boardRoot.quaternion.copy(qTmp).multiply(qTmp2);
+    pose = CH.jetski ? jetRide(poseA, 0.2, 0, clock, 0) : CH.zodiac ? zodiacRide(poseA, 0.2, 0, clock, 0) : CH.kayak ? kayakRide(poseA, 0.2, 0, clock * 0.6, 0) : CH.bodyboard ? bodyRide(poseA, 0.2, 0, clock, 0) : shaka(stance(poseA, 0.2, 0, clock, 0));
+    faceTurn = lerp(faceTurn, 0.05, 1 - Math.exp(-dt * 4));
+  } else if (state === 'title') {
+    titleT += dt; faceTurn = 0.9;
+    if (h < 0.2) autoT = 0.85;
+    if (h > 0.88) autoT = -0.85;
+    if (!air) autoSpin = 0;
+    if (px - curlX < 4) v = Math.max(v, 12);
+    rideStep(dt, autoT);
+    landT += dt;
+    if (!air) placeBoardOnFace();
+    pose = riderStance(poseA, crouch, air ? 0.8 : 0, clock, air ? 0 : -bank * 0.8, air ? 0 : twistAmt);
+  } else if (state === 'paddle') {
+    pt += dt;
+    grow = 0.35 + 0.65 * sm(0, 3.0, pt); pm = sm(2.0, 3.3, pt);
+    paddlePh += dt * 7;
+    const hp = 0.04 + 0.5 * sm(0.6, 3.0, pt);
+    faceAt(px, hp);
+    vT.set(0, -face.ty, -face.tz);
+    basisQuat(vT, V3(0, -face.tz, face.ty), qTmp);
+    boardRoot.quaternion.copy(qTmp);
+    boardRoot.position.set(px, face.y + 0.02 + Math.sin(clock * 2.2) * 0.03, face.z);
+    h = hp;
+    pose = CH.jetski ? jetRide(poseA, 0.3, 0, clock) : CH.zodiac ? zodiacRide(poseA, 0.3, 0, clock) : CH.kayak ? kayakRide(poseA, 0.3, 0, clock * 1.9) : prone(poseA, paddlePh, 0.7);
+    ringArc.style.strokeDashoffset = (251.3 * (1 - clamp(pt / 2.6, 0, 1))).toFixed(1);
+    if (!windowOpen && pt >= 2.6) { windowOpen = true; ringbox.classList.add('go'); ringTxt.textContent = '¡TOCA!'; }
+    if (windowOpen && pt >= 3.9) missTakeoff('Tarde. La ola te ha pasado por encima');
+  } else if (state === 'miss') {
+    missT += dt; grow = 1; pm = Math.min(1, pm + dt); curlX += 8.5 * dt;
+    pose = CH.jetski ? jetRide(poseA, 0.3, 0, clock) : CH.zodiac ? zodiacRide(poseA, 0.3, 0, clock) : CH.kayak ? kayakRide(poseA, 0.3, 0, clock) : prone(poseA, paddlePh, 0);
+    if (missT > 1.9) { missT = -99; fade(startPaddle); }
+  } else if (state === 'popup') {
+    popT += dt; grow = 1; pm = 1;
+    rideStep(dt, null);
+    placeBoardOnFace();
+    const k = sm(0, 0.5, popT);
+    THREE.Quaternion.slerp(qPop0, qRide, boardRoot.quaternion, k);
+    if (CH.jetski) jetRide(poseA, 0.3, 0, clock); else if (CH.zodiac) zodiacRide(poseA, 0.3, 0, clock); else if (CH.kayak) kayakRide(poseA, 0.3, 0, clock * 1.9); else prone(poseA, paddlePh, 0); riderStance(poseB, 1, 0, clock);
+    pose = lerpPose(poseA, poseB, sm(0.05, 0.45, popT), poseOut);
+    if (popT >= 0.5) state = 'ride';
+  } else if (state === 'ride') {
+    rideStep(dt, steerTarget());
+    if (state === 'ride') {
+      const dx = px - curlX;
+      if (!air) {
+        placeBoardOnFace();
+        addPts(Math.abs(s) * 8 * dt);
+        const inTube = dx > 0 && dx < (3.6 + 0.3 * CH.tubo) * 2 && h < 0.7 && pm > 0.8;
+        if (inTube) { tubeT += dt; addPts(50 * dt); }
+        else if (tubeT > 0) {
+          if (tubeT > 0.8) { const v = addPts(tubeT * 200 * (0.7 + 0.1 * CH.tubo)); chip('◎ Tubo ' + tubeT.toFixed(1) + ' s'); showTrick('Tubo ' + tubeT.toFixed(1) + ' s', v); bump(0.15); }
+          tubeT = 0;
+        }
+        if (dx < -0.4) wipeout('Te ha comido la ola');
+        else if (h > 0.97 && dx < 2 && face.p > 0.7 && !turnLock && pivotAng === 0 && Math.sin(theta) > 0.3) wipeout('El labio te ha lanzado por encima');
+        else if (dx > XB - 22) kickOut();
+      } else if (dx < -0.4 && aVy < 0) wipeout('Has caído dentro de la espuma');
+    }
+    landT += dt;
+    pose = riderStance(poseA, crouch, air ? grab : 0, clock, air ? 0 : -bank * 0.8, air ? 0 : twistAmt);
+  } else if (state === 'duel') {
+    boardRoot.visible = false;
+    if (typeof duelUpdate === 'function') duelUpdate(dt);
+  } else if (state === 'wipe' || state === 'over') {
+    wipeT += dt; curlX += curlSpeed * dt;
+    if (boardRoot.visible) {
+      wVel.y -= 9.8 * dt;
+      boardRoot.position.addScaledVector(wVel, dt);
+      qTmp.setFromAxisAngle(wAxis, 9 * dt); boardRoot.quaternion.premultiply(qTmp);
+      if (boardRoot.position.y < 0.1 && wVel.y < 0) { splash(boardRoot.position, 50, 1); boardRoot.visible = false; }
+    }
+    pose = riderStance(poseA, 0.2, 0, clock);
+    if (state === 'wipe' && wipeT > 1.7) {
+      state = 'between'; bestWave = Math.max(bestWave, wavePts);
+      fade(startPaddle);
+    }
+  }
+
+  if (air && (state === 'ride' || state === 'title')) {
+    // la tabla pasa de la postura de salida a la de recepción mientras gira
+    THREE.Quaternion.slerp(qLaunch, qLandPose, qAirBase, sm(0.15, 0.95, airT / airDur));
+    qTmp.setFromAxisAngle(UP, spin);
+    qTmp2.setFromAxisAngle(V3(0, 0, 1), flip);
+    boardRoot.quaternion.copy(qTmp).multiply(qAirBase).multiply(qTmp2);
+    boardRoot.position.copy(aPos);
+  }
+  const calm = (state === 'title' && menuView === 'chars') || state === 'paddle' || state === 'miss';
+  windAmt = lerp(windAmt, calm ? 0.06 : air ? 1 : clamp(v / 13, 0.25, 1), 1 - Math.exp(-dt * 4));
+  if (pose) applyPose(pose);
+
+  // spray de la tabla al cortar
+  if (!air && (state === 'ride' || state === 'title' || state === 'popup') && Math.abs(omega * v) > 1.2) {
+    acc.board += dt * 34 * Math.abs(omega * v);
+    vF.set(1, 0, 0).applyQuaternion(boardRoot.quaternion);
+    vN.set(0, 1, 0).applyQuaternion(boardRoot.quaternion);
+    vZ.set(0, 0, 1).applyQuaternion(boardRoot.quaternion);
+    const bx = boardRoot.position.x - vF.x * 0.8, by = boardRoot.position.y + 0.05, bz = boardRoot.position.z - vF.z * 0.8;
+    while (acc.board >= 1) {
+      acc.board--;
+      const a = rnd(2, 4.5), b = rnd(1.5, 4.5), c = rnd(0.5, 3);
+      emit(bx, by, bz, vZ.x * a + vN.x * b - vF.x * c, vZ.y * a + vN.y * b - vF.y * c + 1, vZ.z * a + vN.z * b - vF.z * c, rnd(0.45, 0.8), rnd(0.15, 0.45), 0.85, 1);
+    }
+  }
+  if ((CH.jetski || CH.zodiac) && !air && (state === 'ride' || state === 'popup' || state === 'title')) {
+    acc.jet = (acc.jet || 0) + dt * 110 * Math.min(1.5, v / 9);
+    vF.set(1, 0, 0).applyQuaternion(boardRoot.quaternion);
+    const sx = boardRoot.position.x - vF.x * 1.45, sy = boardRoot.position.y + 0.15, sz = boardRoot.position.z - vF.z * 1.45;
+    while (acc.jet >= 1) { acc.jet--; emit(sx, sy, sz, -vF.x * rnd(3, 6) + rnd(-0.6, 0.6), rnd(2.5, 5.5), -vF.z * rnd(3, 6) + rnd(-0.6, 0.6), rnd(0.5, 0.9), rnd(0.15, 0.4), 0.85, 1); }
+  }
+  if (state === 'paddle' && Math.random() < dt * 8) {
+    emit(boardRoot.position.x + rnd(-0.3, 0.3), boardRoot.position.y, boardRoot.position.z + rnd(-0.5, 0.5), rnd(-0.5, 0.5), rnd(0.5, 1.5), rnd(0, 1), 0.5, rnd(0.15, 0.35), 0.7, 1);
+  }
+
+  emitWave(dt);
+  updateDolphins(dt);
+  updateWave();
+  updateParticles(dt);
+
+  // cámara (coordenadas internas; el mundo está espejado en X)
+  const sp = boardRoot.position, far = aspect < 0.9 ? 1.6 : 1;
+  let k = 3.5;
+  if (state === 'title') {
+    const yaw = 2.0 + 2.15 * Math.sin(titleT * 0.12 + 1.2);
+    if (menuView === 'chars') {
+      // al elegir surfista, la cámara se acerca para verlo bien
+      desPos.set(sp.x - 0.2, 1.55, sp.z + 3.0 * far);
+      desLook.set(sp.x + (aspect < 0.9 ? 0 : 1.5), aspect < 0.9 ? 0.6 : 1.2, sp.z);
+      k = 4;
+    } else {
+      desPos.set(sp.x + 7, 4.5, 17);
+      desLook.set(desPos.x + Math.sin(yaw) * 60, 6 + 6 * sm(1.4, 2.6, yaw), desPos.z - Math.cos(yaw) * 60);
+      k = 1.5;
+    }
+  } else if (state === 'duel' && typeof duelCam === 'function') {
+    duelCam(desPos, desLook, far); k = 3;
+  } else if (state === 'miss') {
+    desPos.set(sp.x - 3, 4.5, sp.z + 18 * far);
+    desLook.set(sp.x - 3, 1.5, sp.z - 3);
+    k = 1.2;
+  } else if (state === 'paddle') {
+    desPos.set(sp.x - 2.5, 2.2 + 0.6 * grow, sp.z + 13 * far);
+    desLook.set(sp.x - 2.5, sp.y + 1.0 + grow * 0.8, sp.z - 3);
+  } else {
+    const yy = air ? aPos.y : sp.y, still = state === 'wipe' || state === 'over' || state === 'between';
+    // la cámara va con la ola (no pegada al surfista): si frenas, el surfista se va hacia la derecha y se mete
+    // bajo el tubo; si aceleras, se adelanta hacia la izquierda. Siempre queda dentro de la pantalla.
+    // cuando va rápido, la cámara se acerca y lo mantiene más centrado (que no se meta detrás de los botones)
+    camFast = lerp(camFast, still ? 0 : Math.max(sm(7, 14, v), sm(10, 30, sp.x - curlX)), 1 - Math.exp(-dt * 1.6));
+    const half = aspect < 0.9 ? lerp(2.4, 1.4, camFast) : lerp(5, 2.5, camFast);
+    let cx = still ? sp.x - 3 : curlX + 6 + 0.4 * (sp.x - curlX - 9);
+    cx = clamp(cx, sp.x - half, sp.x + half);
+    desPos.set(cx, Math.max(2.4, yy * 0.4 + lerp(2.8, 2.2, camFast)), still ? 20 * far : sp.z + lerp(19, 12.5, camFast) * far);
+    desLook.set(cx, yy * 0.55 + 1.0, sp.z - 6);
+  }
+  const f = 1 - Math.exp(-dt * k);
+  camPos.lerp(desPos, f); camLook.lerp(desLook, f);
+  camera.position.set(-camPos.x, camPos.y, camPos.z);
+  camera.lookAt(-camLook.x, camLook.y, camLook.z);  sky.position.copy(camPos);
+  ocean.position.x = camPos.x; ocean.position.z = camPos.z;
+  coast.position.x = camPos.x * 0.92;
+  north.position.x = state === 'duel' && typeof DUEL !== 'undefined' && DUEL.on ? DUEL.ax + DUEL.pOff : camPos.x;   // en la disputa, el Pantalán se queda al lado
+
+  // marcadores
+  if (state !== 'title' && state !== 'over') {
+    scoreEl.textContent = Math.floor(score);
+    multv.textContent = 'x' + mult.toFixed(2);
+    multArc.style.strokeDashoffset = (276.5 * (1 - clamp((mult - 1) / 2, 0, 1))).toFixed(1);
+    wavePtsEl.textContent = Math.floor(wavePts);
+  }
+  const showPads = !hud.hidden && (state === 'ride' || state === 'popup' || state === 'paddle' || state === 'duel');
+  padStick.hidden = padTricks.hidden = !showPads;
+  if (showPads) drawStick();
+  if (state === 'ride' || state === 'popup') {
+    dial.hidden = false;
+    const kmh = Math.round(v * 3.6);
+    kmhEl.textContent = kmh;
+    dialArc.style.strokeDashoffset = (276.5 * (1 - clamp(kmh / 75, 0, 1))).toFixed(1);
+    angEl.textContent = Math.round(air ? 0 : rideAngle) + '°';
+    distEl.textContent = Math.max(0, Math.round(px - pxStart)) + ' m';
+  }
+  if (state === 'ride' && (air || tubeT > 0.2)) {
+    const sc = toScreen(sp.x, sp.y + 1.2, sp.z);
+    bubble.hidden = sc[2] > 1;
+    bubble.style.left = Math.round(sc[0] + 70) + 'px'; bubble.style.top = Math.round(sc[1] - 30) + 'px';
+    if (air) { bubV.textContent = airTop.toFixed(1); bubL.textContent = 'metros'; }
+    else { bubV.textContent = tubeT.toFixed(1); bubL.textContent = 'seg'; }
+  } else bubble.hidden = true;
+}
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  adaptQuality(now);
+  if (!document.hidden) { update(dt); mpUpdate(dt); $('hudMic').hidden = hud.hidden; renderFrame(dt); }
+  requestAnimationFrame(frame);
+}
+
+// ---------- controles: arrastrar el dedo ----------
+function tap() { if (state === 'paddle' && windowOpen) popUp(); }
+const padStick = $('padStick'), padTricks = $('padTricks'), knob = $('knob');
+// el joystick usa el centro del círculo de la derecha: vale tocar en cualquier parte de la mitad derecha
+function stickFrom(e) {
+  const r = padStick.getBoundingClientRect(), R = r.width * 0.5;
+  let x = (e.clientX - (r.left + R)) / R, y = (e.clientY - (r.top + R)) / R;
+  const m = Math.hypot(x, y); if (m > 1) { x /= m; y /= m; }
+  stick.x = x; stick.y = y;
+}
+function drawStick() {
+  const R = padStick.clientWidth * 0.5 - 18, on = stick.id !== null;
+  knob.style.transform = on ? 'translate(' + (stick.x * R).toFixed(1) + 'px,' + (stick.y * R).toFixed(1) + 'px)' : '';
+  // la flecha del botón marca hacia dónde apunta la punta de la tabla ahora mismo
+  const a = Math.cos(theta) * -1, b = -Math.sin(theta);
+  knob.style.setProperty('--ang', (Math.atan2(b, a) * 57.3 + 90).toFixed(0) + 'deg');
+  padStick.classList.toggle('on', on); padTricks.classList.toggle('on', ptr.down);
+}
+wrap.addEventListener('pointerdown', e => {
+  if (!overlay.hidden || e.target.closest('button, .chatp, input')) return;
+  const r = wrap.getBoundingClientRect();
+  try { wrap.setPointerCapture(e.pointerId); } catch (_) {}
+  tap(); e.preventDefault();
+  if (e.clientX - r.left > r.width * 0.5) { if (stick.id === null) { stick.id = e.pointerId; stickFrom(e); } return; }
+  if (ptr.down) return;
+  ptr.down = true; ptr.id = e.pointerId; ptr.x = e.clientX - r.left; ptr.y = e.clientY - r.top; ptr.ax = ptr.x; ptr.ay = ptr.y; ptr.moved = false; airHold = 0;
+  trickTap();
+});
+window.addEventListener('pointermove', e => {
+  if (e.pointerId === stick.id) { stickFrom(e); return; }
+  if (!ptr.down || e.pointerId !== ptr.id) return;
+  const r = wrap.getBoundingClientRect();
+  ptr.x = e.clientX - r.left; ptr.y = e.clientY - r.top;
+});
+const release = e => {
+  if (e.pointerId === stick.id) { stick.id = null; stick.x = stick.y = 0; }
+  if (e.pointerId === ptr.id) { ptr.down = false; ptr.id = null; }
+};
+window.addEventListener('pointerup', release); window.addEventListener('pointercancel', release);
+wrap.addEventListener('contextmenu', e => e.preventDefault());
+const KMAP = { KeyT: 'trick', ShiftLeft: 'trick', ShiftRight: 'trick', ArrowUp: 'up', KeyW: 'up', Space: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right' };
+window.addEventListener('keydown', e => {
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+  const k = KMAP[e.code];
+  if (!overlay.hidden) {
+    const onButton = document.activeElement && document.activeElement.tagName === 'BUTTON';
+    if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat && !onButton && ((state === 'title' && !menuP.hidden) || state === 'over')) { e.preventDefault(); fade(newGame); }
+    if (e.code === 'Escape' && state === 'title' && menuView !== 'main') showMenu('main');
+    return;
+  }
+  if (k) {
+    e.preventDefault(); keys[k] = true;
+    if (!e.repeat) {
+      tap();
+      // en el aire las flechas encadenan trucos: ← → giro de 360, ↓ rodeo; ↑ o espacio mantenido = grab
+      if (k === 'trick') trickTap();
+      if (air && state === 'ride') {
+        if (k === 'left' && spinT > -TAU * 2 + 0.1) spinT -= TAU;
+        if (k === 'right' && spinT < TAU * 2 - 0.1) spinT += TAU;
+        if (k === 'down' && flipT < TAU - 0.1) flipT += TAU;
+      }
+    }
+  }
+});
+window.addEventListener('keyup', e => { const k = KMAP[e.code]; if (k) keys[k] = false; });
+document.addEventListener('visibilitychange', () => { last = performance.now(); keys.up = keys.down = keys.left = keys.right = false; ptr.down = false; ptr.id = null; stick.id = null; stick.x = stick.y = 0; });
+$('start').addEventListener('click', () => fade(newGame));
+$('again').addEventListener('click', () => fade(newGame));
+$('toMenu').addEventListener('click', () => fade(() => { startTitleRide(); overlay.hidden = false; showMenu('main'); }));
+// volver al menú en mitad de la sesión: se guarda el récord si lo has superado
+$('hudHome').addEventListener('click', () => {
+  if (Math.floor(score) > best) { best = Math.floor(score); try { localStorage.setItem('surf-sagunto-best3d', best); } catch (e) {} }
+  keys.up = keys.down = keys.left = keys.right = false; ptr.down = false;
+  fade(() => { startTitleRide(); overlay.hidden = false; showMenu('main'); });
+});
+
+// ===================== MODO ONLINE (Firebase) =====================
+// Cada jugador escribe su estado en v2/salas/<sala>/players/<id> unas 8 veces por segundo
+// (dónde va respecto a la ola: dx = distancia al tubo, h = altura en la cara, giros, saltos...)
+// y escucha los de los demás para dibujarlos en SU ola en ese mismo sitio.
+// Los mensajes (texto y notas de voz) van a v2/salas/<sala>/msgs.
+// <id> es el del login anónimo de Firebase: las reglas (firebase-reglas.json) solo dejan escribir lo tuyo.
+const FIREBASE_CONFIG = {"apiKey": "AIzaSyBYEgJnEQxYbgT97giPRuTaRNd5d9vF8tg", "authDomain": "surf-sagunto.firebaseapp.com", "databaseURL": "https://surf-sagunto-default-rtdb.europe-west1.firebasedatabase.app", "projectId": "surf-sagunto", "storageBucket": "surf-sagunto.firebasestorage.app", "messagingSenderId": "669179228796", "appId": "1:669179228796:web:1e39377632d94fa1c50ff9"};
+const SALA = (location.hash.replace('#', '').replace(/[^a-z0-9_-]/gi, '').slice(0, 24) || 'pantalan').toLowerCase();
+// conexión con Firebase, compartida por el online y los récords: login anónimo (el jugador no ve nada).
+// Con ?emulador en la URL usa el emulador local (firebase emulators:start) en vez de la base de datos real.
+const EMULADOR = new URLSearchParams(location.search).has('emulador');
+let fbPromesa = null;
+function firebaseListo() {
+  if (fbPromesa) return fbPromesa;
+  if (!FIREBASE_CONFIG || !window.firebase || !firebase.auth) return (fbPromesa = Promise.reject(new Error('sin Firebase')));
+  fbPromesa = new Promise((ok, mal) => {
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    const auth = firebase.auth(), db = firebase.database();
+    if (EMULADOR) { auth.useEmulator('http://127.0.0.1:9099', { disableWarnings: true }); db.useEmulator('127.0.0.1', 9000); }
+    // primero se mira si ya había sesión guardada en este móvil; si no, se crea una
+    const off = auth.onAuthStateChanged(u => {
+      if (u) { off(); ok({ db, uid: u.uid }); }
+      else auth.signInAnonymously().catch(e => { off(); mal(e); });
+    });
+  });
+  fbPromesa.catch(() => {});
+  return fbPromesa;
+}
+const MP = { db: null, base: null, meRef: null, myId: 'p' + Math.random().toString(36).slice(2, 10), myName: '',
+  remotes: new Map(), sendT: 0, myMsgT: 0, connected: false, startAt: Date.now(), lastSentMenu: 0 };
+const mpLayer = $('mpLayer'), mpCount = $('mpCount'), mpMenu = $('mpMenu'), chatP = $('chatP'), chatLog = $('chatLog');
+const nickIn = $('nick');
+try { nickIn.value = localStorage.getItem('surf-sagunto-nick') || ''; } catch (e) {}
+MP.myName = nickIn.value.trim();
+nickIn.addEventListener('input', () => {
+  MP.myName = nickIn.value.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 20);
+  try { localStorage.setItem('surf-sagunto-nick', MP.myName); } catch (e) {}
+  MP.sendT = 0;
+});
+
+// --- copias del muñeco para los demás jugadores (cada una con sus propios materiales y texturas) ---
+function objMap(a, b, m) { m.set(a, b); for (let i = 0; i < a.children.length; i++) objMap(a.children[i], b.children[i], m); return m; }
+function texFromCanvas(src) { const c = document.createElement('canvas'); c.width = src.width; c.height = src.height; c.getContext('2d').drawImage(src, 0, 0); const t = new THREE.CanvasTexture(c); t.anisotropy = 4; return t; }
+function buildRig(c) {
+  const keep = CH, keepVis = boardRoot.visible, keepPos = boardRoot.position.clone(), keepQ = boardRoot.quaternion.clone();
+  applyChar(c); boardRoot.visible = true;
+  const myBody = HUMAN.local && HUMAN.local.root; if (myBody) boardRoot.remove(myBody);   // el cuerpo con esqueleto se clona aparte
+  const r = boardRoot.clone(true);
+  const m = objMap(boardRoot, r, new Map());
+  if (myBody) boardRoot.add(myBody);
+  const texMaker = new Map([[deckTex, () => texFromCanvas(deckCv)], [torsoTex, () => texFromCanvas(torsoCv)]]);
+  finTex.forEach((t, i) => texMaker.set(t, () => texFromCanvas(finCv[i])));
+  const matMap = new Map(), texDone = new Map();
+  r.traverse(o => {
+    if (!o.isMesh) return;
+    const om = o.material;
+    if (!matMap.has(om)) {
+      const nm = om.clone();
+      if (om.map && texMaker.has(om.map)) { if (!texDone.has(om.map)) texDone.set(om.map, texMaker.get(om.map)()); nm.map = texDone.get(om.map); }
+      matMap.set(om, nm);
+    }
+    o.material = matMap.get(om);
+  });
+  applyChar(keep); boardRoot.visible = keepVis; boardRoot.position.copy(keepPos); boardRoot.quaternion.copy(keepQ);
+  const g = x => m.get(x);
+  const rig = { root: r, L: {}, J: {}, hair: g(hair), headG: g(headG), footB: g(footB), footF: g(footF), strandG: g(strandG),
+    strands: strands.map(s => s.map(g)), pony: g(L.pony), pose: mkPose(), faceYaw: new THREE.Quaternion(), mats: [...matMap.values()], texs: [...texDone.values()] };
+  for (const k in L) rig.L[k] = g(L[k]);
+  for (const k in J) rig.J[k] = g(J[k]);
+  rig.rider = g(rider); rig.paddle = g(paddle); rig.board = g(boardMesh);
+  rig.human = makeHuman(c); if (rig.human) r.add(rig.human.root);
+  r.visible = false; world.add(r);
+  return rig;
+}
+function disposeRig(rig) { world.remove(rig.root); rig.mats.forEach(m => m.dispose()); rig.texs.forEach(t => t.dispose());
+  if (rig.human) { rig.human.meshes.forEach(m => m.geometry.dispose()); rig.human.mat.dispose(); } }
+// cuando llega el cuerpo realista, se rehacen los surfistas que ya estaban en el agua
+function rebuildRigs() { for (const R of MP.remotes.values()) if (R.rig && R.ch) { disposeRig(R.rig); R.rig = buildRig(R.ch); } }
+const rHip = V3(0, 0, 0), rTv = V3(0, 0, 0), rA = V3(0, 0, 0), rB = V3(0, 0, 0), rD = V3(0, 0, 0);
+function applyPoseRig(R, o, wind, turn, t) {
+  const Lr = R.L, Jr = R.J;
+  rHip.addVectors(o.hB, o.hF).multiplyScalar(0.5);
+  setLimb(Lr.thB, o.hB, o.kB); setLimb(Lr.thF, o.hF, o.kF);
+  setLimb(Lr.shB, o.kB, o.fB); setLimb(Lr.shF, o.kF, o.fF);
+  setLimb(Lr.torso, rHip, o.ch); setLimb(Lr.neck, o.ch, o.hd);
+  setLimb(Lr.hips, o.hB, o.hF); setLimb(Lr.shoulders, o.sB, o.sF);
+  setLimb(Lr.uaB, o.sB, o.eB); setLimb(Lr.uaF, o.sF, o.eF);
+  setLimb(Lr.faB, o.eB, o.aB); setLimb(Lr.faF, o.eF, o.aF);
+  Jr.kB.position.copy(o.kB); Jr.kF.position.copy(o.kF); Jr.eB.position.copy(o.eB); Jr.eF.position.copy(o.eF);
+  Jr.hB.position.copy(o.aB); Jr.hF.position.copy(o.aF); Jr.head.position.copy(o.hd); Jr.chest.position.copy(o.ch);
+  R.hair.position.copy(o.hd);
+  rTv.subVectors(o.hd, o.ch).normalize(); R.hair.quaternion.setFromUnitVectors(UP, rTv);
+  R.faceYaw.setFromAxisAngle(UP, turn);
+  R.headG.position.copy(o.hd); R.headG.quaternion.copy(R.hair.quaternion).multiply(R.faceYaw);
+  R.footB.position.copy(o.fB); R.footF.position.copy(o.fF);
+  if (R.strandG.visible) {
+    for (let i = 0; i < R.strands.length; i++) {
+      const a = (i / (R.strands.length - 1) - 0.5) * 2.4;
+      rA.set(o.hd.x - 0.05 - Math.cos(a) * 0.04, o.hd.y + 0.04 - Math.abs(a) * 0.035, o.hd.z - 0.03 + Math.sin(a) * 0.1);
+      for (let k = 0; k < R.strands[i].length; k++) {
+        const flap = Math.sin(t * 9 + k * 0.9 + i * 1.7) * 0.4 * wind;
+        rD.set(-(0.2 + 1.1 * wind), -(1.0 - 0.8 * wind) + Math.cos(t * 7 + k + i) * 0.18 * wind, Math.sin(a) * 0.28 + flap).normalize();
+        rB.copy(rA).addScaledVector(rD, SEGL); setLimb(R.strands[i][k], rA, rB); rA.copy(rB);
+      }
+    }
+  }
+  if (R.pony.visible) { rA.set(o.hd.x - 0.03, o.hd.y + 0.04, o.hd.z - 0.1); rB.set(o.hd.x - 0.07, o.hd.y - 0.2, o.hd.z - 0.27); setLimb(R.pony, rA, rB); }
+  if (R.paddle) placePaddle(R.paddle, o);
+  if (R.human) poseHuman(R.human, o, R.rider);
+}
+
+
+
+// ===================== SIMULACIÓN CON BOTS =====================
+// Con la sala «bots» no hay conexión: los demás surfistas son bots que comparten tu ola,
+// surfean solos, saltan, chocan y pueden empujarte (y tú a ellos) con el botón TRUCO.
+const BOT_NAMES = ['Bot Pantalán', 'Bot Malvarrosa', 'Bot Almardà'];
+const BOTS = [];
+function makeBots() {
+  MP.bots = BOTS;
+  const others = CHARS.filter(c => c.id !== CH.id);
+  const list = others.map(c => ({ ch: c, nm: c.name }));
+  for (let i = 0; list.length < 4 && i < BOT_NAMES.length; i++) list.push({ ch: CHARS[(i + 1) % CHARS.length], nm: BOT_NAMES[i] });
+  list.forEach((o, i) => BOTS.push({
+    id: 'bot' + i, ch: o.ch, nm: o.nm, st: 'paddle', t: -i * 1.3, dx: 5 + i * 3, h: 0.05, th: 0, bk: 0, cr: 0.4, ay: 0, sp: 0, fl: 0, pr: i,
+    ph: rnd(0, 6), w: rnd(1.0, 1.5), dxT: rnd(5, 30), dxTT: 0, rideT: 0, score: 0, wave: 0, pushCD: 6, airT: 0, spT: 0, flT: 0, sendT: 0
+  }));
+}
+function botSay(b, text) {
+  const R = MP.remotes.get(b.id); if (!R) return;
+  const e = R.label.querySelector('.mpbub'); e.textContent = text; e.hidden = false; R.msgT = 2.5;
+}
+function botPushed(id, by) {
+  const b = BOTS.find(o => o.id === id); if (!b || (b.st !== 'ride' && b.st !== 'air')) return;
+  b.wave = 0; b.st = 'wipe'; b.t = 0;
+  botSay(b, '😵');
+}
+function gotPushed(name) {
+  if (state !== 'ride' || air) return;
+  const lost = Math.floor(wavePts);
+  score = Math.max(0, score - wavePts); wavePts = 0; mult = 1;
+  wipeout('💥 ' + name + ' te ha tirado  −' + lost + ' puntos');
+}
+function updateBots(dt) {
+  for (const b of BOTS) {
+    if (b.st === 'duel') continue;
+    b.t += dt; b.pushCD = Math.max(0, b.pushCD - dt);
+    if (b.st === 'wipe') {
+      if (b.t > 2.5) { b.st = 'paddle'; b.t = 0; b.dx = rnd(4, 10); b.h = 0.05; }
+    } else if (b.st === 'paddle') {
+      b.pr += dt * 7; b.h = 0.05;
+      if (b.t > 3) { b.st = 'ride'; b.t = 0; b.rideT = 0; b.wave = 0; b.th = -0.4; b.pushCD = 4; }
+    } else if (b.st === 'ride') {
+      b.rideT += dt;
+      // bombea por la cara y cambia de sitio: a veces se adelanta, a veces vuelve al tubo
+      b.ph += dt * b.w;
+      const hT = 0.5 + 0.34 * Math.sin(b.ph);
+      const hdot = clamp((hT - b.h) * 3, -1.2, 1.2); b.h = clamp(b.h + hdot * dt, 0.05, 0.95);
+      b.dxTT -= dt;
+      if (b.dxTT <= 0) { b.dxTT = rnd(3, 6); b.dxT = Math.random() < 0.3 ? rnd(3, 7) : rnd(8, Math.max(45, XB * 0.7)); }
+      const dxdot = clamp((b.dxT - b.dx) * 0.7, -7, 5);
+      b.dx = Math.max(1.5, b.dx + dxdot * dt);
+      const vx = curlSpeed + dxdot, vy = hdot * HW * 1.25, thN = Math.atan2(vy, vx);
+      const om = angDiff(thN, b.th) / Math.max(dt, 1e-3); b.th = thN;
+      b.bk = lerp(b.bk, clamp(-om * Math.hypot(vx, vy) * 0.05, -0.8, 0.8), 1 - Math.exp(-dt * 8));
+      b.cr = 0.35 + Math.abs(b.bk) * 0.5;
+      b.wave += (Math.abs(vx) + (b.dx < 4 ? 40 : 0)) * dt;
+      // salto con truco al llegar arriba
+      if (b.h > 0.82 && b.dx > 6 && Math.random() < dt * 0.35) {
+        b.st = 'air'; b.airT = 0; b.sp = 0; b.fl = 0;
+        const r = Math.random(); b.spT = r < 0.45 ? TAU : r < 0.7 ? 2 * TAU : 0; b.flT = r >= 0.7 ? TAU : 0;
+      }
+      // te empuja si está pegado a ti
+      if (state === 'ride' && !air && b.pushCD === 0 && rideT > 4) {
+        const rx = curlX + b.dx;
+        if (Math.abs(rx - px) < 1.6 && Math.abs(b.h - h) < 0.2 && Math.random() < dt * 0.5) {
+          b.pushCD = 7; botSay(b, '💪'); splash(boardRoot.position, 60, 1.2); gotPushed(b.nm); duelCount(MP.remotes.get(b.id));
+        }
+      }
+      if (b.rideT > 28) { b.score += b.wave; b.wave = 0; b.st = 'wipe'; b.t = 1.2; }
+    } else if (b.st === 'air') {
+      b.airT += dt;
+      faceAt(curlX + b.dx, 1);
+      b.ay = face.y + 5.4 * b.airT - 4.9 * b.airT * b.airT;
+      b.sp = b.spT * sm(0.05, 0.9, b.airT); b.fl = b.flT * sm(0.1, 0.9, b.airT);
+      b.dx += 2 * dt;
+      if (b.airT >= 1.1) {
+        b.st = 'ride'; b.h = 0.8;
+        const pts = 300 + (b.spT ? 450 * b.spT / TAU : 0) + (b.flT ? 800 : 0); b.wave += pts;
+        botSay(b, b.flT ? 'Rodeo!' : b.spT > TAU ? '720!' : b.spT ? '360!' : '🤙');
+      }
+    }
+    b.sendT -= dt;
+    if (b.sendT <= 0) {
+      b.sendT = 1 / 15;
+      upsertPeer(b.id, { ch: b.ch.id, nm: b.nm, st: b.st, dx: b.dx, h: b.h, th: b.th, bk: b.bk, cr: b.cr, gr: 0, ay: b.ay, sp: b.sp, fl: b.fl, pr: b.pr % TAU, sc: Math.floor(b.score + b.wave) });
+      const R = MP.remotes.get(b.id); if (R) R.bot = true;
+    }
+  }
+}
+// respuestas de los bots al chat
+function botReply() {
+  const b = BOTS[Math.floor(Math.random() * BOTS.length)]; if (!b) return;
+  const txt = ['🤙', '¡Vaya ola!', '¡La siguiente es mía!', '😂', '¡Tubazo!', 'Cuidado que voy'][Math.floor(Math.random() * 6)];
+  setTimeout(() => { botSay(b, txt); logMsg(b.nm, txt); }, rnd(800, 2000));
+}
+
+
+// --- mi estado (absoluto, ~8 veces por segundo; en el menú, cada 2 s) ---
+function myStatus() {
+  if (state === 'ride' || state === 'popup') return air ? 'air' : 'ride';
+  if (state === 'paddle' || state === 'miss') return 'paddle';
+  if (state === 'wipe') return 'wipe';
+  if (state === 'duel') return 'duel';
+  return 'menu';
+}
+const r2 = n => Math.round(n * 100) / 100;
+function mpSend(dt) {
+  if (!MP.meRef || !MP.connected || MP.away) return;
+  MP.sendT -= dt;
+  if (MP.sendT > 0) return;
+  const st = myStatus();
+  MP.sendT = st === 'menu' ? 2 : st === 'duel' ? 0.1 : 0.125;
+  if (st === 'duel' && DUEL.on) {
+    MP.meRef.set({ ch: CH.id, nm: MP.myName || CH.name, st, du: DUEL.oppId, dx: r2(DUEL.A.u), h: DUEL.A.hp, gr: DUEL.swN, sp: DUEL.A.sw.type, bk: DUEL.A.block ? 1 : 0, ay: r2(DUEL.A.jy), sc: Math.floor(score), t: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
+    return;
+  }
+  MP.meRef.set({ ch: CH.id, nm: MP.myName || CH.name, st, dx: r2(px - curlX), h: r2(h), th: r2(theta), bk: r2(bank), cr: r2(crouch),
+    gr: r2(grab), ay: r2(air ? aPos.y : 0), sp: r2(spin), fl: r2(flip), pr: r2(paddlePh % TAU), sc: Math.floor(score), t: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
+}
+
+// --- los demás surfistas ---
+const KEYS_NUM = ['dx', 'h', 'th', 'bk', 'cr', 'gr', 'ay', 'sp', 'fl'];
+function upsertPeer(id, pr) {
+  if (!pr || id === MP.myId) return;
+  let R = MP.remotes.get(id);
+  const ch = CHARS.find(c => c.id === pr.ch) || CHARS[0];
+  if (!R) {
+    R = { id, chId: null, rig: null, cur: {}, tgt: {}, st: 'menu', nm: '', label: document.createElement('div'), msgT: 0, hitCD: 0, overDone: false };
+    R.label.className = 'mplabel'; R.label.innerHTML = '<b></b><span class="mpbub" hidden></span>'; R.label.hidden = true;
+    mpLayer.appendChild(R.label);
+    MP.remotes.set(id, R);
+  }
+  if (R.chId !== ch.id) { if (R.rig) disposeRig(R.rig); R.rig = buildRig(ch); R.chId = ch.id; }
+  const wasSt = R.st;
+  R.seen = performance.now(); R.purged = false;
+  R.ch = ch; R.st = typeof pr.st === 'string' ? pr.st : 'menu';
+  R.du = typeof pr.du === 'string' ? pr.du : '';
+  if (R.st === 'duel' && wasSt !== 'duel' && R.du && R.du !== MP.myId && id < R.du) {
+    const O = MP.remotes.get(R.du); chip('⚔️ Disputa por el Pico: ' + (pr.nm || ch.name) + ' contra ' + (O ? O.nm || O.ch.name : 'otro surfista'));
+  }
+  R.nm = typeof pr.nm === 'string' ? pr.nm.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 20) : ch.name;
+  R.label.querySelector('b').textContent = R.nm || ch.name;
+  for (const k of KEYS_NUM) { const v = Number(pr[k]); R.tgt[k] = isFinite(v) ? v : 0; if (!(k in R.cur)) R.cur[k] = R.tgt[k]; }
+  R.tgt.pr = Number(pr.pr) || 0; R.sc = Math.max(0, Math.floor(Number(pr.sc) || 0));
+  updateCount();
+}
+function removePeer(id) {
+  const R = MP.remotes.get(id); if (!R) return;
+  if (R.rig) disposeRig(R.rig); R.label.remove(); MP.remotes.delete(id); updateCount();
+}
+// jugador «fantasma»: lleva más de 10 s sin mandar nada (móvil bloqueado, pestaña olvidada…)
+const alive = R => R.bot || performance.now() - (R.seen || 0) < 10000;
+function updateCount() {
+  const live = [...MP.remotes.values()].filter(alive);
+  const n = live.filter(R => R.st !== 'menu').length, all = live.length;
+  const txt = n === 0 ? 'Solo tú en el agua' : n === 1 ? '1 surfista más en el agua' : n + ' surfistas más en el agua';
+  mpCount.textContent = '🌊 ' + txt;
+  mpMenu.textContent = !MP.db ? mpMenu.textContent : MP.connected ? '🌊 Online · sala «' + SALA + '» · ' + all + (all === 1 ? ' conectado más' : ' conectados más') : '🌊 Conectando…';
+}
+
+// --- dibujar a los demás en mi ola, choques y saltos por encima ---
+const qR = new THREE.Quaternion(), qR2 = new THREE.Quaternion(), qR3 = new THREE.Quaternion(), mpV = V3(0, 0, 0);
+function remoteFaceQuat(th, bk, out) {
+  vT.set(0, face.ty, face.tz);
+  const F = V3(Math.cos(th), 0, 0).addScaledVector(vT, Math.sin(th)).normalize();
+  basisQuat(F, V3(0, -face.tz, face.ty), out);
+  qR3.setFromAxisAngle(V3(1, 0, 0), bk); out.multiply(qR3);
+  return out;
+}
+function mpUpdate(dt) {
+  checkIdle(); statsTick(dt);
+  mpSend(dt);
+  if (MP.sim) updateBots(dt);
+  updateBoard(dt); waveLength(dt); updatePushHint();
+  const showAll = !(state === 'title' && menuView === 'chars') && state !== 'over';
+  const t = performance.now() / 1000, k = 1 - Math.exp(-dt * 10);
+  for (const R of MP.remotes.values()) {
+    if (!R.rig) continue;
+    for (const key of KEYS_NUM) R.cur[key] = lerp(R.cur[key] ?? R.tgt[key], R.tgt[key], k);
+    if (Math.abs(R.tgt.dx - R.cur.dx) > 25) R.cur.dx = R.tgt.dx;     // ha cambiado de ola: sin arrastre
+    R.msgT = Math.max(0, R.msgT - dt);
+    if (R.msgT === 0) R.label.querySelector('.mpbub').hidden = true;
+    // los fantasmas no se ven; si siguen así 45 s, se borran de la sala
+    if (!alive(R) && !R.purged && MP.base && performance.now() - (R.seen || 0) > 45000) { R.purged = true; MP.base.child('players/' + R.id).remove().catch(() => {}); }
+    const vis = showAll && alive(R) && state !== 'duel' && R.st !== 'menu' && R.st !== 'wipe' && R.st !== 'duel';
+    R.rig.root.visible = vis;
+    if (!vis) { R.label.hidden = true; continue; }
+    const c = R.cur, rx = curlX + c.dx, root = R.rig.root;
+    if (R.st === 'paddle') {
+      faceAt(rx, clamp(c.h, 0.03, 1));
+      vT.set(0, -face.ty, -face.tz); basisQuat(vT, V3(0, -face.tz, face.ty), root.quaternion);
+      root.position.set(rx, face.y + 0.02, face.z);
+      applyPoseRig(R.rig, R.ch.jetski ? jetRide(R.rig.pose, 0.3, 0, t) : R.ch.zodiac ? zodiacRide(R.rig.pose, 0.3, 0, t) : R.ch.kayak ? kayakRide(R.rig.pose, 0.3, 0, t * 1.9 + R.tgt.pr) : prone(R.rig.pose, t * 7 + R.tgt.pr, 0.7), 0.06, seatedC(R.ch) ? 1.5 : 0.9, t);
+    } else if (R.st === 'air') {
+      faceAt(rx, 1);
+      remoteFaceQuat(0.5, 0, qR);
+      qR2.setFromAxisAngle(UP, c.sp); qR3.setFromAxisAngle(V3(0, 0, 1), c.fl);
+      root.quaternion.copy(qR2).multiply(qR).multiply(qR3);
+      root.position.set(rx, Math.max(c.ay, face.y), face.z);
+      applyPoseRig(R.rig, poseFor(R.ch)(R.rig.pose, 0.95, c.gr, t, 0), 1, seatedC(R.ch) ? 1.5 : 0.9, t);
+    } else {
+      faceAt(rx, clamp(c.h, 0.03, 1));
+      remoteFaceQuat(c.th, c.bk, root.quaternion);
+      root.position.set(rx, face.y + 0.02, face.z);
+      applyPoseRig(R.rig, poseFor(R.ch)(R.rig.pose, c.cr, 0, t + R.tgt.pr, -c.bk * 0.8), 0.7, seatedC(R.ch) ? 1.5 : 0.9, t);
+    }
+    // nombre (y bocadillo) sobre su cabeza
+    const sc = toScreen(root.position.x, root.position.y + 2.3, root.position.z);
+    R.label.hidden = sc[2] > 1;
+    R.label.style.transform = 'translate(' + Math.round(sc[0]) + 'px,' + Math.round(sc[1]) + 'px) translate(-50%,-100%)';
+
+    // interacción conmigo (cuando estoy surfeando)
+    R.hitCD = Math.max(0, R.hitCD - dt);
+    if (state !== 'ride') continue;
+    const dxp = rx - px;
+    if (!air && R.st === 'ride' && Math.abs(dxp) < 1.6 && Math.abs(c.h - h) < 0.15 && R.hitCD === 0) {
+      R.hitCD = 1.2; R.lastHit = performance.now();
+      v = Math.max(6, v - 1.5); theta += (h > c.h ? 0.2 : -0.2); crouch = 1;
+      mpV.copy(boardRoot.position).lerp(root.position, 0.5); splash(mpV, 40, 1);
+      chip('💥 Choque con ' + (R.nm || R.ch.name));
+    }
+    if (air && R.st !== 'air' && Math.abs(dxp) < 2 && aPos.y > root.position.y + 1.7 && !R.overDone) {
+      R.overDone = true; const got = addPts(300); showTrick('Por encima de ' + (R.nm || R.ch.name), got); bump(0.1);
+    }
+    if (!air) R.overDone = false;
+  }
+  // mi bocadillo
+  const me = $('myBub');
+  if (MP.myMsgT > 0) {
+    MP.myMsgT -= dt;
+    if (MP.myMsgT <= 0 || (state === 'title' && menuView === 'chars')) me.hidden = true;
+    else { const sc = toScreen(boardRoot.position.x, boardRoot.position.y + 2.3, boardRoot.position.z); me.hidden = sc[2] > 1; me.style.transform = 'translate(' + Math.round(sc[0]) + 'px,' + Math.round(sc[1]) + 'px) translate(-50%,-100%)'; }
+  }
+}
+
+// --- empujón: pegado a otro surfista, TRUCO lo tira (vuelve a remar y pierde los puntos de la ola) ---
+// quién está a tiro: cerca en la ola o con quien acabas de chocar (1,5 s)
+function pushTarget() {
+  if (state !== 'ride' || air) return null;
+  let best = null, bd = 99;
+  const now = performance.now();
+  for (const R of MP.remotes.values()) {
+    if ((R.st !== 'ride' && R.st !== 'air') || !R.rig || !alive(R)) continue;
+    const ddx = Math.abs(curlX + R.cur.dx - px), ddh = Math.abs(R.cur.h - h);
+    const recent = R.lastHit && now - R.lastHit < 1500;
+    if ((ddx < 4 && ddh < 0.45) || recent) { const d = ddx + ddh * 6 - (recent ? 5 : 0); if (d < bd) { bd = d; best = R; } }
+  }
+  return best;
+}
+function tryPush() {
+  const best = pushTarget();
+  if (!best) return false;
+  const name = best.nm || best.ch.name;
+  if (best.bot) botPushed(best.id, MP.myName || CH.name);
+  else if (MP.base) MP.base.child('msgs').push({ ev: 'push', to: best.id, id: MP.myId, nm: MP.myName || CH.name, at: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
+  best.st = 'wipe';
+  splash(best.rig.root.position, 70, 1.4);
+  const got = addPts(300); chip('💪 Has tirado a ' + name); showTrick('Empujón a ' + name, got); bump(0.1);
+  v = Math.max(6, v - 1); crouch = 1;
+  duelCount(best);
+  return true;
+}
+// cada personaje solo puede llevarlo una persona a la vez
+function takenBy(id) {
+  if (MP.sim) return null;
+  for (const R of MP.remotes.values()) if (R.chId === id && alive(R)) return R.nm || R.ch.name;
+  return null;
+}
+const toastEl = $('mpToast'); let toastTO = 0;
+function toast(t) { toastEl.textContent = t; toastEl.hidden = false; clearTimeout(toastTO); toastTO = setTimeout(() => { toastEl.hidden = true; }, 2600); }
+document.addEventListener('click', e => {
+  const card = e.target.closest && e.target.closest('#chars .card');
+  if (card) { const who = takenBy(card.dataset.id); if (who) { e.stopImmediatePropagation(); e.preventDefault(); toast('Ese personaje ya lo ha escogido ' + who + '. Elige otro.'); } return; }
+  if (e.target.closest && e.target.closest('#start')) {
+    const who = takenBy(CH.id);
+    if (who) { e.stopImmediatePropagation(); e.preventDefault(); toast(CH.name + ' ya lo lleva ' + who + '. Elige otro personaje.'); $('toChars').click(); }
+  }
+}, true);
+function markTaken() {
+  document.querySelectorAll('#chars .card').forEach(c => { const who = takenBy(c.dataset.id); c.classList.toggle('taken', !!who); if (who) c.dataset.who = 'Escogido por ' + who; });
+}
+// la ola se alarga cuantos más surfistas hay en el agua, para que quepan todos
+function waveLength(dt) {
+  let n = 1; for (const R of MP.remotes.values()) if (R.st !== 'menu' && alive(R)) n++;
+  const target = Math.min(420, 150 + 45 * (n - 1));
+  XB = lerp(XB, target, 1 - Math.exp(-dt * 0.5));
+}
+// clasificación de los que están en la sala
+const boardEl = $('mpBoard'); let boardT = 0;
+const padLab = document.querySelector('#padTricks .lab');
+let pushShown = 0;
+function updatePushHint() {
+  const mode = state === 'duel' ? 2 : pushTarget() ? 1 : 0;
+  if (mode !== pushShown) { pushShown = mode; padLab.textContent = ['TRUCO', '💪 EMPUJAR', '⚔️ GOLPE'][mode]; document.getElementById('padTricks').classList.toggle('push', mode > 0); }
+}
+function updateBoard(dt) {
+  boardT -= dt; if (boardT > 0) return; boardT = 0.25;
+  markTaken(); updateCount();
+  const rows = [{ n: 'Tú', s: Math.floor(score), me: true }];
+  for (const R of MP.remotes.values()) if (R.st !== 'menu' && alive(R)) rows.push({ n: R.nm || R.ch.name, s: R.sc || 0 });
+  boardEl.hidden = rows.length < 2 || hud.hidden || state === 'duel';
+  if (boardEl.hidden) return;
+  rows.sort((a, b) => b.s - a.s);
+  boardEl.textContent = '';
+  // solo los 3 primeros y tú (para no tapar la ola)
+  rows.forEach((r, i) => { if (i > 2 && !r.me) return; const d = document.createElement('div'); if (r.me) d.className = 'me'; d.textContent = (i + 1) + '. ' + r.n + '  ' + r.s; boardEl.appendChild(d); });
+}
+
+// --- mensajes: frases rápidas, texto y notas de voz ---
+function cleanText(text) { return (text || '').replace(/[\u0000-\u001f\u007f​-‏‪-‮⁠-⁤]/g, '').trim().slice(0, 80); }
+function showMine(text) { const me = $('myBub'); me.textContent = text; me.hidden = false; MP.myMsgT = 5; }
+function logMsg(who, text) {
+  const d = document.createElement('div');
+  const w = document.createElement('b'); w.textContent = who + ': '; const s = document.createElement('span'); s.textContent = text;
+  d.append(w, s); chatLog.prepend(d);
+  while (chatLog.children.length > 4) chatLog.lastChild.remove();
+  setTimeout(() => d.classList.add('old'), 9000);
+}
+function pushMsg(obj) {
+  if (MP.sim) { if (obj.tx) botReply(); return; }
+  if (!MP.base) { say('Sin conexión al modo online', 2); return; }
+  obj.id = MP.myId; obj.nm = MP.myName || CH.name; obj.at = firebase.database.ServerValue.TIMESTAMP;
+  MP.base.child('msgs').push(obj).catch(() => say('No se ha podido enviar', 2));
+  // limpieza: los mensajes de hace más de 3 minutos se borran
+  MP.base.child('msgs').orderByChild('at').endAt(Date.now() - 180000).limitToFirst(20).once('value', s => s.forEach(c => { c.ref.remove(); }));
+}
+function sendText(text) {
+  text = cleanText(text); if (!text) return;
+  showMine(text); logMsg('Tú', text); chatP.hidden = true;
+  pushMsg({ tx: text });
+}
+const voiceEl = $('voice');
+function onMsg(m) {
+  if (!m || m.id === MP.myId) return;
+  if (typeof m.at === 'number' && m.at < MP.startAt - 3000) return;    // solo lo nuevo
+  const R = MP.remotes.get(m.id), who = (typeof m.nm === 'string' && m.nm.slice(0, 20)) || (R && R.ch.name) || 'Surfista';
+  if (m.ev === 'push') { if (m.to === MP.myId) { gotPushed(who); duelCount(R); } return; }
+  if (m.ev === 'duel') { if (m.to === MP.myId && R) setTimeout(() => startDuel(R), 1200); return; }
+  if (m.ev === 'hit') { if (m.to === MP.myId) duelGotHit(m.id, m.ty); return; }
+  if (typeof m.tx === 'string') {
+    const text = cleanText(m.tx);
+    if (R) { const b = R.label.querySelector('.mpbub'); b.textContent = text; b.hidden = false; R.msgT = 5; }
+    logMsg(who, text);
+  } else if (typeof m.au === 'string' && /^data:audio\/[a-z0-9.+;=-]+;base64,/i.test(m.au)) {
+    if (R) { const b = R.label.querySelector('.mpbub'); b.textContent = '🔊 Nota de voz'; b.hidden = false; R.msgT = 5; }
+    logMsg(who, '🔊 nota de voz');
+    try { voiceEl.src = m.au; voiceEl.volume = 1; const p = voiceEl.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+  }
+}
+$('hudChat').addEventListener('click', () => { chatP.hidden = !chatP.hidden; if (!chatP.hidden) $('chatIn').focus({ preventScroll: true }); });
+chatP.querySelectorAll('[data-q]').forEach(b => b.addEventListener('click', () => sendText(b.dataset.q)));
+$('chatForm').addEventListener('submit', e => { e.preventDefault(); const i = $('chatIn'); sendText(i.value); i.value = ''; });
+$('chatClose').addEventListener('click', () => { chatP.hidden = true; });
+
+// notas de voz: mantener pulsado 🎤, hablar y soltar (máx. 8 s)
+const micBtn = $('hudMic');
+let rec = null, recChunks = [], recTimer = 0, micStream = null, recMime = '';
+const VOZ_MAX = 73000;   // bytes; en base64 ocupa 4/3 y tiene que caber en los 100.000 caracteres de las reglas
+function unlockVoice() { try { voiceEl.muted = true; const p = voiceEl.play(); if (p && p.then) p.then(() => { voiceEl.pause(); voiceEl.muted = false; }).catch(() => { voiceEl.muted = false; }); } catch (e) {} }
+window.addEventListener('pointerdown', unlockVoice, { once: true, capture: true });
+async function startRec(e) {
+  e.preventDefault();
+  if (rec) return;
+  if (!navigator.mediaDevices || !window.MediaRecorder) { say('Este navegador no permite grabar audio', 2.5); return; }
+  try { if (!micStream) micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+  catch (err) { say('Sin permiso para el micrófono', 2.5); return; }
+  recMime = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';
+  recChunks = [];
+  rec = new MediaRecorder(micStream, recMime ? { mimeType: recMime, audioBitsPerSecond: 16000 } : undefined);
+  // las reglas de Firebase no admiten notas de más de ~73 KB: si el móvil graba con más calidad
+  // de la pedida (el iPhone lo hace), se corta antes de los 8 s
+  let recBytes = 0;
+  rec.ondataavailable = ev => { if (ev.data && ev.data.size) { recChunks.push(ev.data); recBytes += ev.data.size; if (recBytes > VOZ_MAX - 6000) stopRec(); } };
+  rec.onstop = () => {
+    const blob = new Blob(recChunks, { type: rec.mimeType || recMime || 'audio/webm' });
+    rec = null; micBtn.classList.remove('rec');
+    if (blob.size < 1500) return;                       // pulsación demasiado corta
+    if (blob.size > VOZ_MAX) { say('Nota de voz demasiado larga', 2); return; }
+    const fr = new FileReader();
+    fr.onload = () => { pushMsg({ au: String(fr.result) }); showMine('🎤 Nota de voz'); logMsg('Tú', '🎤 nota de voz'); };
+    fr.readAsDataURL(blob);
+  };
+  rec.start(500); micBtn.classList.add('rec');
+  clearTimeout(recTimer); recTimer = setTimeout(stopRec, 8000);
+}
+function stopRec() { clearTimeout(recTimer); if (rec && rec.state === 'recording') rec.stop(); }
+micBtn.addEventListener('pointerdown', startRec);
+micBtn.addEventListener('pointerup', stopRec);
+micBtn.addEventListener('pointercancel', stopRec);
+micBtn.addEventListener('pointerleave', stopRec);
+micBtn.addEventListener('contextmenu', e => e.preventDefault());
+
+// --- inactividad: si te coge la ola 10 veces seguidas sin tocar nada (o pasan 3 min), sales del agua ---
+MP.lastInput = performance.now(); MP.idleWaves = 0; MP.away = false; MP.prevSt = '';
+['pointerdown', 'keydown', 'touchstart'].forEach(ev => window.addEventListener(ev, () => {
+  MP.lastInput = performance.now(); MP.idleWaves = 0;
+  if (MP.away) { MP.away = false; MP.sendT = 0; }
+}, true));
+// al bloquear el móvil o cambiar de app, desapareces de la ola de los demás; al volver, apareces otra vez
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { if (MP.meRef) MP.meRef.remove().catch(() => {}); }
+  else MP.sendT = 0;
+});
+function checkIdle() {
+  if (MP.sim || state === 'title' || state === 'over' || state === 'duel') { MP.prevSt = state; return; }
+  const idle = performance.now() - MP.lastInput;
+  if (state === 'paddle' && MP.prevSt !== 'paddle' && idle > 6000) MP.idleWaves++;
+  MP.prevSt = state;
+  if (MP.idleWaves >= 10 || idle > 180000) {
+    MP.away = true; MP.idleWaves = 0;
+    if (MP.meRef) MP.meRef.remove().catch(() => {});
+    $('hudHome').click();
+    setTimeout(() => toast('Te hemos sacado del agua por inactividad. Pulsa «¡A surfear!» para volver.'), 700);
+  }
+}
+
+// --- conexión ---
+(function connect() {
+  const bb = $('botsBtn');
+  if (SALA === 'bots') {
+    MP.sim = true; makeBots();
+    mpMenu.textContent = '🤖 Simulación con ' + BOTS.length + ' bots (sin conexión)';
+    bb.textContent = '👥 Jugar con gente de verdad'; bb.onclick = () => { location.hash = ''; location.reload(); };
+    return;
+  }
+  bb.textContent = '🤖 Jugar con bots'; bb.onclick = () => { location.hash = 'bots'; location.reload(); };
+  if (!FIREBASE_CONFIG || !window.firebase) { mpMenu.textContent = 'Modo online sin configurar: juegas solo'; return; }
+  mpMenu.textContent = '🌊 Conectando…';
+  firebaseListo().then(({ db, uid }) => {
+    MP.myId = uid;
+    MP.db = db;
+    MP.base = MP.db.ref('v2/salas/' + SALA);
+    MP.meRef = MP.base.child('players/' + MP.myId);
+    MP.db.ref('.info/connected').on('value', s => {
+      MP.connected = !!s.val();
+      if (MP.connected) { MP.meRef.onDisconnect().remove(); MP.sendT = 0; }
+      updateCount();
+    });
+    const pl = MP.base.child('players');
+    pl.on('child_added', s => upsertPeer(s.key, s.val()));
+    pl.on('child_changed', s => upsertPeer(s.key, s.val()));
+    pl.on('child_removed', s => removePeer(s.key));
+    MP.base.child('msgs').orderByChild('at').startAt(Date.now() - 5000).on('child_added', s => onMsg(s.val()));
+    window.addEventListener('pagehide', () => { try { MP.meRef.remove(); } catch (e) {} });
+  }).catch(() => { mpMenu.textContent = 'No se ha podido conectar al modo online'; });
+})();
+
+
+// ===================== DISPUTA POR EL PICO =====================
+// Si tiras 3 veces al mismo surfista, los dos os vais al agua junto al Pantalán y os pegáis con lo que lleváis
+// (tabla, pala del kayak, remo o lata de rescate). Quien da 5 golpes es el LOCAL LEGEND (+1500) y el otro
+// pierde los puntos de la ola. Los demás siguen surfeando; al acabar, los dos vuelven al agua.
+// Controles: círculo hacia el rival = acercarse · hacia atrás = cubrirse (los golpes del suelo no cuentan)
+// GOLPE = lateral · con el círculo arriba = de arriba abajo · SALTAR y en el aire GOLPE: 1 toque mazazo, 2+ giro
+// (los golpes en el aire rompen la guardia; saltando esquivas los golpes del suelo)
+const DUEL_HP = 5, DUEL_TIME = 60, DUEL_Y = -0.72, G_PHI = 0.55, JUMP_V = 5.6, JUMP_G = 15;
+const SW = [
+  { dur: 0.55, hit: 0.28, reach: 1.6, name: 'Lateral' },
+  { dur: 0.62, hit: 0.33, reach: 1.55, name: 'De arriba abajo' },
+  { dur: 0.5, hit: 0.26, reach: 1.75, name: 'Mazazo aéreo' },
+  { dur: 0.7, hit: 0.36, reach: 1.85, name: 'Giro aéreo' }
+];
+const ZAX = V3(0, 0, 1), XAX = V3(1, 0, 0), qRoll = new THREE.Quaternion().setFromAxisAngle(V3(1, 0, 0), Math.PI / 2);
+const DUEL = { on: false };
+MP.pushCount = {};
+const mkFighterState = u => ({ u, hp: DUEL_HP, netHp: DUEL_HP, pendHp: DUEL_HP, pendT: 0, sw: { type: 0, t: -1, hit: true },
+  block: false, jy: 0, jv: 0, walk: 0, hurt: 0, ko: 0, airTaps: 0, tapWin: 0, airDone: false, airPlan: 0, spinA: 0 });
+
+// --- dónde van las manos y hacia dónde apunta el objeto (relativo al pecho; +x = hacia el rival) ---
+function overPhi(type, s) {
+  const S = SW[type], up = type === 2 ? -1.1 : -0.8, down = type === 2 ? 2.7 : 2.3, w = S.hit * 0.62;
+  if (s < 0) return G_PHI;
+  if (s < w) return lerp(G_PHI, up, sm(0, w, s));                  // coge impulso por encima de la cabeza
+  if (s < S.hit) return lerp(up, down, (s - w) / (S.hit - w));     // ¡golpe!
+  return lerp(down, G_PHI, sm(S.hit, S.dur, s));                   // vuelve a la guardia
+}
+const hr = V3(0, 0, 0), hd2 = V3(0, 0, 0), hg = V3(0, 0, 0), dg = V3(0, 0, 0);
+function weaponState(f) {
+  const s = f.sw.t, type = f.sw.type;
+  let lean = 0, off = 1, roll = true;
+  if (f.block && s < 0) {                                          // cubrirse: el objeto en vertical delante de la cara
+    hr.set(0.3, -0.12, 0); hd2.set(0.12, 1, 0).normalize(); lean = -0.06; off = 0.2; roll = false;
+  } else if (s >= 0 && (type === 0 || type === 3)) {               // lateral (o giro): barrido de lado a lado
+    const S = SW[type];
+    let psi;
+    if (type === 3) psi = 0.35;
+    else if (s < S.hit * 0.55) psi = lerp(0.2, 2.0, sm(0, S.hit * 0.55, s));
+    else if (s < S.hit) psi = lerp(2.0, -1.3, (s - S.hit * 0.55) / (S.hit * 0.45));
+    else psi = -1.3;
+    hr.set(0.45 * Math.cos(psi), -0.12, 0.45 * Math.sin(psi)); hd2.set(Math.cos(psi), 0.12, Math.sin(psi)).normalize();
+    lean = 0.06;
+    if (s > S.hit && type === 0) {                                 // vuelve a la guardia
+      const k = sm(S.hit, S.dur, s), phi = G_PHI;
+      hg.set(0.5 * Math.sin(phi), -0.05 + 0.5 * Math.cos(phi), 0); dg.set(Math.sin(phi), Math.cos(phi), 0);
+      hr.lerp(hg, k); hd2.lerp(dg, k).normalize();
+    }
+  } else {                                                         // guardia o de arriba abajo / mazazo
+    const phi = overPhi(type, s);
+    hr.set(0.5 * Math.sin(phi), -0.05 + 0.5 * Math.cos(phi), 0); hd2.set(Math.sin(phi), Math.cos(phi), 0);
+    lean = 0.14 * clamp((phi - 1) / 1.3, 0, 1) - 0.1 * clamp(-phi / 0.8, 0, 1);
+  }
+  return { lean, off, roll };
+}
+// postura de pelea: de pie mirando a +x con el objeto agarrado con las dos manos
+function duelPose(o, walk, t, hurt, cz, lean, air) {
+  const st = Math.sin(t * 10) * walk * 0.2 * (air ? 0 : 1), bob = 0.02 * Math.sin(t * 4) - 0.04 * hurt;
+  const lx = lean - 0.22 * hurt, tuck = air ? 0.18 : 0;
+  o.fw.set(1, 0, cz);
+  o.hB.set(-0.03 + lx * 0.3, 0.93 + bob, -0.1); o.hF.set(0.03 + lx * 0.3, 0.93 + bob, 0.1);
+  o.kB.set(-0.1 - st + tuck * 0.5, 0.5 + tuck, -0.14); o.kF.set(0.17 + st + tuck * 0.5, 0.5 + tuck, 0.15);
+  o.fB.set(-0.22 - st * 1.6, 0.06 + Math.max(0, -st) * 0.5 + tuck * 1.2, -0.16); o.fF.set(0.3 + st * 1.6, 0.06 + Math.max(0, st) * 0.5 + tuck * 1.2, 0.16);
+  o.ch.set(0.03 + lx, 1.42 + bob, 0); o.hd.set(o.ch.x + 0.04 - hurt * 0.08, o.ch.y + 0.27, 0);
+  o.sB.set(o.ch.x - 0.02, o.ch.y - 0.02, -0.19); o.sF.set(o.ch.x - 0.02, o.ch.y - 0.02, 0.19);
+  o.aF.set(o.ch.x + hr.x, o.ch.y + hr.y, hr.z + 0.05); o.aB.set(o.aF.x - 0.1 * hd2.x, o.aF.y - 0.1 * hd2.y, hr.z - 0.05 - 0.1 * hd2.z);
+  o.eB.set((o.sB.x + o.aB.x) / 2 - 0.06, (o.sB.y + o.aB.y) / 2 - 0.12, -0.3);
+  o.eF.set((o.sF.x + o.aF.x) / 2 - 0.06, (o.sF.y + o.aF.y) / 2 - 0.12, 0.3);
+  return o;
+}
+const matBuoy = new THREE.MeshStandardMaterial({ color: 0xe0261f, roughness: 0.4 }), buoyGeo = new THREE.CapsuleGeometry(0.1, 0.75, 4, 12);
+function makeFighter(ch) {
+  const rig = buildRig(ch);
+  rig.root.children.forEach(o => { o.visible = o === rig.rider || (rig.human && o === rig.human.root); });
+  rig.rider.scale.set(1, 1, 1); rig.rider.position.set(0, 0, 0); rig.rider.rotation.set(0, 0, 0);   // de pie, sin goofy/regular
+  const F = { rig, ch, axis: UP, off: 0.8, weapon: null, extra: null, ph: rnd(0, 5) };
+  if (!ch.jetski && !ch.kayak && !ch.zodiac && rig.board) {                 // su tabla
+    F.weapon = rig.board; rig.rider.add(F.weapon); F.axis = XAX; F.off = 0.85 * F.weapon.scale.x;
+  } else if (ch.zodiac) {                                                    // lata de rescate roja
+    F.weapon = F.extra = new THREE.Mesh(buoyGeo, matBuoy); rig.rider.add(F.weapon); F.off = 0.6;
+  } else if (rig.paddle) { F.weapon = rig.paddle; F.off = 0.8; }             // pala del kayak / remo
+  if (F.weapon) F.weapon.visible = true;
+  rig.root.visible = true;
+  return F;
+}
+function dropFighter(F) { if (!F) return; if (F.extra) F.extra.removeFromParent(); disposeRig(F.rig); }
+const dq1 = new THREE.Quaternion(), dq2 = new THREE.Quaternion(), dq3 = new THREE.Quaternion();
+function drawFighter(F, f, oU, t) {
+  const rig = F.rig, root = rig.root, right = oU >= f.u;
+  f.spinA = f.sw.t >= 0 && f.sw.type === 3 ? TAU * sm(0, SW[3].dur * 0.9, f.sw.t) : 0;       // giro aéreo: vuelta entera
+  dq1.setFromAxisAngle(UP, (right ? 0 : Math.PI) + f.spinA); dq2.setFromAxisAngle(ZAX, f.ko * 1.45);
+  root.quaternion.copy(dq1).multiply(dq2);
+  root.position.set(DUEL.ax + f.u, DUEL_Y + f.jy + f.ko * 0.45 + 0.04 * Math.sin(t * 1.6 + F.ph), DUEL.az);
+  const ws = weaponState(f);
+  duelPose(rig.pose, f.walk, t + F.ph, f.hurt, right ? 0.45 : -0.45, ws.lean, f.jy > 0.05);
+  applyPoseRig(rig, rig.pose, 0.15, (right ? 1.0 : 2.1) + Math.PI + 0.6, t);
+  if (F.weapon) {
+    const o = rig.pose;
+    F.weapon.position.addVectors(o.aB, o.aF).multiplyScalar(0.5).addScaledVector(hd2, F.off * ws.off);
+    F.weapon.quaternion.setFromUnitVectors(F.axis, hd2);
+    if (F.axis === XAX && ws.roll) F.weapon.quaternion.multiply(qRoll);   // la tabla de cara, no de canto
+  }
+}
+
+// --- marcador de la disputa y botón SALTAR ---
+const duelCss = document.createElement('style');
+duelCss.textContent = '#duelHud{position:absolute;left:50%;top:calc(118px + env(safe-area-inset-top, 0px));transform:translateX(-50%);width:min(560px,calc(100% - 32px));z-index:40;pointer-events:none;text-align:center;font-family:var(--body);color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.7)}' +
+  '#duelHud .dt{font:900 22px var(--display);letter-spacing:.04em;color:var(--sun)}' +
+  '#duelHud .dbars{display:flex;align-items:center;gap:10px;margin-top:6px}' +
+  '#duelHud .db{flex:1;text-align:left}#duelHud .db.r{text-align:right}' +
+  '#duelHud .db b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+  '#duelHud .db i{display:block;height:14px;border:2px solid #fff;border-radius:8px;background:rgba(13,22,32,.6);overflow:hidden}' +
+  '#duelHud .db span{display:block;height:100%;background:linear-gradient(90deg,#ff5a4e,#ffc94a);transition:width .25s}' +
+  '#duelHud .db.r span{margin-left:auto}' +
+  '#duelHud .dclk{font:900 20px var(--display);min-width:38px}' +
+  '#duelHud .dres{margin-top:10px;font:900 30px var(--display);color:var(--sun)}' +
+  '#duelJump{position:absolute;left:max(30px, env(safe-area-inset-left, 0px));bottom:calc(36px + min(150px, 34vw) + env(safe-area-inset-bottom, 0px));width:72px;height:72px;border-radius:50%;border:2px solid rgba(255,255,255,.75);background:rgba(255,255,255,.1);color:#fff;font:900 13px var(--display);line-height:1.1;text-shadow:0 1px 3px rgba(0,0,0,.6);touch-action:none;-webkit-user-select:none;user-select:none;z-index:30}' +
+  '#duelJump:active{background:rgba(255,255,255,.3)}' +
+  // en horizontal: arriba del todo, entre los botones de la izquierda y el multiplicador, sin tapar a los que pelean
+  '@media (min-aspect-ratio: 1/1){#duelHud{top:max(8px, env(safe-area-inset-top, 0px));width:min(440px,calc(100% - 460px));min-width:240px}' +
+  '#duelHud .dt{font-size:15px}#duelHud .dbars{margin-top:2px;gap:8px}#duelHud .db b{font-size:12px}#duelHud .db i{height:10px}#duelHud .dclk{font-size:16px;min-width:28px}#duelHud .dres{margin-top:4px;font-size:20px}' +
+  '#duelJump{width:58px;height:58px;font-size:11px;left:calc(max(14px, env(safe-area-inset-left, 0px)) + min(118px, 27vh) + 10px);bottom:calc(20px + env(safe-area-inset-bottom, 0px))}}';
+document.head.appendChild(duelCss);
+const duelHud = document.createElement('div'); duelHud.id = 'duelHud'; duelHud.hidden = true;
+duelHud.innerHTML = '<div class="dt">⚔️ DISPUTA POR EL PICO</div><div class="dbars"><div class="db"><b></b><i><span></span></i></div><div class="dclk">60</div><div class="db r"><b></b><i><span></span></i></div></div><div class="dres" hidden></div>';
+toastEl.parentNode.appendChild(duelHud);
+const jumpBtn = document.createElement('button'); jumpBtn.id = 'duelJump'; jumpBtn.type = 'button'; jumpBtn.hidden = true;
+jumpBtn.innerHTML = '⤴<br>SALTAR'; jumpBtn.setAttribute('aria-label', 'Saltar');
+jumpBtn.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); duelJump(); });
+toastEl.parentNode.appendChild(jumpBtn);
+const dBars = duelHud.querySelectorAll('.db'), dClk = duelHud.querySelector('.dclk'), dRes = duelHud.querySelector('.dres');
+function duelHudUpdate() {
+  const D = DUEL, meLeft = D.A.u >= D.B.u;
+  const rows = [[MP.myName || CH.name, D.A.hp, true], [D.oppName, D.B.hp, false]];
+  if (!meLeft) rows.reverse();
+  rows.forEach((r, i) => { dBars[i].querySelector('b').textContent = (r[2] ? '⭐ ' : '') + r[0]; dBars[i].querySelector('span').style.width = (100 * Math.max(0, r[1]) / DUEL_HP) + '%'; });
+  dClk.textContent = Math.max(0, Math.ceil(DUEL_TIME - D.t));
+}
+
+// --- empujones: al tercero contra el mismo, disputa ---
+function duelCount(R) {
+  if (!R || DUEL.on) return;
+  const n = (MP.pushCount[R.id] || 0) + 1; MP.pushCount[R.id] = n;
+  const name = R.nm || R.ch.name;
+  if (n < 3) { chip('⚔️ Disputa con ' + name + ': ' + n + '/3 empujones'); return; }
+  MP.pushCount[R.id] = 0;
+  if (!R.bot && MP.base) MP.base.child('msgs').push({ ev: 'duel', to: R.id, id: MP.myId, nm: MP.myName || CH.name, at: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
+  setTimeout(() => startDuel(R), 1200);
+}
+function startDuel(R) {
+  if (DUEL.on || !R || !R.ch || state === 'title' || state === 'over') return false;
+  const bot = R.bot ? BOTS.find(b => b.id === R.id) : null;
+  const side = (MP.myId < R.id) ? -1 : 1;
+  Object.assign(DUEL, { on: true, R, oppId: R.id, bot, oppName: R.nm || R.ch.name, side,
+    ax: camPos.x, az: 35, pOff: 14, t: 0, swN: 0, oSeenN: -1, bCD: 1.2, bBack: 0, bBlockT: 0, bReact: -1, upWas: false,
+    seen: !!bot, goneT: 0, result: '', endT: 0, A: mkFighterState(side * 1.8), B: mkFighterState(-side * 1.8) });
+  if (bot) { bot.st = 'duel'; R.st = 'duel'; }
+  DUEL.me = makeFighter(CH); DUEL.him = makeFighter(R.ch);
+  state = 'duel'; air = false; boardRoot.visible = false; dial.hidden = true; bubble.hidden = true; ringbox.hidden = true; ringbox.classList.remove('go'); windowOpen = false;
+  duelCam(camPos, camLook, aspect < 0.9 ? 1.6 : 1);
+  duelHud.hidden = false; dRes.hidden = true; jumpBtn.hidden = false; duelHudUpdate();
+  say('⚔️ ¡Disputa contra ' + DUEL.oppName + '! Hacia atrás te cubres · GOLPE pega · SALTAR + GOLPE en el aire', 3.2);
+  bump(0.15);
+  return true;
+}
+function startSwing(f, type) { f.sw.type = type; f.sw.t = 0; f.sw.hit = false; f.block = false; if (f === DUEL.A) DUEL.swN++; }
+function jumpF(f) { if (f.jy > 0.01 || f.hp <= 0) return; f.jv = JUMP_V; f.airDone = false; f.airTaps = 0; f.block = false; }
+function duelJump() {
+  const D = DUEL; if (!D.on || D.result || state !== 'duel') return;
+  jumpF(D.A);
+}
+function duelSwing() {
+  const D = DUEL, A = D.A;
+  if (!D.on || D.result || A.hp <= 0) return;
+  if (A.jy > 0.02) { if (A.airDone || A.sw.t >= 0) return; A.airTaps++; A.tapWin = 0.22; return; }   // en el aire: cuenta los toques
+  if (A.sw.t >= 0) return;
+  const over = (stick.id !== null && stick.y < -0.45) || keys.down;                                  // círculo arriba = de arriba abajo
+  startSwing(A, over ? 1 : 0);
+}
+function duelFx(u, y, n) { mpV.set(DUEL.ax + u, y, DUEL.az); splash(mpV, n, 0.9); }
+// ¿qué pasa con un golpe? (sin dar, bloqueado, esquivado saltando o golpe)
+function hitResult(att, def, defBlock, defJy) {
+  const S = SW[att.sw.type];
+  if (Math.abs(att.u - def.u) > S.reach || def.hp <= 0) return 'miss';
+  const ground = att.sw.type < 2;
+  if (ground && defJy > 0.55) return 'dodge';
+  if (ground && defBlock) return 'block';
+  return 'hit';
+}
+function onBlocked(def) {
+  duelFx(def.u, 1.2, 14); def.u = clamp(def.u + Math.sign(def.u - (def === DUEL.A ? DUEL.B : DUEL.A).u || 1) * 0.3, -5, 5);
+  say('🛡️ ¡Bloqueado!', 0.7);
+}
+function myImpact() {
+  const D = DUEL, A = D.A, B = D.B;
+  const bBlock = D.bot ? B.block : (D.R && D.R.tgt.bk > 0.5), bJy = D.bot ? B.jy : (D.R ? D.R.cur.ay || 0 : 0);
+  const r = hitResult(A, B, bBlock, bJy);
+  if (r === 'block') { onBlocked(B); return; }
+  if (r === 'dodge') { say('💨 ¡Lo ha esquivado!', 0.7); return; }
+  if (r !== 'hit') return;
+  B.hurt = 1; duelFx(B.u, 0.4, 40); bump(0.12);
+  if (A.sw.type >= 2) chip('💥 ' + SW[A.sw.type].name);
+  if (D.bot) { B.hp--; B.u = clamp(B.u + Math.sign(B.u - A.u || 1) * 0.75, -5, 5); }
+  else {
+    B.pendHp = (B.pendT > 0 ? B.pendHp : B.netHp) - 1; B.pendT = 1.5;
+    if (MP.base) MP.base.child('msgs').push({ ev: 'hit', to: D.oppId, ty: A.sw.type, id: MP.myId, nm: MP.myName || CH.name, at: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
+  }
+}
+function duelGotHit(fromId, ty) {
+  const D = DUEL, A = D.A;
+  if (!D.on || D.result || A.hp <= 0 || fromId !== D.oppId) return;
+  ty = clamp(Math.round(Number(ty) || 0), 0, 3);
+  const ground = ty < 2;
+  if (ground && A.jy > 0.55) { say('💨 ¡Esquivado!', 0.7); return; }
+  if (ground && A.block) { onBlocked(A); return; }
+  A.hp--; A.hurt = 1;
+  A.u = clamp(A.u + Math.sign(A.u - D.B.u || 1) * 0.75, -5, 5);
+  duelFx(A.u, 0.4, 40); bump(0.12);
+}
+// salto y golpes de un luchador (la física es la misma para los dos)
+function stepFighter(f, dt, isMe) {
+  if (f.jy > 0 || f.jv > 0) {
+    f.jv -= JUMP_G * dt; f.jy += f.jv * dt;
+    if (f.jy <= 0) { f.jy = 0; f.jv = 0; duelFx(f.u, 0.1, 12); }
+  }
+  if (f.tapWin > 0) {                                              // toques de GOLPE en el aire: 1 mazazo, 2 o más giro
+    f.tapWin -= dt;
+    if (f.tapWin <= 0 && f.airTaps > 0) { startSwing(f, f.airTaps >= 2 ? 3 : 2); f.airDone = true; f.airTaps = 0; }
+  }
+  if (f.sw.t >= 0) {
+    f.sw.t += dt;
+    const S = SW[f.sw.type];
+    if (!f.sw.hit && f.sw.t >= S.hit) { f.sw.hit = true; if (isMe) myImpact(); else if (DUEL.bot) botImpact(); }
+    if (f.sw.t >= S.dur) f.sw.t = -1;
+  }
+  f.hurt = Math.max(0, f.hurt - dt * 2.5);
+  f.ko = lerp(f.ko, f.hp <= 0 ? 1 : 0, 1 - Math.exp(-dt * 5));
+}
+function botImpact() {
+  const D = DUEL, A = D.A, B = D.B;
+  const r = hitResult(B, A, A.block, A.jy);
+  if (r === 'block') { onBlocked(A); return; }
+  if (r === 'dodge') { say('💨 ¡Esquivado!', 0.7); return; }
+  if (r !== 'hit') return;
+  A.hp--; A.hurt = 1; A.u = clamp(A.u + Math.sign(A.u - B.u || 1) * 0.75, -5, 5);
+  duelFx(A.u, 0.4, 40); bump(0.12);
+}
+// el bot pelea solo: se acerca, pega, a veces se cubre, salta o retrocede
+function duelBot(dt) {
+  const D = DUEL, A = D.A, B = D.B, dist = A.u - B.u, ad = Math.abs(dist), dir = Math.sign(dist) || 1;
+  let mv = 0;
+  D.bCD -= dt; D.bBack -= dt; D.bBlockT -= dt;
+  B.block = false;
+  if (!D.result && B.hp > 0) {
+    // reacciona a tu golpe: a veces se cubre, a veces salta
+    if (A.sw.t >= 0 && A.sw.t < 0.2 && A.sw.type < 2 && ad < 2.2 && D.bReact !== D.swN) {
+      D.bReact = D.swN; const r = Math.random();
+      if (r < 0.4) D.bBlockT = 0.55; else if (r < 0.52) jumpF(B);
+    }
+    if (D.bBlockT > 0 && B.jy <= 0.01 && B.sw.t < 0) { B.block = true; mv = -dir * 0.4; }
+    else {
+      const want = D.bBack > 0 ? 2.8 : 1.25;
+      mv = ad > want + 0.15 ? dir : ad < want - 0.35 ? -dir : 0;
+      if (B.sw.t < 0 && B.jy <= 0.01 && D.bCD <= 0 && ad < 1.5) {
+        if (Math.random() < 0.22) { jumpF(B); B.airPlan = Math.random() < 0.5 ? 2 : 3; }
+        else startSwing(B, Math.random() < 0.5 ? 1 : 0);
+        D.bCD = rnd(1.0, 2.0); if (Math.random() < 0.3) D.bBack = rnd(0.5, 1.2);
+      }
+      if (B.airPlan && B.jy > 0.5 && B.jv < 1.5 && B.sw.t < 0) { startSwing(B, B.airPlan); B.airPlan = 0; }
+    }
+  }
+  if (B.sw.t >= 0) mv *= 0.3;
+  B.u = clamp(B.u + mv * (B.block ? 1.1 : 2.1) * dt, -5, 5);
+  B.walk = lerp(B.walk, Math.abs(mv), 1 - Math.exp(-dt * 8));
+}
+// el rival online: su posición, vida, guardia, salto y golpes llegan con su estado
+function duelNet(dt) {
+  const D = DUEL, B = D.B, R = MP.remotes.get(D.oppId);
+  const inDuel = R && R.st === 'duel' && R.du === MP.myId;
+  if (inDuel) {
+    D.seen = true; D.goneT = 0;
+    const u0 = B.u; B.u = R.cur.dx;
+    B.walk = lerp(B.walk, clamp(Math.abs(B.u - u0) / Math.max(dt, 1e-3) / 2.6, 0, 1), 1 - Math.exp(-dt * 8));
+    B.block = R.tgt.bk > 0.5; B.jy = Math.max(0, R.cur.ay || 0);
+    const n = Math.round(R.tgt.gr);
+    if (D.oSeenN < 0) D.oSeenN = n;
+    else if (n > D.oSeenN) { D.oSeenN = n; B.sw.type = clamp(Math.round(R.tgt.sp) || 0, 0, 3); B.sw.t = 0; B.sw.hit = true; }   // el golpe lo calcula él
+    const hp = Math.round(R.tgt.h);
+    if (hp < B.netHp) B.hurt = 1;
+    B.netHp = hp;
+  } else if (D.seen) D.goneT += dt;
+  B.pendT = Math.max(0, B.pendT - dt);
+  B.hp = B.pendT > 0 ? Math.min(B.netHp, B.pendHp) : B.netHp;
+}
+function duelFinish(win, why) {
+  const D = DUEL; if (D.result) return;
+  D.result = win === true ? 'win' : win === false ? 'lose' : 'tie'; D.endT = 0;
+  if (win === true) {
+    score += 1500; showTrick('👑 LOCAL LEGEND', 1500);
+    dRes.textContent = '👑 ¡ERES EL LOCAL LEGEND!' + (why ? ' (' + why + ')' : '');
+    if (!MP.sim && !D.bot) pushMsg({ tx: '👑 ¡Soy el LOCAL LEGEND! He ganado a ' + D.oppName });
+  } else if (win === false) {
+    const lost = Math.floor(wavePts); score = Math.max(0, score - wavePts); wavePts = 0; mult = 1;
+    dRes.textContent = '😵 ' + D.oppName + ' es el LOCAL LEGEND' + (lost ? '  −' + lost : '');
+    if (D.bot) { D.bot.score += 1500; }
+  } else dRes.textContent = '🤝 Empate';
+  dRes.hidden = false;
+}
+function duelEnd() {
+  const D = DUEL;
+  dropFighter(D.me); dropFighter(D.him); D.me = D.him = null;
+  if (D.bot) { D.bot.st = 'paddle'; D.bot.t = 0; D.bot.dx = rnd(4, 10); }
+  D.on = false; duelHud.hidden = true; jumpBtn.hidden = true; boardRoot.visible = true;
+  MP.pushCount[D.oppId] = 0;
+  startPaddle();
+}
+function duelUpdate(dt) {
+  const D = DUEL;
+  if (!D.on) { boardRoot.visible = true; jumpBtn.hidden = true; startPaddle(); return; }
+  const A = D.A, B = D.B;
+  D.t += dt;
+  const t = performance.now() / 1000;
+  // moverse: círculo de la derecha (o flechas) hacia la izquierda o la derecha de la pantalla
+  let mv = stick.id !== null && Math.abs(stick.x) > 0.25 ? Math.sign(stick.x) * Math.min(1, Math.abs(stick.x) * 1.4) : 0;
+  mv = -mv; if (keys.left) mv = 1; if (keys.right) mv = -1;   // derecha de la pantalla = -x interno
+  if (D.result || A.hp <= 0) mv = 0;
+  // hacia atrás (alejándote del rival) te cubres con el objeto y retrocedes despacio
+  const toward = Math.sign(B.u - A.u) || 1;
+  A.block = mv * toward < -0.3 && A.jy <= 0.01 && A.sw.t < 0 && !D.result && A.hp > 0;
+  if (keys.up && !D.upWas) duelJump();                        // teclado: ↑ / espacio = saltar
+  D.upWas = keys.up;
+  if (A.sw.t >= 0) mv *= 0.3;
+  A.u = clamp(A.u + mv * (A.block ? 1.2 : 2.8) * dt, -5, 5);
+  A.walk = lerp(A.walk, Math.abs(mv), 1 - Math.exp(-dt * 8));
+  stepFighter(A, dt, true);
+  if (D.bot) { duelBot(dt); stepFighter(B, dt, false); }
+  else { duelNet(dt); if (B.sw.t >= 0) { B.sw.t += dt; if (B.sw.t >= SW[B.sw.type].dur) B.sw.t = -1; } B.hurt = Math.max(0, B.hurt - dt * 2.5); B.ko = lerp(B.ko, B.hp <= 0 ? 1 : 0, 1 - Math.exp(-dt * 5)); }
+  // no se atraviesan (salvo saltando por encima)
+  const gap = A.u - B.u;
+  if (Math.abs(gap) < 0.75 && A.jy < 0.6 && B.jy < 0.6) A.u = B.u + Math.sign(gap || D.side) * 0.75;
+  drawFighter(D.me, A, B.u, t);
+  drawFighter(D.him, B, A.u, t);
+  duelHudUpdate();
+  if (!D.result) {
+    if (A.hp <= 0) duelFinish(false);
+    else if (D.bot ? B.hp <= 0 : B.netHp <= 0) duelFinish(true);
+    else if (D.t > DUEL_TIME) duelFinish(A.hp > B.hp ? true : A.hp < B.hp ? false : null);
+    else if (!D.bot && !D.seen && D.t > 6) { say(D.oppName + ' no ha entrado en la disputa', 2.2); duelEnd(); }
+    else if (!D.bot && D.goneT > 3) duelFinish(true, D.oppName + ' se ha ido');
+  } else { D.endT += dt; if (D.endT > 3.4) duelEnd(); }
+}
+function duelCam(dp, dl, far) {
+  const D = DUEL, mid = D.ax + (D.A.u + D.B.u) / 2, sep = Math.abs(D.A.u - D.B.u);
+  dp.set(mid, 1.05, D.az + (2.1 + sep * 0.42) * far); dl.set(mid, 0.75, D.az);
+}
+
+
+// ===================== RÉCORDS: trucos y puntuaciones =====================
+// Cada móvil tiene su número propio, el del login anónimo (sin cuentas ni contraseñas). Se guarda en el móvil
+// y en Firebase (v2/records/<temporada>/<móvil>) para el ranking de todos: mejor sesión, mejor ola, mejor tubo,
+// LOCAL LEGEND y cada truco.
+const ST_KEY = 'surf-sagunto-stats';
+let ST ={ best: 0, bestWave: 0, bestTube: 0, legends: 0, sessions: 0, total: 0, tricks: {}, tbest: {} };
+// temporada: al cambiarla, todos los récords (los del móvil y el ranking) empiezan de cero
+const ST_SEASON = 2;
+try { const o = JSON.parse(localStorage.getItem(ST_KEY) || 'null'); if (o && typeof o === 'object' && o.season === ST_SEASON) ST = Object.assign(ST, o); } catch (e) {}
+try { if (localStorage.getItem('surf-sagunto-season') !== String(ST_SEASON)) { localStorage.setItem('surf-sagunto-season', String(ST_SEASON)); localStorage.setItem('surf-sagunto-best3d', '0'); best = 0; } } catch (e) {}
+ST.season = ST_SEASON;
+ST.best = Math.max(ST.best || 0, best || 0);
+let stDirty = true, stSaveT = 4, stUid = null;
+const recRef = (db, uid) => db.ref('v2/records/' + ST_SEASON + (uid ? '/' + uid : ''));
+// al conectar, se recupera lo que hubiera en la nube (por si se borraron los datos del navegador):
+// las reglas no dejan bajar un récord, así que el móvil tiene que partir del valor guardado
+firebaseListo().then(({ db, uid }) => recRef(db, uid).once('value').then(s => {
+  stUid = uid;
+  const v = s.val();
+  if (v && typeof v === 'object') {
+    for (const k of ['best', 'bestWave', 'bestTube', 'legends', 'sessions', 'total']) ST[k] = Math.max(Number(ST[k]) || 0, Number(v[k]) || 0);
+    if (v.tricks && typeof v.tricks === 'object') for (const k in v.tricks) ST.tricks[k] = Math.max(ST.tricks[k] || 0, Number(v.tricks[k]) || 0);
+    if (ST.best > best) best = ST.best;
+  }
+  stDirty = true;
+})).catch(() => {});
+// «Tubo 1.8 s» → Tubo, «Re-entry 165°» → Re-entry, «Empujón a Gutty» → Empujón, «Indy largo» → Indy
+function trickKey(name) {
+  return String(name).replace(/^👑\s*/, '').replace(/\s+\d+(\.\d+)?\s*(s|°)$/, '').replace(/\s+(a|de)\s+.+$/, '')
+    .replace(/\s+largo$/, '').replace(/[.#$\[\]\/]/g, '').trim().slice(0, 30);
+}
+const _showTrick = showTrick;
+showTrick = function (name, pts) {
+  _showTrick(name, pts);
+  if (state === 'title' || state === 'over') return;
+  const parts = String(name).split(' + ');
+  for (const p of parts) { const k = trickKey(p); if (k) { ST.tricks[k] = (ST.tricks[k] || 0) + 1; ST.total++; } }
+  if (parts.length === 1 && pts) { const k = trickKey(name); if (k) ST.tbest[k] = Math.max(ST.tbest[k] || 0, Math.round(pts)); }
+  const m = /^Tubo (\d+(\.\d+)?) s/.exec(name); if (m) ST.bestTube = Math.max(ST.bestTube, +m[1]);
+  if (/LOCAL LEGEND/.test(name)) ST.legends++;
+  stDirty = true;
+};
+const _endSession = endSession;
+endSession = function () {
+  _endSession();
+  ST.sessions++; ST.best = Math.max(ST.best, Math.floor(score)); stDirty = true; statsSave();
+};
+function statsTick(dt) {
+  if (state !== 'title' && state !== 'over') {
+    if (bestWave > ST.bestWave) { ST.bestWave = Math.floor(bestWave); stDirty = true; }
+    if (score > ST.best) { ST.best = Math.floor(score); stDirty = true; }
+  }
+  stSaveT -= dt; if (stSaveT <= 0) { stSaveT = 20; statsSave(); }
+}
+function statsSave() {
+  if (!stDirty) return; stDirty = false;
+  try { localStorage.setItem(ST_KEY, JSON.stringify(ST)); } catch (e) {}
+  if (!stUid) { stDirty = true; return; }   // todavía sin conectar: se guarda en cuanto haya conexión
+  firebaseListo().then(({ db }) => recRef(db, stUid).set({ nm: (MP.myName || CH.name || 'Surfista').slice(0, 20), ch: CH.id, best: Math.floor(ST.best), bestWave: Math.floor(ST.bestWave),
+    bestTube: Math.round(ST.bestTube * 10) / 10, legends: ST.legends, sessions: ST.sessions, total: ST.total, tricks: ST.tricks,
+    at: firebase.database.ServerValue.TIMESTAMP })).catch(() => { stDirty = true; });   // un fallo aquí nunca para el juego
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) statsSave(); });
+
+// --- pantalla 🏆 Récords ---
+const recP = $('records'), recList = $('recList');
+let recTab = 'best';
+const _showMenu = showMenu;
+showMenu = function (view) { _showMenu(view); recP.hidden = view !== 'records'; if (view === 'records') renderRecords(); };
+$('toRecords').addEventListener('click', () => showMenu('records'));
+$('recordsOk').addEventListener('click', () => showMenu('main'));
+recP.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => {
+  recTab = b.dataset.t; recP.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('on', x === b)); renderRecords();
+}));
+function recRow(cells, cls) {
+  const d = document.createElement('div'); d.className = 'rrow' + (cls ? ' ' + cls : '');
+  cells.forEach(c => { const s = document.createElement('span'); s.textContent = c; d.appendChild(s); });
+  recList.appendChild(d);
+}
+function renderRecords() {
+  stDirty = true; statsSave();
+  recList.textContent = '';
+  if (recTab === 'mine') {
+    recList.className = 'rlist mine';
+    recRow(['Mejor sesión', Math.floor(ST.best)], 'sum'); recRow(['Mejor ola', Math.floor(ST.bestWave)], 'sum');
+    recRow(['Mejor tubo', ST.bestTube ? ST.bestTube.toFixed(1) + ' s' : '—'], 'sum'); recRow(['👑 LOCAL LEGEND', ST.legends + ' veces'], 'sum');
+    recRow(['Partidas', ST.sessions], 'sum'); recRow(['Trucos hechos', ST.total], 'sum');
+    const ks = Object.keys(ST.tricks).sort((a, b) => ST.tricks[b] - ST.tricks[a]);
+    recRow(['Truco', 'Veces', 'Récord'], 'head');
+    if (!ks.length) recRow(['Todavía no has hecho trucos', '', '']);
+    ks.forEach(k => recRow([k, ST.tricks[k], ST.tbest[k] ? '+' + ST.tbest[k] : '—']));
+    return;
+  }
+  recList.className = 'rlist rank';
+  recRow(['', 'Cargando…', '', '']);
+  const field = recTab;
+  const fallo = () => { if (recTab !== field) return; recList.textContent = ''; recRow(['', 'No se ha podido cargar el ranking', '', '']); };
+  // solo se descargan los 20 mejores (no todo el ranking)
+  firebaseListo().then(({ db }) => recRef(db).orderByChild(field).limitToLast(20).once('value')).then(snap => {
+    if (recTab !== field) return;
+    let list = [];
+    snap.forEach(c => { const v = c.val() || {}; list.push({ id: c.key, nm: String(v.nm || 'Surfista').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 20), ch: v.ch, val: Math.floor(Number(v[field]) || 0) }); });
+    list = list.filter(r => r.val > 0).sort((a, b) => b.val - a.val).slice(0, 20);
+    recList.textContent = '';
+    recRow(['#', 'Surfista', 'Personaje', field === 'best' ? 'Sesión' : 'Ola'], 'head');
+    list.forEach((r, i) => { const c = CHARS.find(x => x.id === r.ch); recRow([i + 1, r.nm, c ? c.name : '', r.val], r.id === stUid ? 'me' : ''); });
+    if (!list.length) recRow(['', 'Todavía no hay récords. ¡Sé el primero!', '', '']);
+  }).catch(fallo);
+}
+
+window.addEventListener('resize', resize);
+if (window.ResizeObserver) new ResizeObserver(resize).observe(wrap);
+resize();
+setupFX();
+loadHuman();
+startTitleRide();
+placeBoardOnFace();
+camPos.set(px + 7, 4.5, 17);
+requestAnimationFrame(frame);
+$('start').focus({ preventScroll: true });
+window.__surf = { spawnDolphins, upsertPeer, onMsg, MP, startDuel, DUEL, duelSwing, duelCount, tryPush, camPos, camLook, camera, north, get state() { return state; }, get score() { return score; }, get dx() { return px - curlX; }, get s() { return s; }, get h() { return h; }, get air() { return air; }, ptr, get theta() { return theta; }, get v() { return v; }, get tgt() { return steerTarget(); }, get bp() { return toScreen(boardRoot.position.x, boardRoot.position.y, boardRoot.position.z); }, };
+})();
