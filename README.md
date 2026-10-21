@@ -7,7 +7,7 @@ Juego de surf en 3D en la playa del Pantalán del Puerto de Sagunto, con modo on
 ## Qué hay
 
 - Surfistas con su cara, su tabla y su postura (regular o goofy). Además: Gutty, Jose NL y Xitano en longboard, Gallu en bodyboard, JuanP en moto de agua, Raúl en kayak, Krre en zodiac de rescate y Alex con su tabla Lemon.
-- Física de la ola: el tubo, el labio, re-entry, cutback, rebote, doble 180 y trucos en el aire (360, rodeo, 720, indy…).
+- Física de la ola: el tubo, el labio, re-entry, cutback, rebote, doble 180 y trucos en el aire (360, switch, backflip, indy…).
 - Online para todos en la misma ola, sin límite de jugadores. Cada personaje solo puede llevarlo una persona a la vez, y la ola se alarga cuantos más surfistas hay.
 - Empujar con TRUCO tira al otro, que pierde los puntos de la ola. Con 3 empujones entre los mismos dos se activa la **Disputa por el Pico**: pelea en el agua junto al Pantalán, 5 golpes y el ganador es el LOCAL LEGEND.
 - Chat, frases rápidas y notas de voz.

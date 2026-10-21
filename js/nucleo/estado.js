@@ -49,6 +49,7 @@ export const G = {
   landSoft: 0,      // tiempo de recepción suave tras caer de un salto
   landV: 0,         // velocidad al caer
   landT: 1,         // tiempo desde que cayó (la tabla se asienta en 0,2 s)
+  switchT: 0,       // tiempo que le queda yendo en switch (con las quillas delante) tras caer de un 180
   lastVh: 0,
   fs: null,         // maniobra TRUCO en marcha (180 · 180), o null
   btnTurn: null,    // rumbo pedido con el botón TRUCO, o null
@@ -69,11 +70,11 @@ export const G = {
   airHintShown: false,
   launchY: 0, launchZ: 0, landZ: 0,
   spin: 0, spinT: 0, // giro hecho y giro pedido (360, 720…)
-  flip: 0, flipT: 0, // mortal hecho y pedido (rodeo, backflip)
+  flip: 0, flipT: 0, // mortal hecho y pedido (backflip)
   grab: 0, grabT: 0, // agarre de la tabla y tiempo agarrado
-  trickTaps: 0,     // toques de TRUCO seguidos en el aire (1 = 360, 2 = rodeo…)
+  trickTaps: 0,     // toques de TRUCO seguidos en el aire (1 = 360, 2 = switch…)
   trickWin: 0,      // tiempo para seguir contando toques
-  supT: 0,          // tiempo de Superman (moto, kayak y zodiac)
+  supT: 0,          // tiempo agarrado solo (Superman en moto, kayak y zodiac; backflip agarrado con tabla)
   lastTrick: '',    // último truco (variar de truco premia)
 
   // --- remar, ponerse de pie, caerse ---

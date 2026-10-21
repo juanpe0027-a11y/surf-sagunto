@@ -34,7 +34,7 @@ export function newGame() {
 }
 export function startPaddle() {
   if (G.sessionT <= 0) { endSession(); return; }
-  G.state = 'paddle'; G.pt = 0; G.windowOpen = false; G.air = false; G.tubeT = 0; G.mult = 1; G.wavePts = 0;
+  G.state = 'paddle'; G.pt = 0; G.windowOpen = false; G.air = false; G.tubeT = 0; G.mult = 1; G.wavePts = 0; G.switchT = 0;
   G.curlX = G.px - 7; G.grow = 0.35; G.pm = 0; G.h = 0.04; G.vh = 0; G.s = 1.25; G.rideT = 0;
   boardRoot.visible = true;
   ringbox.hidden = false; ringbox.classList.remove('go'); ringTxt.textContent = 'Prepárate para tocar';

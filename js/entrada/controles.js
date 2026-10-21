@@ -74,7 +74,7 @@ window.addEventListener('keydown', e => {
     e.preventDefault(); keys[k] = true;
     if (!e.repeat) {
       tap();
-      // en el aire las flechas encadenan trucos: ← → giro de 360, ↓ rodeo; ↑ o espacio mantenido = grab
+      // en el aire las flechas encadenan trucos: ← → giro de 360, ↓ backflip; ↑ o espacio mantenido = grab
       if (k === 'trick') trickTap();
       if (G.air && G.state === 'ride') {
         if (k === 'left' && G.spinT > -TAU * 2 + 0.1) G.spinT -= TAU;

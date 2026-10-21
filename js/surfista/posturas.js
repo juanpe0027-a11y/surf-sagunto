@@ -23,8 +23,15 @@ export function stance(o, c, grab, t, lean, twist) {
   o.eF.set(0.44, o.ch.y - 0.06 - 0.06 * c, o.ch.z + 0.14 + lean * 0.1);
   o.aF.set(0.74, o.ch.y - 0.12 + 0.04 * Math.sin(t * 2 + 1) - 0.12 * c, o.ch.z + 0.22 + lean * 0.3);
   if (grab > 0) {
+    // agarre estilizado: muy flexionado, mano delantera al canto y el brazo de atrás estirado
+    const dn = 0.14 * grab;
+    o.hB.y -= dn; o.hF.y -= dn; o.ch.y -= dn * 1.1; o.hd.y -= dn * 1.1; o.sB.y -= dn * 1.1; o.sF.y -= dn * 1.1;
+    o.kB.y += 0.06 * grab; o.kF.y += 0.06 * grab; o.kB.z += 0.1 * grab; o.kF.z += 0.1 * grab;
+    o.ch.z += 0.08 * grab; o.hd.z += 0.1 * grab;
     o.eF.lerp(V3(0.2, o.ch.y - 0.28, o.ch.z + 0.22), grab);
     o.aF.lerp(V3(0.12, 0.12, 0.27), grab);
+    o.eB.lerp(V3(-0.4, o.ch.y + 0.08, o.ch.z - 0.22), grab);
+    o.aB.lerp(V3(-0.72, o.ch.y + 0.32, o.ch.z - 0.3), grab);
   }
   if (twist) {
     // los hombros y los brazos se adelantan al giro (la tabla sigue a la mirada)

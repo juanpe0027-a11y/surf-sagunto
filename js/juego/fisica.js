@@ -1,7 +1,7 @@
 // Física de la tabla en la ola: rumbo, velocidad, giros, rebotes y cutbacks (rideStep), y el spray que levanta.
 import { angDiff, clamp, lerp, rnd, sm, TAU, V3 } from '../nucleo/util.js';
 import { G, keys, ptr, stick } from '../nucleo/estado.js';
-import { basisQuat, vF, vN, vT, vZ } from '../mundo/formas.js';
+import { basisQuat, UP, vF, vN, vT, vZ } from '../mundo/formas.js';
 import { face, faceAt, HW } from '../mundo/ola.js';
 import { acc, emit, splash } from '../mundo/particulas.js';
 import { boardRoot } from '../surfista/raiz.js';
@@ -13,6 +13,7 @@ import { doTrick, land, LAND_H, launch, lipSpray, snap } from './trucos.js';
 export const LAND_A = 0.15, LAND_SOFT = 1.4;   // al caer: tabla casi horizontal y un rato de recepción suave
 export const qLandPose = new THREE.Quaternion(), qLand = new THREE.Quaternion(), qAirBase = new THREE.Quaternion();
 export const aPos = V3(0, 0, 0), qLaunch = new THREE.Quaternion(), qRide = new THREE.Quaternion(), qTmp = new THREE.Quaternion(), qTmp2 = new THREE.Quaternion();
+const qSw = new THREE.Quaternion();
 // en la ola, TRUCO gira la tabla 180°: hacia el tubo (en contra de la ola) y, otra vez, hacia fuera
 
 // la tabla apunta exactamente hacia donde va y se inclina sobre el canto según la fuerza del giro
@@ -30,6 +31,8 @@ export function placeBoardOnFace() {
   if (G.state !== 'popup') {
     if (G.landT < 0.2) THREE.Quaternion.slerp(qLand, qRide, boardRoot.quaternion, sm(0, 0.2, G.landT));   // recepción suave
     else boardRoot.quaternion.copy(qRide);
+    // switch: va con las quillas delante y al final gira 180 para volver a ir de punta
+    if (G.switchT > 0) { qSw.setFromAxisAngle(UP, Math.PI * sm(0, 0.35, G.switchT)); boardRoot.quaternion.multiply(qSw); }
   }
   boardRoot.position.set(G.px, face.y + 0.02, face.z);
 }
@@ -53,6 +56,10 @@ export function steerTarget() {
 
 export function rideStep(dt, hT) {
   G.rideT += dt;
+  if (G.switchT > 0 && !G.air) {
+    G.switchT -= dt;
+    if (G.switchT <= 0) { G.switchT = 0; if (G.state === 'ride') { const p = addPts(250); chip('↺ Revert +' + p); bump(0.08); } }
+  }
   G.curlSpeed = 8.5 + Math.min(3.5, G.rideT * 0.035);
   G.curlX += G.curlSpeed * dt;
   G.snapCD = Math.max(0, G.snapCD - dt);
@@ -176,7 +183,7 @@ export function rideStep(dt, hT) {
     G.aVy -= 9.8 * dt; aPos.y += G.aVy * dt; G.airTop = Math.max(G.airTop, aPos.y - G.launchY);
     let grabbing = false;
     if (G.state !== 'title') {
-      // gestos: deslizar a un lado = 360 en ese sentido (hasta 720), deslizar abajo = rodeo, dedo quieto = grab
+      // gestos: deslizar a un lado = 360 en ese sentido (hasta 720), deslizar abajo = backflip, dedo quieto = grab
       // botón TRUCO: las pulsaciones seguidas eligen el truco; mantenerlo pulsado agarra la tabla
       if (G.trickTaps && (G.trickWin -= dt) <= 0) { doTrick(G.trickTaps); G.trickTaps = 0; }
       if (ptr.down) G.airHold += dt; else G.airHold = 0;

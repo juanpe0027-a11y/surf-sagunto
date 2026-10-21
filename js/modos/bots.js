@@ -79,7 +79,7 @@ export function updateBots(dt) {
       if (b.airT >= 1.1) {
         b.st = 'ride'; b.h = 0.8;
         const pts = 300 + (b.spT ? 450 * b.spT / TAU : 0) + (b.flT ? 800 : 0); b.wave += pts;
-        botSay(b, b.flT ? 'Rodeo!' : b.spT > TAU ? '720!' : b.spT ? '360!' : '🤙');
+        botSay(b, b.flT ? 'Backflip!' : b.spT > TAU ? '720!' : b.spT ? '360!' : '🤙');
       }
     }
     b.sendT -= dt;

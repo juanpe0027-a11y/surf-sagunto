@@ -1,4 +1,4 @@
-// Saltos y trucos: despegar de la cresta, girar en el aire (360, rodeo, grab), caer y puntuar; snaps y re-entries.
+// Saltos y trucos: despegar de la cresta, girar en el aire (360, switch, backflip, grab), caer y puntuar; snaps y re-entries.
 import { clamp, rnd, sm, TAU, V3 } from '../nucleo/util.js';
 import { PQ } from '../nucleo/config.js';
 import { G, ptr } from '../nucleo/estado.js';
@@ -38,9 +38,10 @@ export function launch() {
   splash(aPos, 25, 0.8);
   ptr.ax = ptr.x; ptr.ay = ptr.y; ptr.moved = false;
   if (G.state === 'title') G.spinT = TAU;
-  else if (!G.airHintShown) { G.airHintShown = true; say(seatedC(G.CH) ? 'TRUCO: 1 toque Superman · 2 Backflip · 3 360 · 4 Backflip + Superman' : 'TRUCO: 1 toque 360 · 2 rodeo · 3 720 · mantén = agarrar', 2.6); }
+  else if (!G.airHintShown) { G.airHintShown = true; say(seatedC(G.CH) ? 'TRUCO: 1 toque Superman · 2 Backflip · 3 360 · 4 Backflip + Superman' : 'TRUCO: 1 toque 360 · 2 switch · 3 backflip agarrado · mantén = agarrar', 2.6); }
 }
-// 1 pulsación = 360 · 2 = rodeo · 3 = 720 · 4 = rodeo 360 (se pueden encadenar mientras dure el salto)
+// 1 pulsación = 360 · 2 = switch · 3 = backflip agarrado · 4 = backflip 360 (se pueden encadenar mientras dure el salto)
+export const SWITCH_T = 1.3;   // segundos que va en switch antes de volver solo de punta
 
 export function doTrick(n) {
   const dir = 1;
@@ -52,10 +53,11 @@ export function doTrick(n) {
     G.spinT = clamp(G.spinT, -2 * TAU, 2 * TAU); G.flipT = Math.min(G.flipT, 2 * TAU);
     return;
   }
+  // tablas: 1 = 360 · 2 = 180 y cae en switch (al segundo vuelve de punta) · 3 = backflip agarrando la tabla · 4 = backflip 360
   if (n === 1) G.spinT += TAU * dir;
-  else if (n === 2) G.flipT += TAU;
-  else if (n === 3) G.spinT += 2 * TAU * dir;
-  else { G.flipT += TAU; G.spinT += TAU * dir; }
+  else if (n === 2) G.spinT += Math.PI * dir;
+  else if (n === 3) { G.flipT += TAU; G.supT = 0.9; }
+  else { G.flipT += TAU; G.spinT += TAU * dir; G.supT = 0.9; }
   G.spinT = clamp(G.spinT, -2 * TAU, 2 * TAU); G.flipT = Math.min(G.flipT, 2 * TAU);
 }
 export function land() {
@@ -67,15 +69,17 @@ export function land() {
   if (G.state === 'title') return;
   if (sErr > 0.9 || fErr > 0.9) { wipeout(sErr > 0.9 ? 'No te ha dado tiempo a completar el giro' : 'No has cerrado el mortal'); return; }
   G.spin = G.spinT; G.flip = G.flipT;
-  const ns = Math.round(Math.abs(G.spinT) / TAU), nf = Math.round(G.flipT / TAU), grabbed = G.grabT > 0.2;
+  const ns = Math.floor(Math.abs(G.spinT) / TAU + 0.05), nf = Math.round(G.flipT / TAU), grabbed = G.grabT > 0.2;
+  const sw = !seatedC(G.CH) && Math.abs(Math.abs(G.spinT) - ns * TAU - Math.PI) < 0.3;      // ha caído en switch (180)
+  if (sw) { G.switchT = SWITCH_T; qTmp.setFromAxisAngle(UP, -Math.PI); qLand.multiply(qTmp); }
   const name = [];
   const gName = seatedC(G.CH) ? 'Superman' : 'Indy';
   if (grabbed) { name.push(G.grabT > 0.6 ? gName + ' largo' : gName); chip((seatedC(G.CH) ? '🦸 ' : '✋ ') + gName + ' ' + G.grabT.toFixed(1) + ' s'); }
-  if (ns > 0) { const n = (G.spinT < 0 ? 'Alley-oop ' : '') + ns * 360; name.push(n); chip('↻ ' + n); }
-  if (nf > 0) { const fn = seatedC(G.CH) ? 'Backflip' : 'Rodeo'; const n = nf > 1 ? 'Doble ' + fn : fn; name.push(n); chip('⟳ ' + n); }
+  if (ns > 0 || sw) { const n = (G.spinT < 0 ? 'Alley-oop ' : '') + (ns * 360 + (sw ? 180 : 0)) + (sw ? ' switch' : ''); name.push(n); chip('↻ ' + n); }
+  if (nf > 0) { const n = nf > 1 ? 'Doble backflip' : 'Backflip'; name.push(n); chip('⟳ ' + n); }
   if (!name.length) name.push('Aéreo');
   chip('↑ ' + G.airTop.toFixed(1) + ' m');
-  let pts = 120 + G.airTop * 80 + ns * 450 + nf * 800 + (grabbed ? 150 + G.grabT * 300 : 0);
+  let pts = 120 + G.airTop * 80 + ns * 450 + (sw ? 350 : 0) + nf * 800 + (grabbed ? 150 + G.grabT * 300 : 0);
   pts *= 1 + 0.3 * Math.max(0, name.length - 1);            // combinar trucos multiplica
   const key = name.join(' + ');
   if (key !== G.lastTrick) pts *= 1.2;                        // variar de truco premia
