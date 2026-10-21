@@ -2361,6 +2361,7 @@ function trickTap() {
     turnLock = 0; return;
   }
   if (state !== 'ride' || !air) return;
+  if (!trickTaps && typeof tryPush === 'function' && tryPush()) return;   // en el aire, pegado a otro surfista: también lo tira
   trickTaps++; trickWin = 0.2;
 }
 function land() {
@@ -3130,12 +3131,12 @@ function botSay(b, text) {
   const e = R.label.querySelector('.mpbub'); e.textContent = text; e.hidden = false; R.msgT = 2.5;
 }
 function botPushed(id, by) {
-  const b = BOTS.find(o => o.id === id); if (!b || (b.st !== 'ride' && b.st !== 'air')) return;
+  const b = BOTS.find(o => o.id === id); if (!b || (b.st !== 'ride' && b.st !== 'air') || b.safe) return;
   b.wave = 0; b.st = 'wipe'; b.t = 0;
   botSay(b, '😵');
 }
 function gotPushed(name) {
-  if (state !== 'ride' || air) return;
+  if (state !== 'ride' || MP.safe) return;               // protegido hasta salir del tubo
   const lost = Math.floor(wavePts);
   score = Math.max(0, score - wavePts); wavePts = 0; mult = 1;
   wipeout('💥 ' + name + ' te ha tirado  −' + lost + ' puntos');
@@ -3148,9 +3149,10 @@ function updateBots(dt) {
       if (b.t > 2.5) { b.st = 'paddle'; b.t = 0; b.dx = rnd(4, 10); b.h = 0.05; }
     } else if (b.st === 'paddle') {
       b.pr += dt * 7; b.h = 0.05;
-      if (b.t > 3) { b.st = 'ride'; b.t = 0; b.rideT = 0; b.wave = 0; b.th = -0.4; b.pushCD = 4; }
+      if (b.t > 3) { b.st = 'ride'; b.t = 0; b.rideT = 0; b.wave = 0; b.th = -0.4; b.pushCD = 4; b.safe = true; }
     } else if (b.st === 'ride') {
       b.rideT += dt;
+      if (b.safe && b.dx > SAFE_DX) b.safe = false;
       // bombea por la cara y cambia de sitio: a veces se adelanta, a veces vuelve al tubo
       b.ph += dt * b.w;
       const hT = 0.5 + 0.34 * Math.sin(b.ph);
@@ -3172,7 +3174,7 @@ function updateBots(dt) {
       // te empuja si está pegado a ti
       if (state === 'ride' && !air && b.pushCD === 0 && rideT > 4) {
         const rx = curlX + b.dx;
-        if (Math.abs(rx - px) < 1.6 && Math.abs(b.h - h) < 0.2 && Math.random() < dt * 0.5) {
+        if (!MP.safe && !b.safe && Math.abs(rx - px) < 1.6 && Math.abs(b.h - h) < 0.2 && Math.random() < dt * 0.5) {
           b.pushCD = 7; botSay(b, '💪'); splash(boardRoot.position, 60, 1.2); gotPushed(b.nm); duelCount(MP.remotes.get(b.id));
         }
       }
@@ -3192,7 +3194,7 @@ function updateBots(dt) {
     b.sendT -= dt;
     if (b.sendT <= 0) {
       b.sendT = 1 / 15;
-      upsertPeer(b.id, { ch: b.ch.id, nm: b.nm, st: b.st, dx: b.dx, h: b.h, th: b.th, bk: b.bk, cr: b.cr, gr: 0, ay: b.ay, sp: b.sp, fl: b.fl, pr: b.pr % TAU, sc: Math.floor(b.score + b.wave) });
+      upsertPeer(b.id, { ch: b.ch.id, nm: b.nm, st: b.st, pt: (b.st === 'ride' || b.st === 'air') && b.safe ? 1 : 0, dx: b.dx, h: b.h, th: b.th, bk: b.bk, cr: b.cr, gr: 0, ay: b.ay, sp: b.sp, fl: b.fl, pr: b.pr % TAU, sc: Math.floor(b.score + b.wave) });
       const R = MP.remotes.get(b.id); if (R) R.bot = true;
     }
   }
@@ -3225,11 +3227,11 @@ function mpSend(dt) {
     return;
   }
   MP.meRef.set({ ch: CH.id, nm: MP.myName || CH.name, st, dx: r2(px - curlX), h: r2(h), th: r2(theta), bk: r2(bank), cr: r2(crouch),
-    gr: r2(grab), ay: r2(air ? aPos.y : 0), sp: r2(spin), fl: r2(flip), pr: r2(paddlePh % TAU), sc: Math.floor(score), t: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
+    gr: r2(grab), ay: r2(air ? aPos.y : 0), sp: r2(spin), fl: r2(flip), pr: r2(paddlePh % TAU), pt: MP.safe ? 1 : 0, sc: Math.floor(score), t: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
 }
 
 // --- los demás surfistas ---
-const KEYS_NUM = ['dx', 'h', 'th', 'bk', 'cr', 'gr', 'ay', 'sp', 'fl'];
+const KEYS_NUM = ['dx', 'h', 'th', 'bk', 'cr', 'gr', 'ay', 'sp', 'fl', 'pt'];
 function upsertPeer(id, pr) {
   if (!pr || id === MP.myId) return;
   let R = MP.remotes.get(id);
@@ -3249,7 +3251,7 @@ function upsertPeer(id, pr) {
     const O = MP.remotes.get(R.du); chip('⚔️ Disputa por el Pico: ' + (pr.nm || ch.name) + ' contra ' + (O ? O.nm || O.ch.name : 'otro surfista'));
   }
   R.nm = typeof pr.nm === 'string' ? pr.nm.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 20) : ch.name;
-  R.label.querySelector('b').textContent = R.nm || ch.name;
+  R.label.querySelector('b').textContent = (Number(pr.pt) > 0.5 ? '🛡️ ' : '') + (R.nm || ch.name);
   for (const k of KEYS_NUM) { const v = Number(pr[k]); R.tgt[k] = isFinite(v) ? v : 0; if (!(k in R.cur)) R.cur[k] = R.tgt[k]; }
   R.tgt.pr = Number(pr.pr) || 0; R.sc = Math.max(0, Math.floor(Number(pr.sc) || 0));
   updateCount();
@@ -3278,7 +3280,7 @@ function remoteFaceQuat(th, bk, out) {
   return out;
 }
 function mpUpdate(dt) {
-  checkIdle(); statsTick(dt);
+  checkIdle(); statsTick(dt); updateSafe();
   mpSend(dt);
   if (MP.sim) updateBots(dt);
   updateBoard(dt); waveLength(dt); updatePushHint();
@@ -3345,17 +3347,27 @@ function mpUpdate(dt) {
 
 // --- empujón: pegado a otro surfista, TRUCO lo tira (vuelve a remar y pierde los puntos de la ola) ---
 // quién está a tiro: cerca en la ola o con quien acabas de chocar (1,5 s)
+// solo pegado a él (también en el aire) y nunca a quien acaba de coger la ola y aún está en el tubo
+const PUSH_DIST = 1.7, SAFE_DX = 10;
 function pushTarget() {
-  if (state !== 'ride' || air) return null;
-  let best = null, bd = 99;
-  const now = performance.now();
+  if (state !== 'ride') return null;
+  let best = null, bd = PUSH_DIST;
   for (const R of MP.remotes.values()) {
-    if ((R.st !== 'ride' && R.st !== 'air') || !R.rig || !alive(R)) continue;
-    const ddx = Math.abs(curlX + R.cur.dx - px), ddh = Math.abs(R.cur.h - h);
-    const recent = R.lastHit && now - R.lastHit < 1500;
-    if ((ddx < 4 && ddh < 0.45) || recent) { const d = ddx + ddh * 6 - (recent ? 5 : 0); if (d < bd) { bd = d; best = R; } }
+    if ((R.st !== 'ride' && R.st !== 'air') || !R.rig || !alive(R) || R.tgt.pt > 0.5) continue;
+    const d = R.rig.root.position.distanceTo(boardRoot.position);
+    if (d < bd) { bd = d; best = R; }
   }
   return best;
+}
+// protección: desde que coges la ola hasta que sales del tubo nadie te puede tirar
+MP.safe = true;
+function updateSafe() {
+  if (state === 'ride' || state === 'popup') {
+    if (MP.safe && px - curlX > SAFE_DX) { MP.safe = false; MP.sendT = 0; chip('Fuera del tubo: ya te pueden empujar'); }
+  } else if (state !== 'duel') {
+    if (!MP.safe) MP.sendT = 0;
+    MP.safe = true;
+  }
 }
 function tryPush() {
   const best = pushTarget();
@@ -4032,7 +4044,7 @@ window.__surf = { spawnDolphins, upsertPeer, onMsg, MP, startDuel, DUEL, duelSwi
 </script>
 
 <script>
-const BUILD_ID = '1792524504';
+const BUILD_ID = '1792579144';
 (function () {
   try {
     fetch(location.pathname + '?b=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => {
