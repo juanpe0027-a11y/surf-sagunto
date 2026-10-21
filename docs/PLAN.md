@@ -36,6 +36,13 @@ Juanpe sigue mejorando el juego en el `index.html` antiguo de `main`. Antes de p
 - [x] **Empujón más justo**: solo a menos de 1,7 m (distancia real en 3D) y también en el aire (el botón TRUCO en el aire empuja si estás pegado a alguien); antes valía «cerca en la ola» o «acabas de chocar»
 - [x] **Animación del empujón**: el que empuja estira los brazos hacia el otro, y el empujado sale volando separado de su tabla agitando brazos y piernas (tú, los demás jugadores y los bots)
 
+**21-10-2026, por la tarde** (commit `563daa5`):
+
+- [ ] Unir otra vez `origin/main` a `mejoras`
+- [ ] **Trucos cambiados de orden**: 1 toque **switch**, 2 toques **360** (3 y 4 igual). Textos de ayuda y aviso del primer salto
+- [ ] **Salto según la inercia** (`juego/fisica.js` + `juego/trucos.js`): cuanto más abajo de la ola empiezas a subir, más alto saltas (`G.hMinRun`); también se puede saltar con algo menos de velocidad (4,5 en vez de 6,5)
+- [ ] **Al caer baja la ola**: la recepción apunta más hacia abajo (`LAND_A` 0,15 → 0,5, recepción suave 1,4 → 1,0 s) y la tabla ya no se endereza sola tras caer
+
 Cómo quedó: la animación va en `surfista/empujon.js` (no depende del online) y la protección y el resto en `online/empujones.js`. De paso: el «Rodeo» se llama «Backflip» también en los bots, comentarios y README; y los brazos de otro jugador que empuja ya no se quedan «congelados» si no estaba en pantalla en ese momento. Probado con los 15 personajes, bots, Disputa, online con 2 y 3 jugadores (el consumo sigue en 42 KB) y 48 reglas.
 
 ---
