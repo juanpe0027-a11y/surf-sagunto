@@ -13,7 +13,7 @@ Todo el trabajo está en la rama **`mejoras`**, subida a GitHub el 21-10-2026 pe
 
 **Para publicar (en este orden):**
 1. ~~Subir la rama `mejoras` a GitHub~~ (hecho) y probarla a mano si se quiere (ver «Cómo probar» en `CLAUDE.md`, o `herramientas/pruebas.html`).
-2. Juanpe: activar el login anónimo y publicar las reglas en Firebase ([FIREBASE.md](FIREBASE.md), pasos 1 y 2). Se puede hacer antes de publicar: el juego viejo sigue funcionando.
+2. Juanpe: activar el login anónimo y publicar las reglas en Firebase. Lo hace con su Claude siguiendo [PREPARAR-FIREBASE.md](PREPARAR-FIREBASE.md); se comprueba con `node herramientas/comprobar-firebase.mjs`. Comprobado el 21-10-2026: **todavía sin hacer** (Authentication ni siquiera está empezado). No afecta al juego de ahora.
 3. Unir `mejoras` a `main` y ejecutar `node herramientas/nueva-version.mjs` (los móviles se recargan solos).
 4. Una semana después: cerrar las rutas antiguas de Firebase ([FIREBASE.md](FIREBASE.md), paso 3).
 

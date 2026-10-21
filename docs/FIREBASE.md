@@ -40,6 +40,16 @@ Cuando ya nadie use la versión vieja:
 1. En `firebase-reglas.json`, borra los bloques `"salas": {…}` y `"stats": {…}` que hay **al final**, fuera de `"v2"`. Publica las reglas otra vez (paso 2).
 2. En la consola: **Realtime Database** → pestaña **Datos** → borra los nodos `salas` y `stats`.
 
+## Comprobar que los pasos 1 y 2 están hechos
+
+```
+node herramientas/comprobar-firebase.mjs
+```
+
+Dice si el login anónimo está activado, si las reglas publicadas aceptan todo lo que manda la versión nueva y si el juego antiguo sigue pudiendo conectarse. Se hace pasar por un jugador un momento y lo borra todo después. (Con `--emulador`, lo comprueba contra el emulador local.)
+
+Para Juanpe hay una guía paso a paso que puede seguir con su Claude: [PREPARAR-FIREBASE.md](PREPARAR-FIREBASE.md).
+
 ## Si algo falla
 
 - **«No se ha podido conectar al modo online»** en el menú: casi siempre es que falta el paso 1. Si la clave de API tiene restricciones (Google Cloud → Credenciales), tiene que permitir *Identity Toolkit API* y *Token Service API*.

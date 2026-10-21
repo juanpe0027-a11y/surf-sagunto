@@ -9,6 +9,25 @@ Qué leer según lo que te pidan:
 
 ⚠️ **El `index.html` antiguo ya no existe.** Hasta el 21-10-2026 todo el juego estaba en un único `index.html` de ~1 MB (código, estilos y fotos en base64). Ahora el código está en `js/`, por módulos. Si Juanpe te pasa código, un archivo o una conversación de antes de esa fecha, **no lo copies ni lo pegues encima**: entiende qué hacía y rehazlo en el módulo que toque.
 
+## Cómo habla Juanpe
+
+Juanpe pide las cosas como las ve en el juego, no en términos de programación: «el bicho» o «el muñeco» es el surfista, «que salte más alto», «que este lleve una moto de agua», «que la ola no sea tan grande». Tu trabajo es traducirlo a cambios en el código. Algunos ejemplos:
+
+| Juanpe dice… | Qué es | Dónde |
+|---|---|---|
+| «que salte más alto» | La fuerza del salto (`G.aVy`) | `launch()` en `js/juego/trucos.js` ([RECETAS](docs/RECETAS.md) 5) |
+| «que X lleve una moto de agua» (o kayak, zodiac, bodyboard, longboard) | Las banderas de su ficha: moto = `jetski: true, board: 'jet', deck: 'jetski'` | Su ficha en `js/datos/personajes.js` ([RECETAS](docs/RECETAS.md) 2 y 3; copia la de JuanP, Raúl, Krre, Gallu o Gutty) |
+| «que la ola no sea tan grande» | La altura de la ola (`HW`, en metros) | `js/mundo/ola.js` |
+| «que vaya más rápido / más lento» | La velocidad del tubo y del surfista, o la estadística `vel` del personaje | `rideStep` en `js/juego/fisica.js`, o su ficha |
+| «que dure más la partida» | `SESSION` (segundos) | `js/nucleo/config.js` |
+| «mete a fulano, te paso su foto» | Personaje nuevo | [RECETAS](docs/RECETAS.md) 1 |
+| «que los bots no me tiren tanto» | Probabilidad y espera del empujón de los bots | `js/modos/bots.js` |
+| «que el truco tal dé más puntos» | Los puntos al caer | `land()` en `js/juego/trucos.js` |
+
+- Si la petición se puede entender de varias formas, hazle **una sola pregunta sencilla**, con opciones en sus palabras («¿Quieres que salte un poco más o mucho más?»). Si no, haz lo más razonable y dile cómo pedir que lo ajustes («si lo quieres aún más alto, dímelo»).
+- Para cosas de números, cambia poco (un 20–30 %), publica y que Juanpe lo pruebe: es más fácil para él decir «más» o «menos» que dar un número.
+- **Nunca le pidas que haga cosas técnicas.** Si algo hay que hacerlo fuera del código (en la consola de Firebase, en GitHub…), guíale clic a clic, un paso cada vez, esperando a que te diga «hecho», y pídele una captura si se pierde. Ejemplo: [docs/PREPARAR-FIREBASE.md](docs/PREPARAR-FIREBASE.md).
+
 ## Cómo trabajar cada petición de Juanpe
 
 1. **Ponte al día:** `git checkout main && git pull`. Trabaja siempre sobre la última versión.
@@ -16,7 +35,7 @@ Qué leer según lo que te pidan:
 3. **Haz el cambio** en su módulo, siguiendo [docs/RECETAS.md](docs/RECETAS.md). Solo lo que te han pedido: no reformatees ni reorganices otros archivos.
 4. **Prueba** (ver «Cómo probar»): como mínimo `capas.mjs`, `datos.js` y `partida.js`; y `bots.js` u online si lo has tocado. Si no puedes ejecutarlas, díselo a Juanpe y pídele que abra `herramientas/pruebas.html`.
 5. **Guarda** con un commit en español que diga qué y por qué (`git commit -m "Nuevo personaje: Pepe (longboard)"`).
-6. **Si has cambiado `firebase-reglas.json`:** antes de publicar, explica a Juanpe cómo publicar las reglas en la consola de Firebase ([docs/FIREBASE.md](docs/FIREBASE.md), paso 2) y espera a que te diga que está hecho.
+6. **Si has cambiado `firebase-reglas.json`:** antes de publicar, guía a Juanpe para que publique las reglas en la consola de Firebase (como el paso 2 de [docs/PREPARAR-FIREBASE.md](docs/PREPARAR-FIREBASE.md), pero con el enlace a `main`) y comprueba con `node herramientas/comprobar-firebase.mjs` que han quedado bien.
 7. **Publica:** `git checkout main && git merge --no-ff juanpe/<tema>`, luego `node herramientas/nueva-version.mjs`, `git commit -am "Versión <número>"` y `git push origin main`. En uno o dos minutos está en la web y los móviles con el juego abierto se recargan solos.
 8. **Cuéntale a Juanpe** qué ha cambiado y cómo verlo, en dos o tres frases. Si algo falla en la web, deshazlo como dice la receta 10 de [docs/RECETAS.md](docs/RECETAS.md).
 
@@ -103,6 +122,8 @@ node herramientas/probar.mjs herramientas/pruebas/online.js --emulador --jugador
 node herramientas/pruebas/sala.mjs                                   # la ola pública llena manda al nuevo a pantalan-2
 node herramientas/probar.mjs herramientas/pruebas/red.js --emulador --jugadores=3 --hash=pruebas      # cuánto gasta el online ("red": bytes)
 ```
+
+Y para saber si el Firebase **real** está preparado (login anónimo activado y reglas publicadas): `node herramientas/comprobar-firebase.mjs`. Se hace pasar por un jugador un momento y lo borra todo después.
 
 ### A mano
 
