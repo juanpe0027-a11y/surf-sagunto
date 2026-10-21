@@ -26,7 +26,9 @@ export function launch() {
   faceAt(G.px, 1);
   aPos.set(G.px, face.y + 0.05, face.z); G.launchY = aPos.y; G.launchZ = face.z; G.airTop = 0;
   // arco estable: siempre hay tiempo para un truco y la ola no te adelanta en el aire
-  G.aVy = clamp(G.v * Math.sin(G.theta) * 0.9 + 1.6 + (G.CH.air - 3) * 0.45, 4.6, 10);
+  // la altura sale de la inercia: desde dónde empezaste a subir (abajo del todo = mucho) y con qué velocidad llegas
+  const climb = clamp(1 - G.hMinRun, 0, 1);
+  G.aVy = clamp(0.8 + G.v * Math.sin(G.theta) * 0.4 + climb * 7.5 + (G.CH.air - 3) * 0.3, 2.0, 11.5);
   G.airDur = 2 * G.aVy / 9.8 + 0.15;
   // el salto va siempre hacia delante, con la ola
   G.airBack = false; G.airSteer = 0;
@@ -38,9 +40,9 @@ export function launch() {
   splash(aPos, 25, 0.8);
   ptr.ax = ptr.x; ptr.ay = ptr.y; ptr.moved = false;
   if (G.state === 'title') G.spinT = TAU;
-  else if (!G.airHintShown) { G.airHintShown = true; say(seatedC(G.CH) ? 'TRUCO: 1 toque Superman · 2 Backflip · 3 360 · 4 Backflip + Superman' : 'TRUCO: 1 toque 360 · 2 switch · 3 backflip agarrado · mantén = agarrar', 2.6); }
+  else if (!G.airHintShown) { G.airHintShown = true; say(seatedC(G.CH) ? 'TRUCO: 1 toque Superman · 2 Backflip · 3 360 · 4 Backflip + Superman' : 'TRUCO: 1 toque switch · 2 360 · 3 backflip agarrado · mantén = agarrar', 2.6); }
 }
-// 1 pulsación = 360 · 2 = switch · 3 = backflip agarrado · 4 = backflip 360 (se pueden encadenar mientras dure el salto)
+// 1 pulsación = switch · 2 = 360 · 3 = backflip agarrado · 4 = backflip 360 (se pueden encadenar mientras dure el salto)
 export const SWITCH_T = 1.3;   // segundos que va en switch antes de volver solo de punta
 
 export function doTrick(n) {
@@ -53,9 +55,9 @@ export function doTrick(n) {
     G.spinT = clamp(G.spinT, -2 * TAU, 2 * TAU); G.flipT = Math.min(G.flipT, 2 * TAU);
     return;
   }
-  // tablas: 1 = 360 · 2 = 180 y cae en switch (al segundo vuelve de punta) · 3 = backflip agarrando la tabla · 4 = backflip 360
-  if (n === 1) G.spinT += TAU * dir;
-  else if (n === 2) G.spinT += Math.PI * dir;
+  // tablas: 1 = 180 y cae en switch (al segundo vuelve de punta) · 2 = 360 · 3 = backflip agarrando la tabla · 4 = backflip 360
+  if (n === 1) G.spinT += Math.PI * dir;
+  else if (n === 2) G.spinT += TAU * dir;
   else if (n === 3) { G.flipT += TAU; G.supT = 0.9; }
   else { G.flipT += TAU; G.spinT += TAU * dir; G.supT = 0.9; }
   G.spinT = clamp(G.spinT, -2 * TAU, 2 * TAU); G.flipT = Math.min(G.flipT, 2 * TAU);

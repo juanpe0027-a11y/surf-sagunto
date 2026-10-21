@@ -10,7 +10,7 @@ import { addPts, bump } from './puntos.js';
 import { wipeout } from './sesion.js';
 import { doTrick, land, LAND_H, launch, lipSpray, snap } from './trucos.js';
 
-export const LAND_A = 0.15, LAND_SOFT = 1.4;   // al caer: tabla casi horizontal y un rato de recepción suave
+export const LAND_A = 0.5, LAND_SOFT = 1.0;    // al caer: la tabla apunta hacia abajo de la ola y un rato de recepción suave
 export const qLandPose = new THREE.Quaternion(), qLand = new THREE.Quaternion(), qAirBase = new THREE.Quaternion();
 export const aPos = V3(0, 0, 0), qLaunch = new THREE.Quaternion(), qRide = new THREE.Quaternion(), qTmp = new THREE.Quaternion(), qTmp2 = new THREE.Quaternion();
 const qSw = new THREE.Quaternion();
@@ -68,8 +68,6 @@ export function rideStep(dt, hT) {
     // giro: la tabla rota hacia el rumbo pedido por el camino más corto, con velocidad de giro
     // limitada (trazadas en arco). Rumbo completo de 360°: se puede volver de punta hacia el tubo.
     const prev = G.theta;
-    // tras caer, si no llevas el círculo, la tabla se endereza y sigue recta por la ola (no se va al plano)
-    if (hT === null && G.landSoft > 0 && !G.fs) hT = Math.cos(G.theta) < 0 ? Math.PI : 0;
     if (G.fs) {
       // maniobra TRUCO: 180 rápido en el sitio → recto hacia el tubo a la misma altura → 180 de vuelta
       G.fs.t += dt;
@@ -139,9 +137,10 @@ export function rideStep(dt, hT) {
       G.h += G.v * sn / (Hc * 1.25) * dt;
     }
     G.vh = G.v * sn / (Hc * 1.25);
+    if (G.h < G.hMinRun || sn < 0.15) G.hMinRun = G.h;           // lo más abajo desde que empezaste a subir (de lado o bajando no cuenta)
     if (G.h < 0.03) { G.h = 0.03; if (sn < -0.05) G.theta = cs >= 0 ? -0.05 : -Math.PI + 0.05; }
     if (G.h >= 1) {
-      if (sn > 0.35 && G.v > 6.5 && !G.turnLock && G.state !== 'popup' && G.state !== 'title' || (G.state === 'title' && sn > 0.35)) launch();
+      if (sn > 0.35 && G.v > 4.5 && !G.turnLock && G.state !== 'popup' && G.state !== 'title' || (G.state === 'title' && sn > 0.35)) launch();
       else { G.h = 1; if (!G.turnLock && sn > -0.05) G.theta = cs >= 0 ? -0.05 : -Math.PI + 0.05; G.v *= 1 - (G.turnLock ? 0.9 : 0.5) * dt; }
     }
     // giro en el labio: mientras la tabla pivota arriba, abanico de spray; al bajar se puntúa

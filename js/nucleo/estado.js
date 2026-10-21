@@ -65,6 +65,7 @@ export const G = {
   airVx: 10,        // velocidad hacia delante
   airTop: 0,        // altura máxima del salto
   airBack: false,   // salto hacia el tubo
+  hMinRun: 0.5,     // lo más abajo de la ola desde que empezó a subir (cuanto más abajo, más alto salta)
   airSteer: 0,
   airHold: 0,       // tiempo con el dedo quieto (para agarrar la tabla)
   airHintShown: false,
