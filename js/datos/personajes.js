@@ -18,7 +18,10 @@ export const PHOTOS = {
   juanp: 'img/personajes/juanp/foto.jpg',
   raul: 'img/personajes/raul/foto.jpg',
   krre: 'img/personajes/krre/foto.jpg',
-  alex: 'img/personajes/alex/foto.jpg'
+  alex: 'img/personajes/alex/foto.jpg',
+  ruben: 'img/personajes/ruben/foto.jpg',
+  blanco: 'img/personajes/blanco/foto.jpg',
+  akeny: 'img/personajes/akeny/foto.jpg'
 };
 export const FACES = {
   jowi: 'img/personajes/jowi/cara.jpg',
@@ -31,7 +34,9 @@ export const FACES = {
   gallu: 'img/personajes/gallu/cara.jpg',
   raul: 'img/personajes/raul/cara.jpg',
   krre: 'img/personajes/krre/cara.jpg',
-  alex: 'img/personajes/alex/cara.jpg'
+  alex: 'img/personajes/alex/cara.jpg',
+  ruben: 'img/personajes/ruben/cara.jpg',
+  blanco: 'img/personajes/blanco/cara.jpg'
 };
 export const CHARS = [
   // Jowi: neopreno largo azul con piernas azul marino, gafas de sol, barba y pelo despeinado; tabla NL Surfboard
@@ -71,6 +76,18 @@ export const CHARS = [
     suit: 0xf07a2c, upperArm: 0xcd9674, forearm: 0xcd9674, shorts: 0x15171c, legs: 0x15171c, longSuit: true, deck: 'zodiac', board: 'zodiac', fins: ['black', 'black', 'black'], sw: [0xd8212b, 0xf07a2c, 0x15171c], vel: 4, air: 3, tubo: 2 },
   // Alex: melena larga morena al viento y barba; neopreno negro de manga larga y pierna corta; tabla Lemon color arena con cola de pez
   { id: 'alex', goofy: true, name: 'Alex', tag: 'Tabla Lemon fish · melena al viento', skin: 0xc48c6c, hair: 0x2a1d14, style: 'long', beard: true, beardColor: 0x2a1d14, glasses: false,
-    suit: 0x121316, upperArm: 0x121316, forearm: 0x121316, shorts: 0x121316, deck: 'photo', deckFallback: 'plain', deckPhoto: true, fins: ['black', 'black', 'black'], sw: [0x121316, 0xcfc2a6, 0x2a1d14], vel: 3, air: 3, tubo: 5 }
+    suit: 0x121316, upperArm: 0x121316, forearm: 0x121316, shorts: 0x121316, deck: 'photo', deckFallback: 'plain', deckPhoto: true, fins: ['black', 'black', 'black'], sw: [0x121316, 0xcfc2a6, 0x2a1d14], vel: 3, air: 3, tubo: 5 },
+  // OG Young Rubén: pelo rizado, sin neopreno (torso al aire) y bañador azul marino; tabla gris azulada con el logo JS
+  { id: 'ruben', goofy: true, name: 'OG Young Rubén', tag: 'Old Traste Team', skin: 0xbe8060, hair: 0x241811, style: 'curly', beard: false, glasses: false,
+    suit: 0xbe8060, upperArm: 0xbe8060, forearm: 0xbe8060, shorts: 0x1a2340, deck: 'photo', deckFallback: 'plain', deckPhoto: true, fins: ['black', 'black', 'black'], sw: [0xa9bcc3, 0x1a2340, 0xbe8060], vel: 1, air: 1, tubo: 1 },
+  // OG Young Blasco: neopreno naranja coral de cuerpo entero; tabla blanca Channel Islands (Al Merrick) con almohadilla de colores
+  { id: 'blanco', goofy: false, name: 'OG Young Blasco', tag: 'Old Traste Team', skin: 0xc88c70, hair: 0x2a1d16, style: 'fade', beard: false, glasses: false,
+    suit: 0xf2643c, upperArm: 0xf2643c, forearm: 0xf2643c, shorts: 0xf2643c, legs: 0xf2643c, longSuit: true, deck: 'photo', deckFallback: 'plain', deckPhoto: true, fins: ['black', 'black', 'black'], sw: [0xf2643c, 0x1c1d20, 0xece9df], vel: 1, air: 1, tubo: 1 },
+  // Akeny: calvo, neopreno rojo arriba y negro abajo; surfea con una tabla de planchar negra (con sus patas plegadas)
+  { id: 'akeny', goofy: false, name: 'Akeny', tag: 'Tabla de planchar', skin: 0x5b3a2b, hair: 0x1a1410, style: 'bald', beard: false, glasses: false,
+    suit: 0x8e3326, upperArm: 0x8e3326, forearm: 0x8e3326, shorts: 0x141416, legs: 0x141416, longSuit: true, board: 'iron', deck: 'photo', deckFallback: 'plain', deckPhoto: true,
+    fins: ['black', 'black', 'black'], sw: [0x141416, 0x8e3326, 0xe8e8e4], vel: 2, air: 2, tubo: 2 }
 ];
+// en orden alfabético (el primero, Akeny, es el que llevan los que entran nuevos sin elegir)
+CHARS.sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
 G.CH = CHARS.find(c => c.id === leer('personaje')) || CHARS[0];

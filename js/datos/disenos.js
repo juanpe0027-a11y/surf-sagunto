@@ -35,7 +35,10 @@ const BOARD_PHOTOS = {
   jowi: 'img/personajes/jowi/tabla.jpg',
   gutty: 'img/personajes/gutty/tabla.jpg',
   xitano: 'img/personajes/xitano/tabla.jpg',
-  alex: 'img/personajes/alex/tabla.jpg'
+  alex: 'img/personajes/alex/tabla.jpg',
+  ruben: 'img/personajes/ruben/tabla.jpg',
+  blanco: 'img/personajes/blanco/tabla.jpg',
+  akeny: 'img/personajes/akeny/tabla.jpg'
 };
 const boardImg = {};
 for (const k in BOARD_PHOTOS) {

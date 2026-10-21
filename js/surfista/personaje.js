@@ -7,19 +7,19 @@ import { colorHuman, HUMAN } from './cuerpo.js';
 import { beard, cap, faceMat, faceMesh, faceTex, footB, footF, glasses, hair, helmet, L, mane, matBeard, matFlipper, matForearm, matHair, matHelmet, matShin, matShorts, matSkin, matSuit, matUpperArm, rider, setSuitMap, spikes, strandG, torsoCv, torsoTex } from './muneco.js';
 import { tamanoSombra } from './sombra.js';
 import { boardMesh, finMeshes, paintBoard } from './tabla.js';
-import { jetG, kayakG, paddle, zodiacG } from './vehiculos.js';
+import { ironG, jetG, kayakG, paddle, zodiacG } from './vehiculos.js';
 
 // longboard: 9 pies (2,75 m), algo más ancha y con una sola quilla grande
 export function setBoardShape(c) {
-  const lg = c.board === 'long', bb = c.board === 'body', jet = c.board === 'jet', kay = c.board === 'kayak', zod = c.board === 'zodiac';
-  boardMesh.visible = !jet && !kay && !zod; jetG.visible = jet; kayakG.visible = kay; zodiacG.visible = zod;
+  const lg = c.board === 'long', bb = c.board === 'body', jet = c.board === 'jet', kay = c.board === 'kayak', zod = c.board === 'zodiac', ir = c.board === 'iron';
+  boardMesh.visible = !jet && !kay && !zod; jetG.visible = jet; kayakG.visible = kay; zodiacG.visible = zod; ironG.visible = ir;
   matHelmet.color.setHex(c.helmetColor || 0xf1f1ef); paddle.visible = kay; helmet.visible = !!c.helmet;
-  boardMesh.scale.set(lg ? 1.4 : bb ? 0.56 : 1, bb ? 1.7 : 1, lg ? 1.1 : bb ? 1.18 : 1);
+  boardMesh.scale.set(lg ? 1.4 : bb ? 0.56 : 1, bb ? 1.7 : 1, lg ? 1.1 : bb ? 1.18 : ir ? 0.72 : 1);
   boardMesh.position.x = bb ? 0.18 : 0;
   tamanoSombra(c);
   finMeshes.forEach((m, i) => {
     const [fx, fz] = m.userData.p;
-    if (bb || jet || kay || zod) { m.visible = false; }
+    if (bb || jet || kay || zod || ir) { m.visible = false; }
     else if (lg) { m.visible = i === 2; m.position.set(-1.25, 0.005, 0); m.scale.setScalar(1.7); }
     else { m.visible = true; m.position.set(fx, 0.005, fz); m.scale.setScalar(1); }
   });

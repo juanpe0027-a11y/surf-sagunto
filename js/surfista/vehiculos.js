@@ -1,4 +1,5 @@
-// Vehículos: zodiac de rescate (Krre), kayak con su pala (Raúl) y moto de agua (JuanP).
+// Vehículos: zodiac de rescate (Krre), kayak con su pala (Raúl), moto de agua (JuanP) y las patas de la tabla de planchar (Akeny).
+import { V3 } from '../nucleo/util.js';
 import { boardRoot } from './raiz.js';
 
 // zodiac de rescate (Krre): tubos rojos, casco blanco, motor fueraborda con la bandera y rótulos S.O.S
@@ -39,6 +40,14 @@ export const zodiacG = new THREE.Group(); boardRoot.add(zodiacG); zodiacG.visibl
   fx.fillStyle = '#c60b1e'; fx.fillRect(0, 0, 60, 40); fx.fillStyle = '#ffc400'; fx.fillRect(0, 10, 60, 20);
   const ft = new THREE.CanvasTexture(fc);
   for (const z of [-1, 1]) { const fl = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.1), new THREE.MeshBasicMaterial({ map: ft })); fl.position.set(-1.55, 0.66, z * 0.152); if (z < 0) fl.rotation.y = Math.PI; zodiacG.add(fl); }
+}
+// tabla de planchar (Akeny): las patas plegadas asoman por los dos extremos (la tabla es la normal, más estrecha)
+export const ironG = new THREE.Group(); boardRoot.add(ironG); ironG.visible = false;
+{
+  const mat = new THREE.MeshStandardMaterial({ color: 0x141416, roughness: 0.35, metalness: 0.6 });
+  const loop = pts => { const cv = new THREE.CatmullRomCurve3(pts.map(q => V3(q[0], q[1], q[2]))); ironG.add(new THREE.Mesh(new THREE.TubeGeometry(cv, 30, 0.017, 6, false), mat)); };
+  loop([[-0.7, -0.03, -0.17], [-1.0, -0.04, -0.24], [-1.16, -0.04, -0.16], [-1.16, -0.04, 0.16], [-1.0, -0.04, 0.24], [-0.7, -0.03, 0.17]]);   // cola recta
+  loop([[0.55, -0.03, -0.1], [0.92, -0.04, -0.2], [1.1, -0.04, -0.09], [1.1, -0.04, 0.09], [0.92, -0.04, 0.2], [0.55, -0.03, 0.1]]);       // punta
 }
 // kayak (Raúl): casco naranja alargado, bañera negra con cubrebañeras y pala de doble hoja
 export const kayakG = new THREE.Group(); boardRoot.add(kayakG); kayakG.visible = false;

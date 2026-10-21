@@ -18,8 +18,8 @@ sombra.position.y = -0.012;            // justo por encima del agua (la tabla va
 sombra.renderOrder = 2;                // después de la ola, que es transparente
 boardRoot.add(sombra);
 
-// largo y ancho según lo que lleve: tabla corta, longboard, bodyboard, moto, kayak o zodiac
-const TAMANOS = { long: [1.4, 1.1], body: [0.6, 1.2], jet: [1.45, 1.5], kayak: [1.3, 1.0], zodiac: [1.65, 1.6] };
+// largo y ancho según lo que lleve: tabla corta, longboard, bodyboard, tabla de planchar, moto, kayak o zodiac
+const TAMANOS = { long: [1.4, 1.1], body: [0.6, 1.2], iron: [1, 0.72], jet: [1.45, 1.5], kayak: [1.3, 1.0], zodiac: [1.65, 1.6] };
 export function tamanoSombra(c) {
   const [l, a] = TAMANOS[c.board] || [1, 1];
   sombra.scale.set(l, a, 1);
