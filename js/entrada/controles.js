@@ -18,6 +18,7 @@ function trickTap() {
     G.turnLock = 0; return;
   }
   if (G.state !== 'ride' || !G.air) return;
+  if (!G.trickTaps && tryPush()) return;   // en el aire, pegado a otro surfista: también lo tira
   G.trickTaps++; G.trickWin = 0.2;
 }
 

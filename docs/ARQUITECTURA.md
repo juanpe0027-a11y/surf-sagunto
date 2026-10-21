@@ -55,12 +55,13 @@ js/
     posturas.js        posturas del cuerpo y tabla POSTURAS por vehículo
     raiz.js            boardRoot: el grupo que lleva tabla, vehículo y surfista
     sombra.js          sombra suave bajo la tabla
-    vehiculos.js       modelos de zodiac, kayak (con pala) y moto de agua
+    vehiculos.js       modelos de zodiac, kayak (con pala), moto de agua y patas de la tabla de planchar
     tabla.js           la tabla pintada y sus quillas
     cuerpo.js          cuerpo con esqueleto (modelos/cuerpo.glb)
     muneco.js          cabeza, pelo, gafas, gorra, pies… y applyPose
     personaje.js       applyChar: viste el muñeco con un personaje; setBoardShape
     rig.js             copias del muñeco para los demás jugadores
+    empujon.js         animación del empujón: brazos del que empuja y el empujado volando
   juego/
     sesion.js          estados de la partida (tabla ESTADOS) y sus cambios: remar, ponerse de pie, caer, fin…
     fisica.js          rideStep: movimiento por la ola; spray de la tabla
@@ -72,7 +73,7 @@ js/
     protocolo.js       qué se manda por la red y cómo (solo lo que cambia)
     conexion.js        al empezar: bots o conexión a la sala (y reparto de la ola pública cuando se llena)
     jugadores.js       mandar mi estado, dibujar a los demás, choques, clasificación, inactividad
-    empujones.js       empujar y que te empujen
+    empujones.js       empujar y que te empujen (con 4 s de protección al coger la ola)
     mensajes.js        chat, frases rápidas, notas de voz
   modos/
     bots.js            simulación con bots (sala #bots)

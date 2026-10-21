@@ -23,6 +23,7 @@
               "sp": { ".validate": "newData.isNumber() && newData.val() > -100000 && newData.val() < 100000" },
               "fl": { ".validate": "newData.isNumber() && newData.val() > -100000 && newData.val() < 100000" },
               "pr": { ".validate": "newData.isNumber() && newData.val() > -100000 && newData.val() < 100000" },
+              "pt": { ".validate": "newData.val() === 0 || newData.val() === 1" },
               "sc": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 5000000" },
               "t": { ".validate": "newData.val() === now" },
               "$otro": { ".validate": false }

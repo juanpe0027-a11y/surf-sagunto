@@ -10,10 +10,11 @@ import { splash } from '../mundo/particulas.js';
 import { poseFor, posturas } from '../surfista/posturas.js';
 import { boardRoot } from '../surfista/raiz.js';
 import { applyPoseRig, buildRig, disposeRig } from '../surfista/rig.js';
+import { endFly, flyStep, FLY_T, pushArms, PUSH_T } from '../surfista/empujon.js';
 import { aPos } from '../juego/fisica.js';
 import { chip, hud, showTrick, toast } from '../juego/hud.js';
 import { addPts, bump } from '../juego/puntos.js';
-import { updatePushHint } from './empujones.js';
+import { armTarget, myPushAnims, updatePushHint, updateSafe } from './empujones.js';
 import { CAMPOS_NUM, mandarSurfista, miSurfista, olvidarEnviado } from './protocolo.js';
 import { MP, mpCount, mpLayer, mpMenu } from './red.js';
 import { updateBots } from '../modos/bots.js';
@@ -77,7 +78,7 @@ export function upsertPeer(id, pr) {
     const O = MP.remotes.get(R.du); chip('⚔️ Disputa por el Pico: ' + (pr.nm || ch.name) + ' contra ' + (O ? O.nm || O.ch.name : 'otro surfista'));
   }
   R.nm = typeof pr.nm === 'string' ? pr.nm.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 20) : ch.name;
-  R.label.querySelector('b').textContent = R.nm || ch.name;
+  R.label.querySelector('b').textContent = (Number(pr.pt) > 0.5 ? '🛡️ ' : '') + (R.nm || ch.name);
   for (const k of CAMPOS_NUM) { const v = Number(pr[k]); R.tgt[k] = isFinite(v) ? v : 0; if (!(k in R.cur)) R.cur[k] = R.tgt[k]; }
   R.tgt.pr = Number(pr.pr) || 0; R.sc = Math.max(0, Math.floor(Number(pr.sc) || 0));
   updateCount();
@@ -106,7 +107,7 @@ function remoteFaceQuat(th, bk, out) {
   return out;
 }
 export function mpUpdate(dt) {
-  checkIdle();
+  checkIdle(); updateSafe(dt); myPushAnims(dt);
   mpSend(dt);
   if (MP.sim) updateBots(dt);
   updateBoard(dt); waveLength(dt); updatePushHint();
@@ -120,11 +121,20 @@ export function mpUpdate(dt) {
     if (R.msgT === 0) R.label.querySelector('.mpbub').hidden = true;
     // los fantasmas no se ven; si siguen así 45 s, se borran de la sala
     if (!alive(R) && !R.purged && MP.base && performance.now() - (R.seen || 0) > 45000) { R.purged = true; MP.base.child('players/' + R.id).remove().catch(() => {}); }
-    const vis = showAll && alive(R) && G.state !== 'duel' && R.st !== 'menu' && R.st !== 'wipe' && R.st !== 'duel';
+    // si lo acaban de tirar, se ve cómo sale volando separado de su tabla
+    if (R.fly && (R.fly.t += dt) > FLY_T) { endFly(R.rig.rider); R.fly = null; }
+    if (R.pushArm && (R.pushArm.t += dt) > PUSH_T) R.pushArm = null;
+    const vis = showAll && alive(R) && G.state !== 'duel' && R.st !== 'menu' && R.st !== 'duel' && (R.st !== 'wipe' || !!R.fly);
     R.rig.root.visible = vis;
     if (!vis) { R.label.hidden = true; continue; }
     const c = R.cur, rx = G.curlX + c.dx, root = R.rig.root;
-    R.rig.sombra.visible = R.st !== 'air';
+    R.rig.sombra.visible = R.st !== 'air' && !R.fly;
+    if (R.fly) {
+      R.label.hidden = true;
+      root.visible = toScreen(root.position.x, root.position.y, root.position.z)[2] <= 1;
+      if (root.visible) applyPoseRig(R.rig, flyStep(R.fly, root, R.rig.rider, R.rig.pose), 1, 0.9, t);
+      continue;
+    }
     let pose, viento;
     if (R.st === 'paddle') {
       faceAt(rx, clamp(c.h, 0.03, 1));
@@ -149,6 +159,8 @@ export function mpUpdate(dt) {
     const sc = toScreen(root.position.x, root.position.y + 2.3, root.position.z);
     const enPantalla = sc[2] <= 1 && sc[0] > -200 && sc[0] < wrap.clientWidth + 200 && sc[1] > -100 && sc[1] < wrap.clientHeight + 400;
     root.visible = enPantalla;
+    // el que empuja estira los brazos hacia el otro
+    if (R.pushArm && enPantalla) pushArms(pose, root, R.rig.rider, armTarget(R.pushArm), R.pushArm.t);
     if (enPantalla) applyPoseRig(R.rig, pose, viento, seatedC(R.ch) ? 1.5 : 0.9, t);
     // nombre (y bocadillo) sobre su cabeza
     R.label.hidden = !enPantalla;
@@ -159,7 +171,7 @@ export function mpUpdate(dt) {
     if (G.state !== 'ride') continue;
     const dxp = rx - G.px;
     if (!G.air && R.st === 'ride' && Math.abs(dxp) < 1.6 && Math.abs(c.h - G.h) < 0.15 && R.hitCD === 0) {
-      R.hitCD = 1.2; R.lastHit = performance.now();
+      R.hitCD = 1.2;
       G.v = Math.max(6, G.v - 1.5); G.theta += (G.h > c.h ? 0.2 : -0.2); G.crouch = 1;
       mpV.copy(boardRoot.position).lerp(root.position, 0.5); splash(mpV, 40, 1);
       chip('💥 Choque con ' + (R.nm || R.ch.name));

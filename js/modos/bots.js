@@ -6,7 +6,7 @@ import { CHARS } from '../datos/personajes.js';
 import { face, faceAt, HW } from '../mundo/ola.js';
 import { splash } from '../mundo/particulas.js';
 import { boardRoot } from '../surfista/raiz.js';
-import { gotPushed } from '../online/empujones.js';
+import { gotPushed, SAFE_T } from '../online/empujones.js';
 import { upsertPeer } from '../online/jugadores.js';
 import { logMsg } from '../online/mensajes.js';
 import { MP } from '../online/red.js';
@@ -29,7 +29,7 @@ function botSay(b, text) {
   const e = R.label.querySelector('.mpbub'); e.textContent = text; e.hidden = false; R.msgT = 2.5;
 }
 export function botPushed(id, by) {
-  const b = BOTS.find(o => o.id === id); if (!b || (b.st !== 'ride' && b.st !== 'air')) return;
+  const b = BOTS.find(o => o.id === id); if (!b || (b.st !== 'ride' && b.st !== 'air') || b.safe) return;
   b.wave = 0; b.st = 'wipe'; b.t = 0;
   botSay(b, '😵');
 }
@@ -41,9 +41,10 @@ export function updateBots(dt) {
       if (b.t > 2.5) { b.st = 'paddle'; b.t = 0; b.dx = rnd(4, 10); b.h = 0.05; }
     } else if (b.st === 'paddle') {
       b.pr += dt * 7; b.h = 0.05;
-      if (b.t > 3) { b.st = 'ride'; b.t = 0; b.rideT = 0; b.wave = 0; b.th = -0.4; b.pushCD = 4; }
+      if (b.t > 3) { b.st = 'ride'; b.t = 0; b.rideT = 0; b.wave = 0; b.th = -0.4; b.pushCD = 4; b.safe = true; }
     } else if (b.st === 'ride') {
       b.rideT += dt;
+      if (b.safe && b.rideT > SAFE_T) b.safe = false;      // como los jugadores: unos segundos protegido al coger la ola
       // bombea por la cara y cambia de sitio: a veces se adelanta, a veces vuelve al tubo
       b.ph += dt * b.w;
       const hT = 0.5 + 0.34 * Math.sin(b.ph);
@@ -65,8 +66,10 @@ export function updateBots(dt) {
       // te empuja si está pegado a ti
       if (G.state === 'ride' && !G.air && b.pushCD === 0 && G.rideT > 4) {
         const rx = G.curlX + b.dx;
-        if (Math.abs(rx - G.px) < 1.6 && Math.abs(b.h - G.h) < 0.2 && Math.random() < dt * 0.5) {
-          b.pushCD = 7; botSay(b, '💪'); splash(boardRoot.position, 60, 1.2); gotPushed(b.nm); duelCount(MP.remotes.get(b.id));
+        if (!MP.safe && !b.safe && Math.abs(rx - G.px) < 1.6 && Math.abs(b.h - G.h) < 0.2 && Math.random() < dt * 0.5) {
+          b.pushCD = 7; botSay(b, '💪'); splash(boardRoot.position, 60, 1.2);
+          const BR = MP.remotes.get(b.id); if (BR) BR.pushArm = { t: 0, me: true };
+          gotPushed(b.nm, rx); duelCount(BR);
         }
       }
       if (b.rideT > 28) { b.score += b.wave; b.wave = 0; b.st = 'wipe'; b.t = 1.2; }
@@ -85,7 +88,7 @@ export function updateBots(dt) {
     b.sendT -= dt;
     if (b.sendT <= 0) {
       b.sendT = 1 / 15;
-      upsertPeer(b.id, { ch: b.ch.id, nm: b.nm, st: b.st, dx: b.dx, h: b.h, th: b.th, bk: b.bk, cr: b.cr, gr: 0, ay: b.ay, sp: b.sp, fl: b.fl, pr: b.pr % TAU, sc: Math.floor(b.score + b.wave) });
+      upsertPeer(b.id, { ch: b.ch.id, nm: b.nm, st: b.st, pt: (b.st === 'ride' || b.st === 'air') && b.safe ? 1 : 0, dx: b.dx, h: b.h, th: b.th, bk: b.bk, cr: b.cr, gr: 0, ay: b.ay, sp: b.sp, fl: b.fl, pr: b.pr % TAU, sc: Math.floor(b.score + b.wave) });
       const R = MP.remotes.get(b.id); if (R) R.bot = true;
     }
   }

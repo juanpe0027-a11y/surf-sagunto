@@ -1,5 +1,7 @@
 // Mensajes: frases rápidas, texto y notas de voz.
 import { $ } from '../nucleo/util.js';
+import { G } from '../nucleo/estado.js';
+import { startFly } from '../surfista/empujon.js';
 import { say } from '../juego/hud.js';
 import { gotPushed } from './empujones.js';
 import { mensaje } from './protocolo.js';
@@ -33,7 +35,13 @@ export function onMsg(m) {
   if (!m || m.id === MP.myId) return;
   if (typeof m.at === 'number' && m.at < MP.startAt - 3000) return;    // solo lo nuevo
   const R = MP.remotes.get(m.id), who = (typeof m.nm === 'string' && m.nm.slice(0, 20)) || (R && R.ch.name) || 'Surfista';
-  if (m.ev === 'push') { if (m.to === MP.myId) { gotPushed(who); duelCount(R); } return; }
+  if (m.ev === 'push') {
+    // el que empuja estira los brazos; el empujado (yo u otro) sale volando
+    if (R) R.pushArm = { t: 0, me: m.to === MP.myId, to: m.to };
+    if (m.to === MP.myId) { gotPushed(who, R && R.rig ? R.rig.root.position.x : G.px - 1); duelCount(R); }
+    else { const V = MP.remotes.get(m.to); if (V && V.rig && R && R.rig) V.fly = startFly(V.rig.root, Math.sign(V.rig.root.position.x - R.rig.root.position.x) || 1, G.curlSpeed); }
+    return;
+  }
   if (m.ev === 'duel') { if (m.to === MP.myId && R) setTimeout(() => startDuel(R), 1200); return; }
   if (m.ev === 'hit') { if (m.to === MP.myId) duelGotHit(m.id, m.ty); return; }
   if (typeof m.tx === 'string') {
