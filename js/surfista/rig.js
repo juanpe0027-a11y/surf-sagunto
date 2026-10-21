@@ -8,6 +8,7 @@ import { footB, footF, hair, headG, J, L, rider, SEGL, strandG, strands, torsoCv
 import { applyChar } from './personaje.js';
 import { mkPose, placePaddle } from './posturas.js';
 import { boardRoot } from './raiz.js';
+import { sombra } from './sombra.js';
 import { boardMesh, deckCv, deckTex, finCv, finTex } from './tabla.js';
 import { paddle } from './vehiculos.js';
 
@@ -39,7 +40,7 @@ export function buildRig(c) {
     strands: strands.map(s => s.map(g)), pony: g(L.pony), pose: mkPose(), faceYaw: new THREE.Quaternion(), mats: [...matMap.values()], texs: [...texDone.values()] };
   for (const k in L) rig.L[k] = g(L[k]);
   for (const k in J) rig.J[k] = g(J[k]);
-  rig.rider = g(rider); rig.paddle = g(paddle); rig.board = g(boardMesh);
+  rig.rider = g(rider); rig.sombra = g(sombra); rig.paddle = g(paddle); rig.board = g(boardMesh);
   rig.human = makeHuman(c); if (rig.human) r.add(rig.human.root);
   r.visible = false; world.add(r);
   return rig;

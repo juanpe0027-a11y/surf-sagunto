@@ -4,7 +4,7 @@ import { escuchar } from '../nucleo/eventos.js';
 import { G } from '../nucleo/estado.js';
 import { CHARS, seatedC } from '../datos/personajes.js';
 import { basisQuat, UP, vT } from '../mundo/formas.js';
-import { toScreen } from '../mundo/motor.js';
+import { toScreen, wrap } from '../mundo/motor.js';
 import { face, faceAt } from '../mundo/ola.js';
 import { splash } from '../mundo/particulas.js';
 import { poseFor, posturas } from '../surfista/posturas.js';
@@ -124,29 +124,35 @@ export function mpUpdate(dt) {
     R.rig.root.visible = vis;
     if (!vis) { R.label.hidden = true; continue; }
     const c = R.cur, rx = G.curlX + c.dx, root = R.rig.root;
+    R.rig.sombra.visible = R.st !== 'air';
+    let pose, viento;
     if (R.st === 'paddle') {
       faceAt(rx, clamp(c.h, 0.03, 1));
       vT.set(0, -face.ty, -face.tz); basisQuat(vT, V3(0, -face.tz, face.ty), root.quaternion);
       root.position.set(rx, face.y + 0.02, face.z);
       // cada uno rema a su ritmo (pr = su fase de remada)
-      applyPoseRig(R.rig, posturas(R.ch).remar(R.rig.pose, t + R.tgt.pr / 1.9, t * 7 + R.tgt.pr, 0.7), 0.06, seatedC(R.ch) ? 1.5 : 0.9, t);
+      pose = posturas(R.ch).remar(R.rig.pose, t + R.tgt.pr / 1.9, t * 7 + R.tgt.pr, 0.7); viento = 0.06;
     } else if (R.st === 'air') {
       faceAt(rx, 1);
       remoteFaceQuat(0.5, 0, qR);
       qR2.setFromAxisAngle(UP, c.sp); qR3.setFromAxisAngle(V3(0, 0, 1), c.fl);
       root.quaternion.copy(qR2).multiply(qR).multiply(qR3);
       root.position.set(rx, Math.max(c.ay, face.y), face.z);
-      applyPoseRig(R.rig, poseFor(R.ch)(R.rig.pose, 0.95, c.gr, t, 0), 1, seatedC(R.ch) ? 1.5 : 0.9, t);
+      pose = poseFor(R.ch)(R.rig.pose, 0.95, c.gr, t, 0); viento = 1;
     } else {
       faceAt(rx, clamp(c.h, 0.03, 1));
       remoteFaceQuat(c.th, c.bk, root.quaternion);
       root.position.set(rx, face.y + 0.02, face.z);
-      applyPoseRig(R.rig, poseFor(R.ch)(R.rig.pose, c.cr, 0, t + R.tgt.pr, -c.bk * 0.8), 0.7, seatedC(R.ch) ? 1.5 : 0.9, t);
+      pose = poseFor(R.ch)(R.rig.pose, c.cr, 0, t + R.tgt.pr, -c.bk * 0.8); viento = 0.7;
     }
-    // nombre (y bocadillo) sobre su cabeza
+    // si está fuera de la pantalla no se dibuja ni se le mueve el esqueleto (con mucha gente en la ola se nota)
     const sc = toScreen(root.position.x, root.position.y + 2.3, root.position.z);
-    R.label.hidden = sc[2] > 1;
-    R.label.style.transform = 'translate(' + Math.round(sc[0]) + 'px,' + Math.round(sc[1]) + 'px) translate(-50%,-100%)';
+    const enPantalla = sc[2] <= 1 && sc[0] > -200 && sc[0] < wrap.clientWidth + 200 && sc[1] > -100 && sc[1] < wrap.clientHeight + 400;
+    root.visible = enPantalla;
+    if (enPantalla) applyPoseRig(R.rig, pose, viento, seatedC(R.ch) ? 1.5 : 0.9, t);
+    // nombre (y bocadillo) sobre su cabeza
+    R.label.hidden = !enPantalla;
+    if (enPantalla) R.label.style.transform = 'translate(' + Math.round(sc[0]) + 'px,' + Math.round(sc[1]) + 'px) translate(-50%,-100%)';
 
     // interacción conmigo (cuando estoy surfeando)
     R.hitCD = Math.max(0, R.hitCD - dt);

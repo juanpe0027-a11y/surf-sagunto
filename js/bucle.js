@@ -10,6 +10,7 @@ import { updateWave, waveMat } from './mundo/ola.js';
 import { emitWave, partMat, updateParticles } from './mundo/particulas.js';
 import { applyPose } from './surfista/muneco.js';
 import { boardRoot } from './surfista/raiz.js';
+import { sombra } from './surfista/sombra.js';
 import { aPos, estelaTabla } from './juego/fisica.js';
 import { actualizarHud, clockEl, fmtClock, hud, promptEl } from './juego/hud.js';
 import { pasoSesion } from './juego/sesion.js';
@@ -87,6 +88,7 @@ function update(dt) {
   const calm = (G.state === 'title' && G.menuView === 'chars') || G.state === 'paddle' || G.state === 'miss';
   G.windAmt = lerp(G.windAmt, calm ? 0.06 : G.air ? 1 : clamp(G.v / 13, 0.25, 1), 1 - Math.exp(-dt * 4));
   if (pose) applyPose(pose);
+  sombra.visible = !G.air;
   estelaTabla(dt);
   emitWave(dt);
   updateDolphins(dt);

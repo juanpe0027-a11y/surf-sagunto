@@ -54,6 +54,7 @@ js/
   surfista/
     posturas.js        posturas del cuerpo y tabla POSTURAS por vehículo
     raiz.js            boardRoot: el grupo que lleva tabla, vehículo y surfista
+    sombra.js          sombra suave bajo la tabla
     vehiculos.js       modelos de zodiac, kayak (con pala) y moto de agua
     tabla.js           la tabla pintada y sus quillas
     cuerpo.js          cuerpo con esqueleto (modelos/cuerpo.glb)

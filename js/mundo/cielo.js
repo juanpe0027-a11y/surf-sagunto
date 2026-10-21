@@ -1,5 +1,6 @@
 // El cielo del amanecer (con nubes), dibujado con un shader sobre una esfera enorme.
-import { world } from './motor.js';
+import { REFLEJOS } from '../nucleo/config.js';
+import { renderer, scene, world } from './motor.js';
 import { commonUniforms, GLSL_COMMON } from './shaders.js';
 
 export const skyMat = new THREE.ShaderMaterial({
@@ -23,3 +24,13 @@ export const skyMat = new THREE.ShaderMaterial({
 });
 export const sky = new THREE.Mesh(new THREE.SphereGeometry(5000, 32, 16), skyMat);
 sky.renderOrder = -1; world.add(sky);
+
+// Reflejos del cielo: un mapa de entorno sacado del propio cielo, para que la tabla, los neoprenos, los vehículos
+// y la costa cojan su luz cálida. Se hace una sola vez al cargar (las nubes del reflejo no se mueven).
+{
+  const pmrem = new THREE.PMREMGenerator(renderer), soloCielo = new THREE.Scene();
+  soloCielo.add(new THREE.Mesh(sky.geometry, skyMat));
+  scene.environment = pmrem.fromScene(soloCielo, 0, 0.1, 6000).texture;
+  scene.environmentIntensity = REFLEJOS;
+  pmrem.dispose();
+}

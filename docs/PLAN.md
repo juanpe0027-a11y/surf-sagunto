@@ -5,6 +5,24 @@ Objetivo: que el juego sea más fácil de mantener y ampliar, se vea mejor y agu
 Estado de cada fase: ⬜ pendiente · 🟡 en curso · ✅ hecha.
 Las fases se hacen en orden: cada una se apoya en la anterior. Antes de empezar una fase se descompone en tareas pequeñas (se apuntan aquí mismo, debajo de la fase).
 
+## ▶ Estado actual y cómo seguir (21-10-2026)
+
+Todo el trabajo está en la rama **`mejoras`**, en local: **todavía no se ha subido a GitHub** (la cuenta que lo hizo no tenía permiso de escritura en el repo). Nada de esto está en el juego en vivo.
+
+**Hecho:** fases 0 a 4 completas y la mayor parte de la 5. Todas las pruebas pasan (12 personajes, bots, Disputa, online con 2 y 3 jugadores contra el emulador, 47 reglas, capas).
+
+**Para publicar (en este orden):**
+1. Subir la rama `mejoras` a GitHub y probar a mano (ver «Cómo probar» en `CLAUDE.md`, o `herramientas/pruebas.html`).
+2. Juanpe: activar el login anónimo y publicar las reglas en Firebase ([FIREBASE.md](FIREBASE.md), pasos 1 y 2). Se puede hacer antes de publicar: el juego viejo sigue funcionando.
+3. Unir `mejoras` a `main` y ejecutar `node herramientas/nueva-version.mjs` (los móviles se recargan solos).
+4. Una semana después: cerrar las rutas antiguas de Firebase ([FIREBASE.md](FIREBASE.md), paso 3).
+
+**Pendiente:** lo que queda sin marcar en las fases 5 y 6, y comprobar fps y consumo reales (móvil y consola de Firebase).
+
+**Cuidado:** si Juanpe cambia `index.html` en `main` antes de unir la rama, ese cambio hay que pasarlo a mano al módulo que toque en `js/` (ver [ARQUITECTURA.md](ARQUITECTURA.md)).
+
+---
+
 ## Límites gratuitos con los que trabajamos
 
 | Servicio | Límite gratis | Qué significa para el juego |
@@ -99,17 +117,18 @@ Cambios pequeños que sí se notan (a propósito): el kayak rema igual de rápid
 
 **Hecho cuando:** una partida de 10 jugadores gasta claramente menos que ahora, y con 30 personas a la vez se reparten solas en varias olas.
 
-## Fase 5 — Gráficos ⬜
+## Fase 5 — Gráficos 🟡
 
-Siempre comprobando que en móvil sigue fluido (la calidad automática ya baja la resolución si hace falta).
+Siempre comprobando que en móvil sigue fluido (la calidad automática ya baja la resolución si hace falta). Para comparar: `herramientas/pruebas/vista.js` (capturas) y `herramientas/pruebas/fps.js` (fps).
 
-- **Color de cine**: tone mapping (ACES o AgX) y espacio de color sRGB. Es la mejora visual más grande con menos código, pero cambia todos los colores y hay que reajustarlos
-- **Reflejos del cielo** en el agua, la tabla y el neopreno (mapa de entorno generado a partir del propio cielo)
-- **Sombra del surfista** sobre la ola (una sombra suave y barata, no sombras completas)
-- **Costa más realista**: modelos 3D sencillos (`.glb`) del Pantalán y del Alto Horno en lugar de cajas. Se pueden hacer gratis con Blender
-- **Rendimiento con muchos jugadores**: los demás surfistas comparten geometría y materiales, y los lejanos se dibujan simplificados
+- [x] **Sombra del surfista** sobre el agua (`surfista/sombra.js`): mancha suave bajo la tabla o el vehículo; también la llevan los demás jugadores y se esconde en el aire
+- [x] **Reflejos del cielo** en tablas, neoprenos, vehículos y costa (`mundo/cielo.js`, mapa de entorno sacado del propio cielo; fuerza en `REFLEJOS` de `nucleo/config.js`)
+- [x] **Rendimiento con muchos jugadores**: los surfistas fuera de la pantalla no se dibujan ni se les mueve el esqueleto. Con 11 bots: 69 → 74 fps (gráfica integrada Intel, 1280×720)
+- [ ] **Color de cine (tone mapping AgX/ACES)**: probado y **descartado tal cual**. Los shaders del juego ya hacen su propio ajuste de tono (`tone()` en `mundo/shaders.js`); poner AgX encima lo deja gris y apagado. Para hacerlo bien hay que quitar `tone()` de todos los shaders, pasar a sRGB y reajustar a mano todos los colores: es una decisión de estilo que tiene que ver Juanpe
+- [ ] **Costa más realista**: modelos 3D (`.glb`) del Pantalán y del Alto Horno en lugar de cajas. Hay que hacerlos en Blender (gratis); el código solo tendría que cargarlos en `mundo/costa.js` como se carga `modelos/cuerpo.glb`
+- [ ] Medir fps en un móvil de verdad
 
-**Hecho cuando:** se ve claramente mejor y en el móvil de referencia sigue a ≥ 50 fps.
+Medidas (ordenador, gráfica integrada Intel): solo 83 → 79 fps; con 11 bots 71 → 74 fps.
 
 ## Fase 6 — Hacer crecer el juego (ideas, a decidir) ⬜
 

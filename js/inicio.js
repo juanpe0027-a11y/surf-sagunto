@@ -18,6 +18,7 @@ import './mundo/costa.js';
 import './mundo/delfines.js';
 import './surfista/posturas.js';
 import './surfista/raiz.js';
+import './surfista/sombra.js';
 import './surfista/vehiculos.js';
 import './surfista/tabla.js';
 import './surfista/cuerpo.js';

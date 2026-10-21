@@ -59,6 +59,8 @@ node herramientas/capas.mjs                                            # nadie i
 node herramientas/probar.mjs herramientas/pruebas/datos.js             # fotos, diseños y vehículo de cada personaje
 node herramientas/probar.mjs herramientas/pruebas/partida.js           # una ola con cada personaje, menú y récords
 node herramientas/probar.mjs herramientas/pruebas/bots.js --hash=bots  # bots y Disputa por el Pico
+node herramientas/probar.mjs herramientas/pruebas/vista.js --capturas=carpeta   # capturas para comparar cambios visuales
+node herramientas/probar.mjs herramientas/pruebas/fps.js --hash=bots           # fps surfeando con 11 bots
 ```
 
 Tienen que acabar con `"errores": []` y sin `"problemas"`. Con `--capturas=carpeta` guardan capturas de pantalla para ver cómo queda.

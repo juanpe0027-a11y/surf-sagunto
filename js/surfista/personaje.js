@@ -5,6 +5,7 @@ import { TORSOS } from '../datos/disenos.js';
 import { CHARS, FACES } from '../datos/personajes.js';
 import { colorHuman, HUMAN } from './cuerpo.js';
 import { beard, cap, faceMat, faceMesh, faceTex, footB, footF, glasses, hair, helmet, L, mane, matBeard, matFlipper, matForearm, matHair, matHelmet, matShin, matShorts, matSkin, matSuit, matUpperArm, rider, setSuitMap, spikes, strandG, torsoCv, torsoTex } from './muneco.js';
+import { tamanoSombra } from './sombra.js';
 import { boardMesh, finMeshes, paintBoard } from './tabla.js';
 import { jetG, kayakG, paddle, zodiacG } from './vehiculos.js';
 
@@ -15,6 +16,7 @@ export function setBoardShape(c) {
   matHelmet.color.setHex(c.helmetColor || 0xf1f1ef); paddle.visible = kay; helmet.visible = !!c.helmet;
   boardMesh.scale.set(lg ? 1.4 : bb ? 0.56 : 1, bb ? 1.7 : 1, lg ? 1.1 : bb ? 1.18 : 1);
   boardMesh.position.x = bb ? 0.18 : 0;
+  tamanoSombra(c);
   finMeshes.forEach((m, i) => {
     const [fx, fz] = m.userData.p;
     if (bb || jet || kay || zod) { m.visible = false; }
