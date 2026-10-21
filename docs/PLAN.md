@@ -7,17 +7,17 @@ Las fases se hacen en orden: cada una se apoya en la anterior. Antes de empezar 
 
 ## ▶ Estado actual y cómo seguir (21-10-2026)
 
-Todo el trabajo está en la rama **`mejoras`**, en local: **todavía no se ha subido a GitHub** (la cuenta que lo hizo no tenía permiso de escritura en el repo). Nada de esto está en el juego en vivo.
+Todo el trabajo está en la rama **`mejoras`**, subida a GitHub el 21-10-2026 pero **todavía sin unir a `main`**: nada de esto está en el juego en vivo.
 
 **Hecho:** fases 0 a 4 completas y la mayor parte de la 5. Todas las pruebas pasan (15 personajes, bots, Disputa, online con 2 y 3 jugadores contra el emulador, 48 reglas, capas).
 
 **Para publicar (en este orden):**
-1. Subir la rama `mejoras` a GitHub y probar a mano (ver «Cómo probar» en `CLAUDE.md`, o `herramientas/pruebas.html`).
+1. ~~Subir la rama `mejoras` a GitHub~~ (hecho) y probarla a mano si se quiere (ver «Cómo probar» en `CLAUDE.md`, o `herramientas/pruebas.html`).
 2. Juanpe: activar el login anónimo y publicar las reglas en Firebase ([FIREBASE.md](FIREBASE.md), pasos 1 y 2). Se puede hacer antes de publicar: el juego viejo sigue funcionando.
 3. Unir `mejoras` a `main` y ejecutar `node herramientas/nueva-version.mjs` (los móviles se recargan solos).
 4. Una semana después: cerrar las rutas antiguas de Firebase ([FIREBASE.md](FIREBASE.md), paso 3).
 
-**Pendiente:** primero, pasar a los módulos los cambios que Juanpe ha publicado en `main` (sección siguiente); después, lo que queda sin marcar en las fases 5 y 6, y comprobar fps y consumo reales (móvil y consola de Firebase).
+**Pendiente:** publicar (pasos de arriba); después, lo que queda sin marcar en las fases 5 y 6, y comprobar fps y consumo reales (móvil y consola de Firebase).
 
 **Cuidado:** si Juanpe cambia `index.html` en `main` antes de unir la rama, ese cambio hay que pasarlo a mano al módulo que toque en `js/` (ver [ARQUITECTURA.md](ARQUITECTURA.md)), y apuntarlo aquí abajo.
 

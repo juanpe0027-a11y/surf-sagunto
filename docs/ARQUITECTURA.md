@@ -117,6 +117,8 @@ Cada personaje es una ficha de datos en `CHARS` y sus fotos en la carpeta con su
 
 ## Dónde va cada cosa
 
+(Para lo más habitual, los pasos completos están en [RECETAS.md](RECETAS.md).)
+
 | Quiero… | Toco… |
 |---|---|
 | Añadir un personaje | su ficha en `datos/personajes.js` + sus fotos en `img/personajes/<id>/` (y si tiene tabla pintada nueva, su dibujo en `datos/disenos.js`). Después, `herramientas/pruebas/datos.js` comprueba que no falta nada |
