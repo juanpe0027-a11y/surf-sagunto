@@ -17,9 +17,24 @@ Todo el trabajo está en la rama **`mejoras`**, en local: **todavía no se ha su
 3. Unir `mejoras` a `main` y ejecutar `node herramientas/nueva-version.mjs` (los móviles se recargan solos).
 4. Una semana después: cerrar las rutas antiguas de Firebase ([FIREBASE.md](FIREBASE.md), paso 3).
 
-**Pendiente:** lo que queda sin marcar en las fases 5 y 6, y comprobar fps y consumo reales (móvil y consola de Firebase).
+**Pendiente:** primero, pasar a los módulos los cambios que Juanpe ha publicado en `main` (sección siguiente); después, lo que queda sin marcar en las fases 5 y 6, y comprobar fps y consumo reales (móvil y consola de Firebase).
 
-**Cuidado:** si Juanpe cambia `index.html` en `main` antes de unir la rama, ese cambio hay que pasarlo a mano al módulo que toque en `js/` (ver [ARQUITECTURA.md](ARQUITECTURA.md)).
+**Cuidado:** si Juanpe cambia `index.html` en `main` antes de unir la rama, ese cambio hay que pasarlo a mano al módulo que toque en `js/` (ver [ARQUITECTURA.md](ARQUITECTURA.md)), y apuntarlo aquí abajo.
+
+## Cambios de Juanpe en `main` que hay que pasar a la rama 🟡
+
+Juanpe sigue mejorando el juego en el `index.html` antiguo de `main`. Antes de publicar `mejoras` hay que traer esos cambios a los módulos, o se perderían al unir la rama. Cómo: se une `origin/main` a `mejoras` (en `index.html` se queda la versión de la rama) y cada cambio se rehace a mano en su módulo.
+
+**21-10-2026** (8 commits, de `9fe51fd` a `2da9ae8`):
+
+- [ ] Unir `origin/main` a `mejoras` (sin perder el `index.html` de la rama)
+- [ ] **Personajes nuevos** (`datos/personajes.js` + fotos en `img/personajes/<id>/`, sacadas del base64): **OG Young Rubén** (`ruben`, goofy, sin neopreno, pelo rizado), **OG Young Blasco** (`blanco`, neopreno naranja entero) — los dos «Old Traste Team», con velocidad, aire y tubo al mínimo (1) — y **Akeny** (`akeny`, calvo, neopreno rojo y negro; no trae foto de cara)
+- [ ] **Tabla de planchar** de Akeny (`board: 'iron'`): tabla más estrecha, sin quillas y con las patas plegadas asomando (`surfista/vehiculos.js` + `setBoardShape`)
+- [ ] **Personajes en orden alfabético** en el menú (el primero, Akeny, es el que llevan los nuevos que no eligen)
+- [ ] **Trucos con tabla** (`juego/trucos.js`, `juego/fisica.js`, `surfista/posturas.js`): 1 toque 360 · 2 **switch** (cae con las quillas delante y al segundo gira solo: «Revert» +250) · 3 **backflip agarrado** · 4 backflip 360. El «Rodeo» pasa a llamarse «Backflip». Agarre más estilizado (muy flexionado, brazo de atrás estirado). Textos de ayuda en `index.html` y en el aviso del primer salto
+- [ ] **Empujón: protección al coger la ola** (`online/empujones.js`, `modos/bots.js`): 4 s sin que te puedan tirar al coger la ola (también los bots); los demás ven 🛡️ junto a tu nombre. **Campo nuevo en la red: `pt`** (0/1) → `online/protocolo.js`, `firebase-reglas.json` y sus pruebas
+- [ ] **Empujón más justo**: solo a menos de 1,7 m (distancia real en 3D) y también en el aire (el botón TRUCO en el aire empuja si estás pegado a alguien); antes valía «cerca en la ola» o «acabas de chocar»
+- [ ] **Animación del empujón**: el que empuja estira los brazos hacia el otro, y el empujado sale volando separado de su tabla agitando brazos y piernas (tú, los demás jugadores y los bots)
 
 ---
 
