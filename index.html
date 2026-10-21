@@ -309,7 +309,7 @@ canvas{display:block;width:100%;height:100%}
         <b>Re-entry</b><span>Sube vertical junto al tubo y en la cresta lleva el círculo abajo a la derecha: la tabla gira en el labio y vuelves a bajar</span><span><kbd>↑</kbd> y luego <kbd>↓</kbd><kbd>→</kbd></span>
         <b>Rebote</b><span>Vuelve hacia el tubo con velocidad y rebota en la espuma</span><span><kbd>→</kbd></span>
         <b>Saltar</b><span>Sube rápido hasta la cresta</span><span><kbd>↑</kbd> con velocidad</span>
-        <b>Trucos</b><span>En el aire pulsa TRUCO: 1 vez 360, 2 switch (cae con las quillas delante y vuelve de punta), 3 backflip agarrando la tabla, 4 backflip 360</span><span><kbd>T</kbd> (o <kbd>←</kbd> <kbd>→</kbd> <kbd>↓</kbd>)</span>
+        <b>Trucos</b><span>En el aire pulsa TRUCO: 1 vez switch (cae con las quillas delante y vuelve de punta), 2 360, 3 backflip agarrando la tabla, 4 backflip 360. Cuanto más abajo empieces a subir, más alto saltas</span><span><kbd>T</kbd> (o <kbd>←</kbd> <kbd>→</kbd> <kbd>↓</kbd>)</span>
                 <b>Doble 180</b><span>Surfeando, pulsa TRUCO: gira 180 en su línea, va hacia el tubo y vuelve a girar 180 él solo</span><span><kbd>T</kbd></span>
         <b>Moto (JuanP)</b><span>En el aire: 1 toque Superman, 2 Backflip, 3 giro 360, 4 Backflip + Superman</span><span><kbd>T</kbd></span>
         <b>Indy (agarrar)</b><span>En el aire, mantén pulsado TRUCO</span><span>Mantén <kbd>↑</kbd></span>
@@ -2087,9 +2087,10 @@ try { best = +localStorage.getItem('surf-sagunto-best3d') || 0; } catch (e) {}
 let px = 0, h = 0.5, vh = 0, s = 1.3, air = false, airT = 0, spin = 0, flip = 0, aVy = 0, airTop = 0, launchY = 0, pxStart = 0;
 let rideAngle = 0, lastVh = 0, snapCD = 0;
 // la tabla tiene rumbo (theta: 0 = paralela a la orilla, + sube la ola, - baja) y velocidad v en m/s
+let hMinRun = 0.5;
 let turnW = 0, airBack = false, airSteer = 0, landSoft = 0, landV = 0, switchT = 0;
 const SWITCH_T = 1.3, qSw = new THREE.Quaternion();
-const LAND_A = 0.15, LAND_SOFT = 1.4;   // al caer: tabla casi horizontal y un rato de recepción suave
+const LAND_A = 0.5, LAND_SOFT = 1.0;   // al caer: tabla casi horizontal y un rato de recepción suave
 let theta = 0, v = 10, omega = 0, crouch = 0.3, bank = 0, airVx = 10, twistAmt = 0, backT = 0, turnLock = 0;
 // aéreos: giros pedidos (spinT/flipT) que se completan solos, grab y recepción guiada sobre la ola
 let spinT = 0, flipT = 0, grab = 0, grabT = 0, airDur = 1, airHold = 0, launchZ = 0, landZ = 0, landT = 1, lastTrick = '', airHintShown = false;
@@ -2354,7 +2355,9 @@ function launch() {
   faceAt(px, 1);
   aPos.set(px, face.y + 0.05, face.z); launchY = aPos.y; launchZ = face.z; airTop = 0;
   // arco estable: siempre hay tiempo para un truco y la ola no te adelanta en el aire
-  aVy = clamp(v * Math.sin(theta) * 0.9 + 1.6 + (CH.air - 3) * 0.45, 4.6, 10);
+  // la altura sale de la inercia: desde dónde empezaste a subir (abajo del todo = mucho) y con qué velocidad llegas
+  const climb = clamp(1 - hMinRun, 0, 1);
+  aVy = clamp(0.8 + v * Math.sin(theta) * 0.4 + climb * 7.5 + (CH.air - 3) * 0.3, 2.0, 11.5);
   airDur = 2 * aVy / 9.8 + 0.15;
   // el salto va siempre hacia delante, con la ola
   airBack = false; airSteer = 0;
@@ -2366,9 +2369,9 @@ function launch() {
   splash(aPos, 25, 0.8);
   ptr.ax = ptr.x; ptr.ay = ptr.y; ptr.moved = false;
   if (state === 'title') spinT = TAU;
-  else if (!airHintShown) { airHintShown = true; say(seatedC(CH) ? 'TRUCO: 1 toque Superman · 2 Backflip · 3 360 · 4 Backflip + Superman' : 'TRUCO: 1 toque 360 · 2 switch · 3 backflip agarrado · mantén = agarrar', 2.6); }
+  else if (!airHintShown) { airHintShown = true; say(seatedC(CH) ? 'TRUCO: 1 toque Superman · 2 Backflip · 3 360 · 4 Backflip + Superman' : 'TRUCO: 1 toque switch · 2 360 · 3 backflip agarrado · mantén = agarrar', 2.6); }
 }
-// 1 pulsación = 360 · 2 = switch · 3 = backflip agarrado · 4 = backflip 360 (se pueden encadenar mientras dure el salto)
+// 1 pulsación = switch · 2 = 360 · 3 = backflip agarrado · 4 = backflip 360 (se pueden encadenar mientras dure el salto)
 let trickTaps = 0, trickWin = 0;
 let supT = 0;
 function doTrick(n) {
@@ -2381,9 +2384,9 @@ function doTrick(n) {
     spinT = clamp(spinT, -2 * TAU, 2 * TAU); flipT = Math.min(flipT, 2 * TAU);
     return;
   }
-  // tablas: 1 = 360 · 2 = 180 y cae en switch (al segundo vuelve de punta) · 3 = backflip agarrando la tabla · 4 = backflip 360
-  if (n === 1) spinT += TAU * dir;
-  else if (n === 2) spinT += Math.PI * dir;
+  // tablas: 1 = 180 y cae en switch (al segundo vuelve de punta) · 2 = 360 · 3 = backflip agarrando la tabla · 4 = backflip 360
+  if (n === 1) spinT += Math.PI * dir;
+  else if (n === 2) spinT += TAU * dir;
   else if (n === 3) { flipT += TAU; supT = 0.9; }
   else { flipT += TAU; spinT += TAU * dir; supT = 0.9; }
   spinT = clamp(spinT, -2 * TAU, 2 * TAU); flipT = Math.min(flipT, 2 * TAU);
@@ -2558,8 +2561,6 @@ function rideStep(dt, hT) {
     // giro: la tabla rota hacia el rumbo pedido por el camino más corto, con velocidad de giro
     // limitada (trazadas en arco). Rumbo completo de 360°: se puede volver de punta hacia el tubo.
     const prev = theta;
-    // tras caer, si no llevas el círculo, la tabla se endereza y sigue recta por la ola (no se va al plano)
-    if (hT === null && landSoft > 0 && !fs) hT = Math.cos(theta) < 0 ? Math.PI : 0;
     if (fs) {
       // maniobra TRUCO: 180 rápido en el sitio → recto hacia el tubo a la misma altura → 180 de vuelta
       fs.t += dt;
@@ -2629,9 +2630,10 @@ function rideStep(dt, hT) {
       h += v * sn / (Hc * 1.25) * dt;
     }
     vh = v * sn / (Hc * 1.25);
+    if (h < hMinRun || sn < 0.15) hMinRun = h;                 // lo más abajo desde que empezaste a subir (de lado o bajando no cuenta)
     if (h < 0.03) { h = 0.03; if (sn < -0.05) theta = cs >= 0 ? -0.05 : -Math.PI + 0.05; }
     if (h >= 1) {
-      if (sn > 0.35 && v > 6.5 && !turnLock && state !== 'popup' && state !== 'title' || (state === 'title' && sn > 0.35)) launch();
+      if (sn > 0.35 && v > 4.5 && !turnLock && state !== 'popup' && state !== 'title' || (state === 'title' && sn > 0.35)) launch();
       else { h = 1; if (!turnLock && sn > -0.05) theta = cs >= 0 ? -0.05 : -Math.PI + 0.05; v *= 1 - (turnLock ? 0.9 : 0.5) * dt; }
     }
     // giro en el labio: mientras la tabla pivota arriba, abanico de spray; al bajar se puntúa
@@ -4159,12 +4161,12 @@ placeBoardOnFace();
 camPos.set(px + 7, 4.5, 17);
 requestAnimationFrame(frame);
 $('start').focus({ preventScroll: true });
-window.__surf = { spawnDolphins, upsertPeer, onMsg, MP, startDuel, DUEL, duelSwing, duelCount, tryPush, camPos, camLook, camera, north, get state() { return state; }, get score() { return score; }, get dx() { return px - curlX; }, get s() { return s; }, get h() { return h; }, get air() { return air; }, ptr, get theta() { return theta; }, get v() { return v; }, get tgt() { return steerTarget(); }, get bp() { return toScreen(boardRoot.position.x, boardRoot.position.y, boardRoot.position.z); }, };
+window.__surf = { spawnDolphins, upsertPeer, onMsg, MP, startDuel, DUEL, duelSwing, duelCount, tryPush, camPos, camLook, camera, north, get state() { return state; }, get score() { return score; }, get dx() { return px - curlX; }, get s() { return s; }, get h() { return h; }, get air() { return air; }, ptr, get theta() { return theta; }, get v() { return v; }, get airTop() { return airTop; }, get aVy() { return aVy; }, get tgt() { return steerTarget(); }, get bp() { return toScreen(boardRoot.position.x, boardRoot.position.y, boardRoot.position.z); }, };
 })();
 </script>
 
 <script>
-const BUILD_ID = '1792591239';
+const BUILD_ID = '1792592260';
 (function () {
   try {
     fetch(location.pathname + '?b=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => {
