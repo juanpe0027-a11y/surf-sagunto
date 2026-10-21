@@ -3135,11 +3135,12 @@ function botPushed(id, by) {
   b.wave = 0; b.st = 'wipe'; b.t = 0;
   botSay(b, '😵');
 }
-function gotPushed(name) {
+function gotPushed(name, fromX) {
   if (state !== 'ride' || MP.safe) return;               // protegido hasta salir del tubo
   const lost = Math.floor(wavePts);
   score = Math.max(0, score - wavePts); wavePts = 0; mult = 1;
   wipeout('💥 ' + name + ' te ha tirado  −' + lost + ' puntos');
+  if (state === 'wipe') MP.fly = startFly(boardRoot, Math.sign(px - (fromX ?? px - 1)) || 1, Math.max(v, 6));
 }
 function updateBots(dt) {
   for (const b of BOTS) {
@@ -3152,7 +3153,7 @@ function updateBots(dt) {
       if (b.t > 3) { b.st = 'ride'; b.t = 0; b.rideT = 0; b.wave = 0; b.th = -0.4; b.pushCD = 4; b.safe = true; }
     } else if (b.st === 'ride') {
       b.rideT += dt;
-      if (b.safe && b.dx > SAFE_DX) b.safe = false;
+      if (b.safe && b.rideT > SAFE_T) b.safe = false;
       // bombea por la cara y cambia de sitio: a veces se adelanta, a veces vuelve al tubo
       b.ph += dt * b.w;
       const hT = 0.5 + 0.34 * Math.sin(b.ph);
@@ -3175,7 +3176,7 @@ function updateBots(dt) {
       if (state === 'ride' && !air && b.pushCD === 0 && rideT > 4) {
         const rx = curlX + b.dx;
         if (!MP.safe && !b.safe && Math.abs(rx - px) < 1.6 && Math.abs(b.h - h) < 0.2 && Math.random() < dt * 0.5) {
-          b.pushCD = 7; botSay(b, '💪'); splash(boardRoot.position, 60, 1.2); gotPushed(b.nm); duelCount(MP.remotes.get(b.id));
+          b.pushCD = 7; botSay(b, '💪'); splash(boardRoot.position, 60, 1.2); const BR = MP.remotes.get(b.id); if (BR) BR.pushArm = { t: 0, me: true }; gotPushed(b.nm, rx); duelCount(MP.remotes.get(b.id));
         }
       }
       if (b.rideT > 28) { b.score += b.wave; b.wave = 0; b.st = 'wipe'; b.t = 1.2; }
@@ -3279,8 +3280,63 @@ function remoteFaceQuat(th, bk, out) {
   qR3.setFromAxisAngle(V3(1, 0, 0), bk); out.multiply(qR3);
   return out;
 }
+// --- animación del empujón: manos del que empuja y el empujado volando separado de su tabla ---
+const PUSH_T = 0.45, FLY_T = 1.5;
+const armT = V3(0, 0, 0), armD = V3(0, 0, 0), armA = V3(0, 0, 0), armM = new THREE.Matrix4();
+const flyP = V3(0, 0, 0), flyM = new THREE.Matrix4(), flyQ = new THREE.Quaternion(), flyQ2 = new THREE.Quaternion();
+function armTarget(pa) {
+  if (pa.R) return pa.R.rig ? pa.R.rig.root.position : null;
+  if (pa.me) return boardRoot.position;
+  const V = MP.remotes.get(pa.to); return V && V.rig ? V.rig.root.position : null;
+}
+function pushArms(o, board, rider, target, t) {
+  if (!target) return;
+  const k = Math.sin(Math.PI * clamp(t / PUSH_T, 0, 1));
+  board.updateMatrix(); rider.updateMatrix();
+  armM.multiplyMatrices(board.matrix, rider.matrix).invert();
+  armT.copy(target); armT.y += 1.0; armT.applyMatrix4(armM);                 // el pecho del otro, visto desde su cuerpo
+  armD.subVectors(armT, o.ch); armD.y = clamp(armD.y, -0.3, 0.3); armD.normalize();
+  for (const [a, e, s] of [[o.aF, o.eF, o.sF], [o.aB, o.eB, o.sB]]) {
+    armA.copy(s).addScaledVector(armD, 0.72); armA.y = o.ch.y + 0.02; a.lerp(armA, k);
+    armA.addVectors(s, a).multiplyScalar(0.5); armA.y -= 0.05; e.lerp(armA, k);
+  }
+}
+function startFly(board, away, v) {
+  return { t: 0, P0: board.position.clone(), Q0: board.quaternion.clone(),
+    vBody: V3(away * 2.2 + v * 0.75, 4.2, 1.6), vBoard: V3(v * 0.65 - away * 0.8, 1.4, -0.8),   // con la ola, para que se vea la caída
+    ax: V3(rnd(-1, 1), rnd(-0.3, 0.3), 1).normalize(), bx: V3(1, rnd(-0.5, 0.5), rnd(-0.5, 0.5)).normalize() };
+}
+// la tabla por un lado dando vueltas y el cuerpo por otro, agitando brazos y piernas
+function flyStep(f, board, rider, o) {
+  const t = f.t;
+  board.position.copy(f.P0).addScaledVector(f.vBoard, t); board.position.y = f.P0.y + f.vBoard.y * t - 4.9 * t * t;
+  flyQ.setFromAxisAngle(f.bx, t * 7); board.quaternion.copy(f.Q0).multiply(flyQ);
+  flyP.copy(f.P0).addScaledVector(f.vBody, t); flyP.y = f.P0.y + f.vBody.y * t - 4.9 * t * t;
+  board.updateMatrix(); flyM.copy(board.matrix).invert(); flyP.applyMatrix4(flyM);
+  rider.position.copy(flyP);
+  flyQ2.setFromAxisAngle(f.ax, t * 5); rider.quaternion.copy(board.quaternion).invert().multiply(f.Q0).multiply(flyQ2);
+  stance(o, 0.15, 0, t);
+  const w = Math.sin(t * 14), w2 = Math.cos(t * 13);
+  o.aF.set(o.ch.x + 0.25, o.ch.y + 0.5 + 0.12 * w, o.ch.z + 0.4); o.aB.set(o.ch.x - 0.3, o.ch.y + 0.45 + 0.12 * w2, o.ch.z - 0.35);
+  o.eF.set(o.ch.x + 0.2, o.ch.y + 0.18, o.ch.z + 0.3); o.eB.set(o.ch.x - 0.25, o.ch.y + 0.15, o.ch.z - 0.28);
+  o.fF.y += 0.25 + 0.15 * w2; o.fB.y += 0.1 + 0.15 * w; o.kF.y += 0.15; o.kF.z += 0.15;
+}
+function endFly(rider) { rider.position.set(0, 0, 0); rider.quaternion.identity(); }
+// yo: los brazos al empujar y la caída separado de la tabla
+function myPushAnims(dt) {
+  if (MP.pushArm) {
+    MP.pushArm.t += dt;
+    if (MP.pushArm.t > PUSH_T || state !== 'ride') MP.pushArm = null;
+    else { pushArms(poseA, boardRoot, rider, armTarget(MP.pushArm), MP.pushArm.t); applyPose(poseA); }
+  }
+  if (MP.fly) {
+    if (state !== 'wipe') { endFly(rider); MP.fly = null; }
+    else if ((MP.fly.t += dt) > FLY_T) boardRoot.visible = false;
+    else { boardRoot.visible = true; flyStep(MP.fly, boardRoot, rider, poseA); applyPose(poseA); }
+  }
+}
 function mpUpdate(dt) {
-  checkIdle(); statsTick(dt); updateSafe();
+  checkIdle(); statsTick(dt); updateSafe(dt); myPushAnims(dt);
   mpSend(dt);
   if (MP.sim) updateBots(dt);
   updateBoard(dt); waveLength(dt); updatePushHint();
@@ -3294,10 +3350,13 @@ function mpUpdate(dt) {
     if (R.msgT === 0) R.label.querySelector('.mpbub').hidden = true;
     // los fantasmas no se ven; si siguen así 45 s, se borran de la sala
     if (!alive(R) && !R.purged && MP.base && performance.now() - (R.seen || 0) > 45000) { R.purged = true; MP.base.child('players/' + R.id).remove().catch(() => {}); }
-    const vis = showAll && alive(R) && state !== 'duel' && R.st !== 'menu' && R.st !== 'wipe' && R.st !== 'duel';
+    // si lo acaban de tirar, se ve cómo sale volando separado de su tabla
+    if (R.fly && (R.fly.t += dt) > FLY_T) { endFly(R.rig.rider); R.fly = null; }
+    const vis = showAll && alive(R) && state !== 'duel' && R.st !== 'menu' && R.st !== 'duel' && (R.st !== 'wipe' || !!R.fly);
     R.rig.root.visible = vis;
     if (!vis) { R.label.hidden = true; continue; }
     const c = R.cur, rx = curlX + c.dx, root = R.rig.root;
+    if (R.fly) { flyStep(R.fly, root, R.rig.rider, R.rig.pose); applyPoseRig(R.rig, R.rig.pose, 1, 0.9, t); R.label.hidden = true; continue; }
     if (R.st === 'paddle') {
       faceAt(rx, clamp(c.h, 0.03, 1));
       vT.set(0, -face.ty, -face.tz); basisQuat(vT, V3(0, -face.tz, face.ty), root.quaternion);
@@ -3315,6 +3374,12 @@ function mpUpdate(dt) {
       remoteFaceQuat(c.th, c.bk, root.quaternion);
       root.position.set(rx, face.y + 0.02, face.z);
       applyPoseRig(R.rig, poseFor(R.ch)(R.rig.pose, c.cr, 0, t + R.tgt.pr, -c.bk * 0.8), 0.7, seatedC(R.ch) ? 1.5 : 0.9, t);
+    }
+    // el que empuja estira los brazos hacia el otro
+    if (R.pushArm) {
+      R.pushArm.t += dt;
+      if (R.pushArm.t > PUSH_T) R.pushArm = null;
+      else { pushArms(R.rig.pose, root, R.rig.rider, armTarget(R.pushArm), R.pushArm.t); applyPoseRig(R.rig, R.rig.pose, 0.7, seatedC(R.ch) ? 1.5 : 0.9, t); }
     }
     // nombre (y bocadillo) sobre su cabeza
     const sc = toScreen(root.position.x, root.position.y + 2.3, root.position.z);
@@ -3347,8 +3412,8 @@ function mpUpdate(dt) {
 
 // --- empujón: pegado a otro surfista, TRUCO lo tira (vuelve a remar y pierde los puntos de la ola) ---
 // quién está a tiro: cerca en la ola o con quien acabas de chocar (1,5 s)
-// solo pegado a él (también en el aire) y nunca a quien acaba de coger la ola y aún está en el tubo
-const PUSH_DIST = 1.7, SAFE_DX = 10;
+// solo pegado a él (también en el aire) y nunca a quien acaba de coger la ola (unos segundos)
+const PUSH_DIST = 1.7, SAFE_T = 4;
 function pushTarget() {
   if (state !== 'ride') return null;
   let best = null, bd = PUSH_DIST;
@@ -3359,14 +3424,15 @@ function pushTarget() {
   }
   return best;
 }
-// protección: desde que coges la ola hasta que sales del tubo nadie te puede tirar
-MP.safe = true;
-function updateSafe() {
+// protección: nada más coger la ola (o volver después de que te tiren), unos segundos sin que te puedan tirar
+MP.safe = true; MP.safeT = 0;
+function updateSafe(dt) {
   if (state === 'ride' || state === 'popup') {
-    if (MP.safe && px - curlX > SAFE_DX) { MP.safe = false; MP.sendT = 0; chip('Fuera del tubo: ya te pueden empujar'); }
+    MP.safeT += dt;
+    if (MP.safe && MP.safeT > SAFE_T) { MP.safe = false; MP.sendT = 0; }
   } else if (state !== 'duel') {
     if (!MP.safe) MP.sendT = 0;
-    MP.safe = true;
+    MP.safe = true; MP.safeT = 0;
   }
 }
 function tryPush() {
@@ -3376,6 +3442,8 @@ function tryPush() {
   if (best.bot) botPushed(best.id, MP.myName || CH.name);
   else if (MP.base) MP.base.child('msgs').push({ ev: 'push', to: best.id, id: MP.myId, nm: MP.myName || CH.name, at: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
   best.st = 'wipe';
+  MP.pushArm = { t: 0, R: best };
+  best.fly = startFly(best.rig.root, Math.sign(best.rig.root.position.x - px) || 1, curlSpeed);
   splash(best.rig.root.position, 70, 1.4);
   const got = addPts(300); chip('💪 Has tirado a ' + name); showTrick('Empujón a ' + name, got); bump(0.1);
   v = Math.max(6, v - 1); crouch = 1;
@@ -3456,7 +3524,12 @@ function onMsg(m) {
   if (!m || m.id === MP.myId) return;
   if (typeof m.at === 'number' && m.at < MP.startAt - 3000) return;    // solo lo nuevo
   const R = MP.remotes.get(m.id), who = (typeof m.nm === 'string' && m.nm.slice(0, 20)) || (R && R.ch.name) || 'Surfista';
-  if (m.ev === 'push') { if (m.to === MP.myId) { gotPushed(who); duelCount(R); } return; }
+  if (m.ev === 'push') {
+    if (R) R.pushArm = { t: 0, me: m.to === MP.myId, to: m.to };
+    if (m.to === MP.myId) { gotPushed(who, R && R.rig ? R.rig.root.position.x : px - 1); duelCount(R); }
+    else { const V = MP.remotes.get(m.to); if (V && V.rig && R && R.rig) V.fly = startFly(V.rig.root, Math.sign(V.rig.root.position.x - R.rig.root.position.x) || 1, curlSpeed); }
+    return;
+  }
   if (m.ev === 'duel') { if (m.to === MP.myId && R) setTimeout(() => startDuel(R), 1200); return; }
   if (m.ev === 'hit') { if (m.to === MP.myId) duelGotHit(m.id, m.ty); return; }
   if (typeof m.tx === 'string') {
@@ -4044,7 +4117,7 @@ window.__surf = { spawnDolphins, upsertPeer, onMsg, MP, startDuel, DUEL, duelSwi
 </script>
 
 <script>
-const BUILD_ID = '1792579144';
+const BUILD_ID = '1792580258';
 (function () {
   try {
     fetch(location.pathname + '?b=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => {
