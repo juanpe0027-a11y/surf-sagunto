@@ -89,12 +89,13 @@ Cambios pequeños que sí se notan (a propósito): el kayak rema igual de rápid
 
 ⚠️ Los cambios que Juanpe haga a partir de ahora en `main` sobre el `index.html` antiguo no encajan directamente en los módulos: hay que trasladarlos a mano al módulo que toque. Lo mejor es unir esta rama a `main` cuanto antes y seguir ya sobre la estructura nueva.
 
-## Fase 4 — Online para más gente ⬜
+## Fase 4 — Online para más gente ✅
 
-- **`online/protocolo.js`**: el formato de lo que se envía por la red en un solo sitio (ahora está repartido entre jugadores, empujones, mensajes y disputa)
-- **Salas con tope**: máximo ~10–12 jugadores por ola; si está llena, se abre `pantalan-2` automáticamente
-- **Mensajes más ligeros**: menos actualizaciones por segundo cuando no hace falta (el juego ya suaviza el movimiento entre una y otra) y solo lo que cambia
-- Medir el consumo real en la consola de Firebase (Realtime Database → Uso) antes y después
+- [x] **`online/protocolo.js`**: el formato de lo que se envía por la red, en un solo sitio
+- [x] **Salas con tope**: la ola pública admite 12 surfistas; si está llena, el siguiente entra en `pantalan-2`, `pantalan-3`… Las salas con nombre (`#amigos`) no tienen tope
+- [x] **Mensajes más ligeros**: solo se manda lo que cambia (`update` en vez de `set`), la hora cada 2 s y los puntos como mucho una vez por segundo; ~7 envíos por segundo surfeando (antes 8), 4 remando y 10 en la Disputa
+- [x] Medido con el emulador (3 jugadores surfeando ~30 s, `herramientas/pruebas/red.js`): cada jugador recibía **92 KB** y ahora **42 KB (−55 %)**. Con 10 jugadores, las ~15 h de juego al mes del plan gratuito pasan a más de 30 h
+- [ ] Comprobar el consumo real en la consola de Firebase (Realtime Database → Uso) cuando esté publicado
 
 **Hecho cuando:** una partida de 10 jugadores gasta claramente menos que ahora, y con 30 personas a la vez se reparten solas en varias olas.
 

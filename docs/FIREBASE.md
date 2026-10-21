@@ -6,7 +6,7 @@ El modo online y los récords usan Firebase (proyecto `surf-sagunto`), en el **p
 
 | Ruta | Qué guarda | Quién puede escribir |
 |---|---|---|
-| `v2/salas/<sala>/players/<uid>` | Dónde va cada jugador en la ola (~8 veces/s) | Solo ese jugador. Cualquiera puede borrar a un «fantasma» que lleve más de 45 s sin dar señales |
+| `v2/salas/<sala>/players/<uid>` | Dónde va cada jugador en la ola (~7 veces/s, solo lo que cambia) | Solo ese jugador. Cualquiera puede borrar a un «fantasma» que lleve más de 45 s sin dar señales |
 | `v2/salas/<sala>/msgs/<id>` | Chat, notas de voz, empujones, golpes de la Disputa | Cada uno manda los suyos y no puede cambiarlos. Cualquiera puede borrar los de hace más de 2 minutos |
 | `v2/records/<temporada>/<uid>` | Récords de cada móvil (ranking) | Solo ese móvil, y nunca puede bajar un récord |
 | `salas/…` y `stats/…` | Lo mismo, del juego antiguo | Cualquiera. **Se borran en el paso 3** |
@@ -47,9 +47,9 @@ Cuando ya nadie use la versión vieja:
 
 ## Cambiar lo que se envía por la red
 
-Las reglas solo aceptan los campos que conocen. **Si añades un campo nuevo** a lo que manda el juego (por ejemplo, en la Disputa), hay que:
+Las reglas solo aceptan los campos que conocen. Todo lo que se manda está descrito en **`js/online/protocolo.js`**. **Si añades un campo nuevo** (por ejemplo, en la Disputa), hay que:
 
-1. Añadirlo en `firebase-reglas.json` (copiando una línea parecida, con su tipo y sus límites).
+1. Añadirlo en `js/online/protocolo.js` y en `firebase-reglas.json` (copiando una línea parecida, con su tipo y sus límites).
 2. Añadir un caso en `herramientas/pruebas/reglas.mjs` y pasar las pruebas con el emulador.
 3. Publicar las reglas **antes o a la vez** que el juego; si no, ese mensaje se rechaza en silencio.
 

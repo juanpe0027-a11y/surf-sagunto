@@ -5,6 +5,7 @@ import { chip, showTrick } from '../juego/hud.js';
 import { addPts, bump } from '../juego/puntos.js';
 import { wipeout } from '../juego/sesion.js';
 import { alive } from './jugadores.js';
+import { evento } from './protocolo.js';
 import { MP } from './red.js';
 import { botPushed } from '../modos/bots.js';
 import { duelCount } from '../modos/disputa.js';
@@ -35,7 +36,7 @@ export function tryPush() {
   if (!best) return false;
   const name = best.nm || best.ch.name;
   if (best.bot) botPushed(best.id, MP.myName || G.CH.name);
-  else if (MP.base) MP.base.child('msgs').push({ ev: 'push', to: best.id, id: MP.myId, nm: MP.myName || G.CH.name, at: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
+  else if (MP.base) MP.base.child('msgs').push(evento('push', best.id)).catch(() => {});
   best.st = 'wipe';
   splash(best.rig.root.position, 70, 1.4);
   const got = addPts(300); chip('💪 Has tirado a ' + name); showTrick('Empujón a ' + name, got); bump(0.1);

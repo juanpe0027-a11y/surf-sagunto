@@ -30,6 +30,7 @@ import './juego/fisica.js';
 import './juego/trucos.js';
 import './juego/sesion.js';
 import './online/red.js';
+import './online/protocolo.js';
 import './online/jugadores.js';
 import './online/empujones.js';
 import './online/mensajes.js';

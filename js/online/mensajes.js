@@ -1,8 +1,8 @@
 // Mensajes: frases rápidas, texto y notas de voz.
 import { $ } from '../nucleo/util.js';
-import { G } from '../nucleo/estado.js';
 import { say } from '../juego/hud.js';
 import { gotPushed } from './empujones.js';
+import { mensaje } from './protocolo.js';
 import { chatLog, chatP, MP } from './red.js';
 import { botReply } from '../modos/bots.js';
 import { duelCount, duelGotHit, startDuel } from '../modos/disputa.js';
@@ -19,8 +19,7 @@ export function logMsg(who, text) {
 export function pushMsg(obj) {
   if (MP.sim) { if (obj.tx) botReply(); return; }
   if (!MP.base) { say('Sin conexión al modo online', 2); return; }
-  obj.id = MP.myId; obj.nm = MP.myName || G.CH.name; obj.at = firebase.database.ServerValue.TIMESTAMP;
-  MP.base.child('msgs').push(obj).catch(() => say('No se ha podido enviar', 2));
+  MP.base.child('msgs').push(mensaje(obj)).catch(() => say('No se ha podido enviar', 2));
   // limpieza: los mensajes de hace más de 3 minutos se borran
   MP.base.child('msgs').orderByChild('at').endAt(Date.now() - 180000).limitToFirst(20).once('value', s => s.forEach(c => { c.ref.remove(); }));
 }

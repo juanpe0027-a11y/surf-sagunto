@@ -1,5 +1,5 @@
 // Los demás surfistas: mandar mi estado, recibir el suyo, dibujarlos en mi ola, choques y la clasificación de la sala.
-import { $, clamp, lerp, TAU, V3 } from '../nucleo/util.js';
+import { $, clamp, lerp, V3 } from '../nucleo/util.js';
 import { escuchar } from '../nucleo/eventos.js';
 import { G } from '../nucleo/estado.js';
 import { CHARS, seatedC } from '../datos/personajes.js';
@@ -14,39 +14,50 @@ import { aPos } from '../juego/fisica.js';
 import { chip, hud, showTrick, toast } from '../juego/hud.js';
 import { addPts, bump } from '../juego/puntos.js';
 import { updatePushHint } from './empujones.js';
-import { checkIdle, MP, mpCount, mpLayer, mpMenu, SALA } from './red.js';
+import { CAMPOS_NUM, mandarSurfista, miSurfista, olvidarEnviado } from './protocolo.js';
+import { MP, mpCount, mpLayer, mpMenu } from './red.js';
 import { updateBots } from '../modos/bots.js';
-import { DUEL } from '../modos/disputa.js';
 
 // cuando llega el cuerpo realista, se rehacen los surfistas que ya estaban en el agua
 function rebuildRigs() { for (const R of MP.remotes.values()) if (R.rig && R.ch) { disposeRig(R.rig); R.rig = buildRig(R.ch); } }
 escuchar('cuerpo-listo', rebuildRigs);
 
-// --- mi estado (absoluto, ~8 veces por segundo; en el menú, cada 2 s) ---
-function myStatus() {
-  if (G.state === 'ride' || G.state === 'popup') return G.air ? 'air' : 'ride';
-  if (G.state === 'paddle' || G.state === 'miss') return 'paddle';
-  if (G.state === 'wipe') return 'wipe';
-  if (G.state === 'duel') return 'duel';
-  return 'menu';
+// --- inactividad: si te coge la ola 10 veces seguidas sin tocar nada (o pasan 3 min), sales del agua ---
+MP.lastInput = performance.now(); MP.idleWaves = 0; MP.away = false; MP.prevSt = '';
+['pointerdown', 'keydown', 'touchstart'].forEach(ev => window.addEventListener(ev, () => {
+  MP.lastInput = performance.now(); MP.idleWaves = 0;
+  if (MP.away) { MP.away = false; MP.sendT = 0; }
+}, true));
+// al bloquear el móvil o cambiar de app, desapareces de la ola de los demás; al volver, apareces otra vez
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { if (MP.meRef) MP.meRef.remove().catch(() => {}); olvidarEnviado(); }
+  else MP.sendT = 0;
+});
+function checkIdle() {
+  if (MP.sim || G.state === 'title' || G.state === 'over' || G.state === 'duel') { MP.prevSt = G.state; return; }
+  const idle = performance.now() - MP.lastInput;
+  if (G.state === 'paddle' && MP.prevSt !== 'paddle' && idle > 6000) MP.idleWaves++;
+  MP.prevSt = G.state;
+  if (MP.idleWaves >= 10 || idle > 180000) {
+    MP.away = true; MP.idleWaves = 0;
+    if (MP.meRef) MP.meRef.remove().catch(() => {});
+    olvidarEnviado();
+    $('hudHome').click();
+    setTimeout(() => toast('Te hemos sacado del agua por inactividad. Pulsa «¡A surfear!» para volver.'), 700);
+  }
 }
-const r2 = n => Math.round(n * 100) / 100;
+
+// --- mi estado: ~7 veces por segundo surfeando, 10 en la Disputa, 4 remando y cada 2 s en el menú (solo lo que cambia: protocolo.js) ---
 function mpSend(dt) {
   if (!MP.meRef || !MP.connected || MP.away) return;
   MP.sendT -= dt;
   if (MP.sendT > 0) return;
-  const st = myStatus();
-  MP.sendT = st === 'menu' ? 2 : st === 'duel' ? 0.1 : 0.125;
-  if (st === 'duel' && DUEL.on) {
-    MP.meRef.set({ ch: G.CH.id, nm: MP.myName || G.CH.name, st, du: DUEL.oppId, dx: r2(DUEL.A.u), h: DUEL.A.hp, gr: DUEL.swN, sp: DUEL.A.sw.type, bk: DUEL.A.block ? 1 : 0, ay: r2(DUEL.A.jy), sc: Math.floor(G.score), t: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
-    return;
-  }
-  MP.meRef.set({ ch: G.CH.id, nm: MP.myName || G.CH.name, st, dx: r2(G.px - G.curlX), h: r2(G.h), th: r2(G.theta), bk: r2(G.bank), cr: r2(G.crouch),
-    gr: r2(G.grab), ay: r2(G.air ? aPos.y : 0), sp: r2(G.spin), fl: r2(G.flip), pr: r2(G.paddlePh % TAU), sc: Math.floor(G.score), t: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
+  const yo = miSurfista();
+  MP.sendT = yo.st === 'menu' ? 2 : yo.st === 'duel' ? 0.1 : yo.st === 'paddle' ? 0.25 : 0.15;
+  mandarSurfista(MP.meRef, yo);
 }
 
 // --- los demás surfistas ---
-const KEYS_NUM = ['dx', 'h', 'th', 'bk', 'cr', 'gr', 'ay', 'sp', 'fl'];
 export function upsertPeer(id, pr) {
   if (!pr || id === MP.myId) return;
   let R = MP.remotes.get(id);
@@ -67,7 +78,7 @@ export function upsertPeer(id, pr) {
   }
   R.nm = typeof pr.nm === 'string' ? pr.nm.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 20) : ch.name;
   R.label.querySelector('b').textContent = R.nm || ch.name;
-  for (const k of KEYS_NUM) { const v = Number(pr[k]); R.tgt[k] = isFinite(v) ? v : 0; if (!(k in R.cur)) R.cur[k] = R.tgt[k]; }
+  for (const k of CAMPOS_NUM) { const v = Number(pr[k]); R.tgt[k] = isFinite(v) ? v : 0; if (!(k in R.cur)) R.cur[k] = R.tgt[k]; }
   R.tgt.pr = Number(pr.pr) || 0; R.sc = Math.max(0, Math.floor(Number(pr.sc) || 0));
   updateCount();
 }
@@ -82,7 +93,7 @@ export function updateCount() {
   const n = live.filter(R => R.st !== 'menu').length, all = live.length;
   const txt = n === 0 ? 'Solo tú en el agua' : n === 1 ? '1 surfista más en el agua' : n + ' surfistas más en el agua';
   mpCount.textContent = '🌊 ' + txt;
-  mpMenu.textContent = !MP.db ? mpMenu.textContent : MP.connected ? '🌊 Online · sala «' + SALA + '» · ' + all + (all === 1 ? ' conectado más' : ' conectados más') : '🌊 Conectando…';
+  mpMenu.textContent = !MP.db ? mpMenu.textContent : MP.connected ? '🌊 Online · sala «' + MP.sala + '» · ' + all + (all === 1 ? ' conectado más' : ' conectados más') : '🌊 Conectando…';
 }
 
 // --- dibujar a los demás en mi ola, choques y saltos por encima ---
@@ -103,7 +114,7 @@ export function mpUpdate(dt) {
   const t = performance.now() / 1000, k = 1 - Math.exp(-dt * 10);
   for (const R of MP.remotes.values()) {
     if (!R.rig) continue;
-    for (const key of KEYS_NUM) R.cur[key] = lerp(R.cur[key] ?? R.tgt[key], R.tgt[key], k);
+    for (const key of CAMPOS_NUM) R.cur[key] = lerp(R.cur[key] ?? R.tgt[key], R.tgt[key], k);
     if (Math.abs(R.tgt.dx - R.cur.dx) > 25) R.cur.dx = R.tgt.dx;     // ha cambiado de ola: sin arrastre
     R.msgT = Math.max(0, R.msgT - dt);
     if (R.msgT === 0) R.label.querySelector('.mpbub').hidden = true;

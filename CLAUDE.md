@@ -32,7 +32,7 @@ Juego de surf 3D de navegador (three.js + Firebase). Lo mantiene **Juanpe, que n
 | `firebase.json`, `.firebaserc` | Configuración de la herramienta de Firebase (emulador local y publicar reglas) |
 | `herramientas/` | Pruebas y utilidades para desarrollar (el juego no las usa) |
 
-**Online:** no hay ola compartida. Cada jugador simula su propia ola y publica en `v2/salas/<sala>/players/<uid>` su posición *relativa al tubo* (~8 veces/s). Los demás lo dibujan en ese punto de su ola. Eventos (empujón, disputa, golpe), chat y notas de voz van por `v2/salas/<sala>/msgs`. Récords en `v2/records/<temporada>/<uid>`. `<uid>` es el del login anónimo de Firebase (`firebaseListo()` en `js/online/red.js`). La sala se elige con `#nombre` en la URL (por defecto `pantalan`; `#bots` juega con bots sin conexión). Detalles y reglas: [docs/FIREBASE.md](docs/FIREBASE.md).
+**Online:** no hay ola compartida. Cada jugador simula su propia ola y publica en `v2/salas/<sala>/players/<uid>` su posición *relativa al tubo* (~7 veces/s, solo lo que cambia; formato en `js/online/protocolo.js`). Los demás lo dibujan en ese punto de su ola. Eventos (empujón, disputa, golpe), chat y notas de voz van por `v2/salas/<sala>/msgs`. Récords en `v2/records/<temporada>/<uid>`. `<uid>` es el del login anónimo de Firebase (`firebaseListo()` en `js/online/red.js`). La sala se elige con `#nombre` en la URL; sin nombre es la ola pública `pantalan`, que con 12 surfistas se reparte en `pantalan-2`, `-3`… (`#bots` juega con bots sin conexión). Detalles y reglas: [docs/FIREBASE.md](docs/FIREBASE.md).
 
 Opciones en la URL: `#sala`, `#bots`, `?emulador` (usa el emulador local de Firebase), `?sinred` (no se conecta a nada; lo usan las pruebas).
 
@@ -68,7 +68,9 @@ Online y reglas, contra el **emulador** de Firebase (necesita Java; ver [docs/FI
 ```
 firebase emulators:start --only auth,database                       # en otra terminal
 node herramientas/pruebas/reglas.mjs                                 # 47 pruebas de las reglas
-node herramientas/probar.mjs herramientas/pruebas/online.js --emulador --jugadores=2 --hash=pruebas
+node herramientas/probar.mjs herramientas/pruebas/online.js --emulador --jugadores=2 --hash=pruebas   # dos jugadores: chat, empujón, Disputa, récords
+node herramientas/pruebas/sala.mjs                                   # la ola pública llena manda al nuevo a pantalan-2
+node herramientas/probar.mjs herramientas/pruebas/red.js --emulador --jugadores=3 --hash=pruebas      # cuánto gasta el online ("red": bytes)
 ```
 
 ### A mano

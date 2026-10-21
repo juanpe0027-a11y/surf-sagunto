@@ -14,6 +14,7 @@ import { bump } from '../juego/puntos.js';
 import { startPaddle } from '../juego/sesion.js';
 import { mpV } from '../online/jugadores.js';
 import { pushMsg } from '../online/mensajes.js';
+import { evento } from '../online/protocolo.js';
 import { MP } from '../online/red.js';
 import { BOTS } from './bots.js';
 import { drawFighter, dropFighter, makeFighter } from './luchador.js';
@@ -27,7 +28,6 @@ export const SW = [
 ];
 export const ZAX = V3(0, 0, 1), XAX = V3(1, 0, 0), qRoll = new THREE.Quaternion().setFromAxisAngle(V3(1, 0, 0), Math.PI / 2);
 export const DUEL = { on: false };
-MP.pushCount = {};
 const mkFighterState = u => ({ u, hp: DUEL_HP, netHp: DUEL_HP, pendHp: DUEL_HP, pendT: 0, sw: { type: 0, t: -1, hit: true },
   block: false, jy: 0, jv: 0, walk: 0, hurt: 0, ko: 0, airTaps: 0, tapWin: 0, airDone: false, airPlan: 0, spinA: 0 });
 
@@ -51,7 +51,7 @@ export function duelCount(R) {
   const name = R.nm || R.ch.name;
   if (n < 3) { chip('⚔️ Disputa con ' + name + ': ' + n + '/3 empujones'); return; }
   MP.pushCount[R.id] = 0;
-  if (!R.bot && MP.base) MP.base.child('msgs').push({ ev: 'duel', to: R.id, id: MP.myId, nm: MP.myName || G.CH.name, at: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
+  if (!R.bot && MP.base) MP.base.child('msgs').push(evento('duel', R.id)).catch(() => {});
   setTimeout(() => startDuel(R), 1200);
 }
 export function startDuel(R) {
@@ -110,7 +110,7 @@ function myImpact() {
   if (D.bot) { B.hp--; B.u = clamp(B.u + Math.sign(B.u - A.u || 1) * 0.75, -5, 5); }
   else {
     B.pendHp = (B.pendT > 0 ? B.pendHp : B.netHp) - 1; B.pendT = 1.5;
-    if (MP.base) MP.base.child('msgs').push({ ev: 'hit', to: D.oppId, ty: A.sw.type, id: MP.myId, nm: MP.myName || G.CH.name, at: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
+    if (MP.base) MP.base.child('msgs').push(evento('hit', D.oppId, { ty: A.sw.type })).catch(() => {});
   }
 }
 export function duelGotHit(fromId, ty) {

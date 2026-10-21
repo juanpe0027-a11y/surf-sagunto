@@ -67,9 +67,10 @@ js/
     puntos.js          addPts, bump (multiplicador)
     hud.js             marcadores, mensajes (say, chip, showTrick, toast) y pantallas
   online/
-    red.js             Firebase: login anónimo (firebaseListo), MP, sala, inactividad
-    conexion.js        al empezar: bots o conexión a la sala
-    jugadores.js       mandar mi estado, dibujar a los demás, choques, clasificación
+    red.js             Firebase: login anónimo (firebaseListo), MP, sala
+    protocolo.js       qué se manda por la red y cómo (solo lo que cambia)
+    conexion.js        al empezar: bots o conexión a la sala (y reparto de la ola pública cuando se llena)
+    jugadores.js       mandar mi estado, dibujar a los demás, choques, clasificación, inactividad
     empujones.js       empujar y que te empujen
     mensajes.js        chat, frases rápidas, notas de voz
   modos/

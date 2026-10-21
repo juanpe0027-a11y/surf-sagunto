@@ -33,6 +33,15 @@ if (yo === 0) await MP.base.child('msgs').push({ ev: 'push', to: otro, id: MP.my
 res.escribirAlOtro = await MP.base.child('players/' + otro).set({ ch: 'jowi', st: 'ride', t: firebase.database.ServerValue.TIMESTAMP }).then(() => 'PERMITIDO (mal)', e => 'rechazado');
 res.suplantarMensaje = await MP.base.child('msgs').push({ id: otro, nm: 'X', tx: 'soy el otro', at: firebase.database.ServerValue.TIMESTAMP }).then(() => 'PERMITIDO (mal)', e => 'rechazado');
 
+// Disputa por el Pico entre los dos: el 0 cuenta tres empujones contra el 1 y los dos entran a pelear
+if (yo === 0) { for (let i = 0; i < 3; i++) S.duelCount(MP.remotes.get(otro)); }
+res.disputaOnline = await hasta(() => S.state === 'duel' && MP.remotes.get(otro).st === 'duel' && MP.remotes.get(otro).du === MP.myId, 12000);
+await esperar(2500);
+await captura('disputa-online');
+// se acaba: al volver a surfear, el rival deja de estar en la Disputa (el campo du se borra)
+S.DUEL.on = false;
+res.salenDeLaDisputa = await hasta(() => S.state !== 'duel' && MP.remotes.get(otro).st !== 'duel' && !MP.remotes.get(otro).du, 12000);
+
 // récords: se guardan al abrir la pantalla y el ranking sale de la base de datos
 $('hudHome').click(); await esperar(1000);
 $('toRecords').click();

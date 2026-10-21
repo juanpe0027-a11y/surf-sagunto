@@ -67,7 +67,7 @@ for (let i = 0; i < JUGADORES; i++) {
   const { browserContextId } = await cdp('Target.createBrowserContext');
   const { targetId } = await cdp('Target.createTarget', { url: 'about:blank', browserContextId });
   const { sessionId } = await cdp('Target.attachToTarget', { targetId, flatten: true });
-  const p = { i, S: sessionId, errores: [], avisos: [], fallos404: [] };
+  const p = { i, S: sessionId, errores: [], avisos: [], fallos404: [], red: { recibidos: 0, enviados: 0, tramas: 0 } };
   paginas.push(p);
   oyentes.push(m => {
     if (m.sessionId !== p.S) return;
@@ -76,6 +76,9 @@ for (let i = 0; i < JUGADORES; i++) {
       const t = m.params.args.map(a => a.value ?? a.description ?? '').join(' ');
       (m.params.type === 'error' ? p.errores : p.avisos).push(t);
     }
+    // bytes por WebSocket (la base de datos de Firebase): para medir lo que gasta el online
+    if (m.method === 'Network.webSocketFrameReceived') { p.red.recibidos += m.params.response.payloadData.length; p.red.tramas++; }
+    if (m.method === 'Network.webSocketFrameSent') p.red.enviados += m.params.response.payloadData.length;
     if (m.method === 'Network.responseReceived' && m.params.response.status >= 400) p.fallos404.push(m.params.response.status + ' ' + m.params.response.url);
     if (m.method === 'Network.loadingFailed' && !m.params.canceled && m.params.blockedReason !== 'inspector') p.fallos404.push(`falla ${m.params.errorText} ${m.params.blockedReason || m.params.corsErrorStatus?.corsError || ""} ${m.params.type}`);
   });
@@ -117,6 +120,8 @@ if (guion) {
   await Promise.all(paginas.map(p => correrGuion(p, codigo)));
   for (const p of paginas) await captura(p, '9-final');
 }
+// errores que el propio juego ha apuntado (por ejemplo, un módulo que no carga)
+for (const p of paginas) p.errores.push(...await evaluar(p, '(window.__errores || []).slice()').catch(() => []));
 const limpio = ({ S, i, ...resto }) => resto;
 console.log(JSON.stringify(JUGADORES > 1 ? paginas.map(limpio) : limpio(paginas[0]), null, 2));
 chrome.kill(); servidor.close();
