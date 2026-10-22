@@ -43,6 +43,15 @@ Juanpe sigue mejorando el juego en el `index.html` antiguo de `main`. Antes de p
 - [x] **Salto según la inercia** (`juego/fisica.js` + `juego/trucos.js`): cuanto más abajo de la ola empiezas a subir, más alto saltas (`G.hMinRun`); también se puede saltar con algo menos de velocidad (4,5 en vez de 6,5)
 - [x] **Al caer baja la ola**: la recepción apunta más hacia abajo (`LAND_A` 0,15 → 0,5, recepción suave 1,4 → 1,0 s) y la tabla ya no se endereza sola tras caer
 
+**22-10-2026** (9 commits, de `f812d52` a `635bcdb`):
+
+- [ ] Unir otra vez `origin/main` a `mejoras`
+- [ ] **Floater** (`juego/floater.js` nuevo + `posturas.js` + `sesion.js`): subiendo hacia la cresta fuera del tubo, «abajo» → la tabla se queda cruzada encima del labio deslizando hasta 2 s (con estela de agua y postura agachada); «abajo» otra vez o a los 2 s baja la ola y puntúa. Mientras dura, nadie te puede empujar
+- [ ] **El revert del switch** gira metiendo la punta hacia abajo de la ola (al revés que antes)
+- [ ] **Robar la tabla** (`online/robo.js` nuevo): el segundo empujón al mismo surfista le roba lo suyo (tabla, moto, kayak o zodiac; el bodyboard no). Surfeas con lo suyo, con su postura y sus trucos, llevando tu tabla bajo el brazo; cuando él vuelve a coger ola, das un saltito y vuelves a lo tuyo (tu vehículo llega navegando por tu costado) y lo robado se queda atrás a la deriva. Los bots también roban. **Campos nuevos en la red:** `sb` en el jugador (qué lleva robado) y `sb` en el mensaje de empujón → `protocolo.js`, `firebase-reglas.json` y pruebas, **y Juanpe tiene que volver a publicar las reglas**
+- [ ] **Choques con tambaleo**: chocar sin empujar ya no tira a nadie, los dos se tambalean un momento
+- [ ] **El empujón lo gana el más rápido**: si el otro va más deprisa que tú, el que se cae eres tú (también con los bots)
+
 Cómo quedó: la animación va en `surfista/empujon.js` (no depende del online) y la protección y el resto en `online/empujones.js`. De paso: el «Rodeo» se llama «Backflip» también en los bots, comentarios y README; y los brazos de otro jugador que empuja ya no se quedan «congelados» si no estaba en pantalla en ese momento. Probado con los 15 personajes, bots, Disputa, online con 2 y 3 jugadores (el consumo sigue en 42 KB) y 48 reglas.
 
 ---
