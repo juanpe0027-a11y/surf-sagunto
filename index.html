@@ -3147,9 +3147,12 @@ nickIn.addEventListener('input', () => {
 // --- copias del muñeco para los demás jugadores (cada una con sus propios materiales y texturas) ---
 function objMap(a, b, m) { m.set(a, b); for (let i = 0; i < a.children.length; i++) objMap(a.children[i], b.children[i], m); return m; }
 function texFromCanvas(src) { const c = document.createElement('canvas'); c.width = src.width; c.height = src.height; c.getContext('2d').drawImage(src, 0, 0); const t = new THREE.CanvasTexture(c); t.anisotropy = 4; return t; }
-function buildRig(c) {
+function buildRig(c, boardCh) {
   const keep = CH, keepVis = boardRoot.visible, keepPos = boardRoot.position.clone(), keepQ = boardRoot.quaternion.clone();
   applyChar(c); boardRoot.visible = true;
+  // con tabla robada: la suya (para llevarla bajo el brazo) se copia antes de pintar la del otro
+  let carryTex = null, carryScale = null;
+  if (boardCh) { carryTex = texFromCanvas(deckCv); carryScale = boardMesh.scale.clone(); paintBoard(boardCh); setBoardShape(boardCh); }
   const myBody = HUMAN.local && HUMAN.local.root; if (myBody) boardRoot.remove(myBody);   // el cuerpo con esqueleto se clona aparte
   const r = boardRoot.clone(true);
   const m = objMap(boardRoot, r, new Map());
@@ -3168,12 +3171,14 @@ function buildRig(c) {
     o.material = matMap.get(om);
   });
   applyChar(keep); boardRoot.visible = keepVis; boardRoot.position.copy(keepPos); boardRoot.quaternion.copy(keepQ);
+  if (typeof stealLook === 'function') stealLook();          // si yo llevo una tabla robada, la vuelvo a poner
   const g = x => m.get(x);
   const rig = { root: r, L: {}, J: {}, hair: g(hair), headG: g(headG), footB: g(footB), footF: g(footF), strandG: g(strandG),
     strands: strands.map(s => s.map(g)), pony: g(L.pony), pose: mkPose(), faceYaw: new THREE.Quaternion(), mats: [...matMap.values()], texs: [...texDone.values()] };
   for (const k in L) rig.L[k] = g(L[k]);
   for (const k in J) rig.J[k] = g(J[k]);
   rig.rider = g(rider); rig.paddle = g(paddle); rig.board = g(boardMesh);
+  if (carryTex) { rig.carry = makeCarry(carryTex, carryScale); rig.rider.add(rig.carry); rig.mats.push(rig.carry.material); rig.texs.push(carryTex); }
   rig.human = makeHuman(c); if (rig.human) r.add(rig.human.root);
   r.visible = false; world.add(r);
   return rig;
@@ -3282,7 +3287,9 @@ function updateBots(dt) {
       if (state === 'ride' && !air && b.pushCD === 0 && rideT > 4) {
         const rx = curlX + b.dx;
         if (!MP.safe && !b.safe && Math.abs(rx - px) < 1.6 && Math.abs(b.h - h) < 0.2 && Math.random() < dt * 0.5) {
-          b.pushCD = 7; botSay(b, '💪'); splash(boardRoot.position, 60, 1.2); const BR = MP.remotes.get(b.id); if (BR) BR.pushArm = { t: 0, me: true }; gotPushed(b.nm, rx); duelCount(MP.remotes.get(b.id));
+          b.pushCD = 7; botSay(b, '💪'); splash(boardRoot.position, 60, 1.2); const BR = MP.remotes.get(b.id); if (BR) BR.pushArm = { t: 0, me: true };
+          const robo = (MP.pushCount[b.id] || 0) === 1 && canSteal(b.ch, CH) && !b.sb;      // segundo empujón: el bot se lleva tu tabla
+          gotPushed(b.nm, rx); if (robo && MP.fly) { MP.fly.noBoard = true; b.sb = CH.id; b.sbT = 0; botSay(b, '🏄'); } duelCount(MP.remotes.get(b.id));
         }
       }
       if (b.rideT > 28) { b.score += b.wave; b.wave = 0; b.st = 'wipe'; b.t = 1.2; }
@@ -3298,10 +3305,11 @@ function updateBots(dt) {
         botSay(b, b.flT ? 'Rodeo!' : b.spT > TAU ? '720!' : b.spT ? '360!' : '🤙');
       }
     }
+    if (b.sb) { b.sbT += dt; if ((b.sbT > 1.5 && (state === 'ride' || state === 'popup')) || b.sbT > 20 || (b.st !== 'ride' && b.st !== 'air')) { b.sb = ''; botSay(b, '🤙'); } }   // te devuelve la tabla cuando vuelves a coger ola
     b.sendT -= dt;
     if (b.sendT <= 0) {
       b.sendT = 1 / 15;
-      upsertPeer(b.id, { ch: b.ch.id, nm: b.nm, st: b.st, pt: (b.st === 'ride' || b.st === 'air') && b.safe ? 1 : 0, dx: b.dx, h: b.h, th: b.th, bk: b.bk, cr: b.cr, gr: 0, ay: b.ay, sp: b.sp, fl: b.fl, pr: b.pr % TAU, sc: Math.floor(b.score + b.wave) });
+      upsertPeer(b.id, { ch: b.ch.id, nm: b.nm, st: b.st, sb: b.sb || '', pt: (b.st === 'ride' || b.st === 'air') && b.safe ? 1 : 0, dx: b.dx, h: b.h, th: b.th, bk: b.bk, cr: b.cr, gr: 0, ay: b.ay, sp: b.sp, fl: b.fl, pr: b.pr % TAU, sc: Math.floor(b.score + b.wave) });
       const R = MP.remotes.get(b.id); if (R) R.bot = true;
     }
   }
@@ -3334,7 +3342,7 @@ function mpSend(dt) {
     return;
   }
   MP.meRef.set({ ch: CH.id, nm: MP.myName || CH.name, st, dx: r2(px - curlX), h: r2(h), th: r2(theta), bk: r2(bank), cr: r2(crouch),
-    gr: r2(grab), ay: r2(air ? aPos.y : 0), sp: r2(spin), fl: r2(flip), pr: r2(paddlePh % TAU), pt: MP.safe ? 1 : 0, sc: Math.floor(score), t: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
+    gr: r2(grab), ay: r2(air ? aPos.y : 0), sp: r2(spin), fl: r2(flip), pr: r2(paddlePh % TAU), pt: MP.safe ? 1 : 0, sb: MP.steal ? MP.steal.chId : '', sc: Math.floor(score), t: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
 }
 
 // --- los demás surfistas ---
@@ -3349,7 +3357,11 @@ function upsertPeer(id, pr) {
     mpLayer.appendChild(R.label);
     MP.remotes.set(id, R);
   }
-  if (R.chId !== ch.id) { if (R.rig) disposeRig(R.rig); R.rig = buildRig(ch); R.chId = ch.id; }
+  // con tabla robada (sb): su muñeco va con la tabla del otro y la suya bajo el brazo
+  const sbCh = typeof pr.sb === 'string' && pr.sb ? CHARS.find(x => x.id === pr.sb) : null;
+  const sbOk = sbCh && canSteal(ch, sbCh) ? sbCh : null;
+  const rigKey = ch.id + '|' + (sbOk ? sbOk.id : '');
+  if (R.rigKey !== rigKey) { if (R.rig) disposeRig(R.rig); R.rig = buildRig(ch, sbOk); R.chId = ch.id; R.rigKey = rigKey; }
   const wasSt = R.st;
   R.seen = performance.now(); R.purged = false;
   R.ch = ch; R.st = typeof pr.st === 'string' ? pr.st : 'menu';
@@ -3436,10 +3448,46 @@ function myPushAnims(dt) {
     else { pushArms(poseA, boardRoot, rider, armTarget(MP.pushArm), MP.pushArm.t); applyPose(poseA); }
   }
   if (MP.fly) {
-    if (state !== 'wipe') { endFly(rider); MP.fly = null; }
+    if (state !== 'wipe') { endFly(rider); if (MP.fly.noBoard) setBoardShape(CH); MP.fly = null; }
     else if ((MP.fly.t += dt) > FLY_T) boardRoot.visible = false;
-    else { boardRoot.visible = true; flyStep(MP.fly, boardRoot, rider, poseA); applyPose(poseA); }
+    else {
+      boardRoot.visible = true; flyStep(MP.fly, boardRoot, rider, poseA); applyPose(poseA);
+      if (MP.fly.noBoard) { boardMesh.visible = false; finMeshes.forEach(m => { m.visible = false; }); }   // te han robado la tabla: vuelas sin ella
+    }
   }
+  // tabla robada: surfeas con la suya y llevas la tuya bajo el brazo hasta que él vuelve a coger ola
+  if (MP.steal) {
+    const S = MP.steal, V = MP.remotes.get(S.id);
+    S.t += dt;
+    const back = V && (V.st === 'ride' || V.st === 'air') && S.t > 1.5;
+    if (back || S.t > 20 || !V || (state !== 'ride' && state !== 'popup')) stealEnd(back);
+    else if (state === 'ride' && MP.carry) { carryPose(poseA, MP.carry); applyPose(poseA); }
+  }
+}
+// --- robar la tabla (segundo empujón al mismo) ---
+const canSteal = (a, b) => !!a && !!b && !seatedC(a) && !seatedC(b) && !a.bodyboard && !b.bodyboard;
+function makeCarry(tex, scale) {
+  const m = new THREE.Mesh(boardMesh.geometry, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.35 }));
+  m.scale.copy(scale); return m;
+}
+// la tabla bajo el brazo: de canto, pegada al costado y sujeta con el brazo de atrás
+function carryPose(o, m) {
+  o.eB.set(o.ch.x - 0.28, o.ch.y - 0.16, o.ch.z - 0.16); o.aB.set(o.ch.x - 0.12, o.ch.y - 0.34, o.ch.z - 0.27);
+  m.position.set(o.ch.x - 0.05, o.ch.y - 0.3, o.ch.z - 0.33); m.rotation.set(Math.PI / 2, 0, -0.12);
+}
+function stealLook() { if (MP.steal) { const v = CHARS.find(x => x.id === MP.steal.chId); if (v) { paintBoard(v); setBoardShape(v); } } }
+function stealStart(R) {
+  const carryTex = texFromCanvas(deckCv), carryScale = boardMesh.scale.clone();      // tu tabla, para llevarla bajo el brazo
+  MP.carry = makeCarry(carryTex, carryScale); MP.carry.userData.tex = carryTex; rider.add(MP.carry);
+  MP.steal = { chId: R.ch.id, id: R.id, t: 0 }; stealLook(); MP.sendT = 0;
+  splash(boardRoot.position, 30, 0.8);
+  const p = addPts(200); chip('🏄 ¡Le has robado la tabla a ' + (R.nm || R.ch.name) + '! +' + p);
+}
+function stealEnd(back) {
+  if (!MP.steal) return;
+  MP.steal = null; paintBoard(CH); setBoardShape(CH); MP.sendT = 0;
+  if (MP.carry) { rider.remove(MP.carry); MP.carry.material.dispose(); MP.carry.userData.tex.dispose(); MP.carry = null; }
+  if (back && state === 'ride') { splash(boardRoot.position, 26, 0.7); chip('🏄 Tiras su tabla y vuelves a la tuya'); }
 }
 function mpUpdate(dt) {
   checkIdle(); statsTick(dt); updateSafe(dt); myPushAnims(dt);
@@ -3457,7 +3505,7 @@ function mpUpdate(dt) {
     // los fantasmas no se ven; si siguen así 45 s, se borran de la sala
     if (!alive(R) && !R.purged && MP.base && performance.now() - (R.seen || 0) > 45000) { R.purged = true; MP.base.child('players/' + R.id).remove().catch(() => {}); }
     // si lo acaban de tirar, se ve cómo sale volando separado de su tabla
-    if (R.fly && (R.fly.t += dt) > FLY_T) { endFly(R.rig.rider); R.fly = null; }
+    if (R.fly && (R.fly.t += dt) > FLY_T) { endFly(R.rig.rider); if (R.fly.noBoard && R.rig.board && !seatedC(R.ch)) R.rig.board.visible = true; R.fly = null; }
     const vis = showAll && alive(R) && state !== 'duel' && R.st !== 'menu' && R.st !== 'duel' && (R.st !== 'wipe' || !!R.fly);
     R.rig.root.visible = vis;
     if (!vis) { R.label.hidden = true; continue; }
@@ -3482,6 +3530,7 @@ function mpUpdate(dt) {
       applyPoseRig(R.rig, poseFor(R.ch)(R.rig.pose, c.cr, 0, t + R.tgt.pr, -c.bk * 0.8), 0.7, seatedC(R.ch) ? 1.5 : 0.9, t);
     }
     // el que empuja estira los brazos hacia el otro
+    if (R.rig.carry) { carryPose(R.rig.pose, R.rig.carry); applyPoseRig(R.rig, R.rig.pose, 0.7, 0.9, t); }
     if (R.pushArm) {
       R.pushArm.t += dt;
       if (R.pushArm.t > PUSH_T) R.pushArm = null;
@@ -3546,11 +3595,13 @@ function tryPush() {
   const best = pushTarget();
   if (!best) return false;
   const name = best.nm || best.ch.name;
+  const steal = (MP.pushCount[best.id] || 0) === 1 && canSteal(CH, best.ch) && !MP.steal;      // segundo empujón: le robas la tabla
   if (best.bot) botPushed(best.id, MP.myName || CH.name);
-  else if (MP.base) MP.base.child('msgs').push({ ev: 'push', to: best.id, id: MP.myId, nm: MP.myName || CH.name, at: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
+  else if (MP.base) MP.base.child('msgs').push(Object.assign({ ev: 'push', to: best.id, id: MP.myId, nm: MP.myName || CH.name, at: firebase.database.ServerValue.TIMESTAMP }, steal ? { sb: 1 } : {})).catch(() => {});
   best.st = 'wipe';
   MP.pushArm = { t: 0, R: best };
   best.fly = startFly(best.rig.root, Math.sign(best.rig.root.position.x - px) || 1, curlSpeed);
+  if (steal) { best.fly.noBoard = true; if (best.rig.board) best.rig.board.visible = false; stealStart(best); }
   splash(best.rig.root.position, 70, 1.4);
   const got = addPts(300); chip('💪 Has tirado a ' + name); showTrick('Empujón a ' + name, got); bump(0.1);
   v = Math.max(6, v - 1); crouch = 1;
@@ -3633,7 +3684,7 @@ function onMsg(m) {
   const R = MP.remotes.get(m.id), who = (typeof m.nm === 'string' && m.nm.slice(0, 20)) || (R && R.ch.name) || 'Surfista';
   if (m.ev === 'push') {
     if (R) R.pushArm = { t: 0, me: m.to === MP.myId, to: m.to };
-    if (m.to === MP.myId) { gotPushed(who, R && R.rig ? R.rig.root.position.x : px - 1); duelCount(R); }
+    if (m.to === MP.myId) { gotPushed(who, R && R.rig ? R.rig.root.position.x : px - 1); if (m.sb && MP.fly) MP.fly.noBoard = true; duelCount(R); }
     else { const V = MP.remotes.get(m.to); if (V && V.rig && R && R.rig) V.fly = startFly(V.rig.root, Math.sign(V.rig.root.position.x - R.rig.root.position.x) || 1, curlSpeed); }
     return;
   }
@@ -4224,7 +4275,7 @@ window.__surf = { spawnDolphins, upsertPeer, onMsg, MP, startDuel, DUEL, duelSwi
 </script>
 
 <script>
-const BUILD_ID = '1792674266';
+const BUILD_ID = '1792675039';
 (function () {
   try {
     fetch(location.pathname + '?b=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => {
