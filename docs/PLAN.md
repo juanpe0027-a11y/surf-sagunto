@@ -5,56 +5,15 @@ Objetivo: que el juego sea más fácil de mantener y ampliar, se vea mejor y agu
 Estado de cada fase: ⬜ pendiente · 🟡 en curso · ✅ hecha.
 Las fases se hacen en orden: cada una se apoya en la anterior. Antes de empezar una fase se descompone en tareas pequeñas (se apuntan aquí mismo, debajo de la fase).
 
-## ▶ Estado actual y cómo seguir (21-10-2026)
+## ▶ Estado actual y cómo seguir (22-10-2026)
 
-Todo el trabajo está en la rama **`mejoras`**, subida a GitHub el 21-10-2026 pero **todavía sin unir a `main`**: nada de esto está en el juego en vivo.
+**Publicado el 22-10-2026** (versión 1792694534): la rama `mejoras` está unida a `main` y es el juego en vivo. Juanpe trabaja ya sobre la estructura nueva (ver `CLAUDE.md` y [RECETAS.md](RECETAS.md)). Firebase: login anónimo activado y reglas publicadas (`node herramientas/comprobar-firebase.mjs` → «Todo listo»).
 
-**Hecho:** fases 0 a 4 completas y la mayor parte de la 5. Todas las pruebas pasan (15 personajes, bots, Disputa, online con 2 y 3 jugadores contra el emulador, 48 reglas, capas).
-
-**Para publicar (en este orden):**
-1. ~~Subir la rama `mejoras` a GitHub~~ (hecho) y probarla a mano si se quiere (ver «Cómo probar» en `CLAUDE.md`, o `herramientas/pruebas.html`).
-2. Juanpe: activar el login anónimo y publicar las reglas en Firebase, con su Claude y [PREPARAR-FIREBASE.md](PREPARAR-FIREBASE.md). El login anónimo ya está (22-10-2026); **las reglas hay que volver a publicarlas** porque se añadió el campo `sb` (robar la tabla). Se comprueba con `node herramientas/comprobar-firebase.mjs`.
-3. Unir `mejoras` a `main` y ejecutar `node herramientas/nueva-version.mjs` (los móviles se recargan solos).
-4. Una semana después: cerrar las rutas antiguas de Firebase ([FIREBASE.md](FIREBASE.md), paso 3).
-
-**Pendiente:** publicar (pasos de arriba); después, lo que queda sin marcar en las fases 5 y 6, y comprobar fps y consumo reales (móvil y consola de Firebase).
-
-**Cuidado:** si Juanpe cambia `index.html` en `main` antes de unir la rama, ese cambio hay que pasarlo a mano al módulo que toque en `js/` (ver [ARQUITECTURA.md](ARQUITECTURA.md)), y apuntarlo aquí abajo.
-
-## Cambios de Juanpe en `main` que hay que pasar a la rama ✅
-
-Juanpe sigue mejorando el juego en el `index.html` antiguo de `main`. Antes de publicar `mejoras` hay que traer esos cambios a los módulos, o se perderían al unir la rama. Cómo: se une `origin/main` a `mejoras` (en `index.html` se queda la versión de la rama) y cada cambio se rehace a mano en su módulo.
-
-**21-10-2026** (8 commits, de `9fe51fd` a `2da9ae8`):
-
-- [x] Unir `origin/main` a `mejoras` (sin perder el `index.html` de la rama)
-- [x] **Personajes nuevos** (`datos/personajes.js` + fotos en `img/personajes/<id>/`, sacadas del base64): **OG Young Rubén** (`ruben`, goofy, sin neopreno, pelo rizado), **OG Young Blasco** (`blanco`, neopreno naranja entero) — los dos «Old Traste Team», con velocidad, aire y tubo al mínimo (1) — y **Akeny** (`akeny`, calvo, neopreno rojo y negro; no trae foto de cara)
-- [x] **Tabla de planchar** de Akeny (`board: 'iron'`): tabla más estrecha, sin quillas y con las patas plegadas asomando (`surfista/vehiculos.js` + `setBoardShape`)
-- [x] **Personajes en orden alfabético** en el menú (el primero, Akeny, es el que llevan los nuevos que no eligen)
-- [x] **Trucos con tabla** (`juego/trucos.js`, `juego/fisica.js`, `surfista/posturas.js`): 1 toque 360 · 2 **switch** (cae con las quillas delante y al segundo gira solo: «Revert» +250) · 3 **backflip agarrado** · 4 backflip 360. El «Rodeo» pasa a llamarse «Backflip». Agarre más estilizado (muy flexionado, brazo de atrás estirado). Textos de ayuda en `index.html` y en el aviso del primer salto
-- [x] **Empujón: protección al coger la ola** (`online/empujones.js`, `modos/bots.js`): 4 s sin que te puedan tirar al coger la ola (también los bots); los demás ven 🛡️ junto a tu nombre. **Campo nuevo en la red: `pt`** (0/1) → `online/protocolo.js`, `firebase-reglas.json` y sus pruebas
-- [x] **Empujón más justo**: solo a menos de 1,7 m (distancia real en 3D) y también en el aire (el botón TRUCO en el aire empuja si estás pegado a alguien); antes valía «cerca en la ola» o «acabas de chocar»
-- [x] **Animación del empujón**: el que empuja estira los brazos hacia el otro, y el empujado sale volando separado de su tabla agitando brazos y piernas (tú, los demás jugadores y los bots)
-
-**21-10-2026, por la tarde** (commit `563daa5`):
-
-- [x] Unir otra vez `origin/main` a `mejoras`
-- [x] **Trucos cambiados de orden**: 1 toque **switch**, 2 toques **360** (3 y 4 igual). Textos de ayuda y aviso del primer salto
-- [x] **Salto según la inercia** (`juego/fisica.js` + `juego/trucos.js`): cuanto más abajo de la ola empiezas a subir, más alto saltas (`G.hMinRun`); también se puede saltar con algo menos de velocidad (4,5 en vez de 6,5)
-- [x] **Al caer baja la ola**: la recepción apunta más hacia abajo (`LAND_A` 0,15 → 0,5, recepción suave 1,4 → 1,0 s) y la tabla ya no se endereza sola tras caer
-
-**22-10-2026** (9 commits, de `f812d52` a `635bcdb`):
-
-- [x] Unir otra vez `origin/main` a `mejoras`
-- [x] **Floater** (`juego/floater.js` nuevo + `posturas.js` + `sesion.js`): subiendo hacia la cresta fuera del tubo, «abajo» → la tabla se queda cruzada encima del labio deslizando hasta 2 s (con estela de agua y postura agachada); «abajo» otra vez o a los 2 s baja la ola y puntúa. Mientras dura, nadie te puede empujar
-- [x] **El revert del switch** gira metiendo la punta hacia abajo de la ola (al revés que antes)
-- [x] **Robar la tabla** (`online/robo.js` nuevo): el segundo empujón al mismo surfista le roba lo suyo (tabla, moto, kayak o zodiac; el bodyboard no). Surfeas con lo suyo, con su postura y sus trucos, llevando tu tabla bajo el brazo; cuando él vuelve a coger ola, das un saltito y vuelves a lo tuyo (tu vehículo llega navegando por tu costado) y lo robado se queda atrás a la deriva. Los bots también roban. **Campos nuevos en la red:** `sb` en el jugador (qué lleva robado) y `sb` en el mensaje de empujón → `protocolo.js`, `firebase-reglas.json` y pruebas, **y Juanpe tiene que volver a publicar las reglas**
-- [x] **Choques con tambaleo**: chocar sin empujar ya no tira a nadie, los dos se tambalean un momento
-- [x] **El empujón lo gana el más rápido**: si el otro va más deprisa que tú, el que se cae eres tú (también con los bots)
-
-Cómo quedó: floater en `juego/floater.js`; robo en `online/robo.js` (la tabla bajo el brazo y el tambaleo, en `surfista/empujon.js`). Al pasarlo se ha corregido un fallo de `main`: si te tiraban llevando algo robado (o pasaban 20 s), el robo no terminaba nunca (se repintaba la tabla en cada fotograma, los demás te seguían viendo con lo robado y no podías volver a robar). No se han pasado restos sin uso (`floatDrop`, `floatDownPrev`). Se ha añadido el floater al panel de ayuda. Probado: 15 personajes, bots, Disputa, online con 2 y 3 jugadores (38 KB), 52 reglas, y guiones a propósito para floater y robo (tabla, moto, vuelta navegando, más rápido, choque).
-
-Cómo quedó: la animación va en `surfista/empujon.js` (no depende del online) y la protección y el resto en `online/empujones.js`. De paso: el «Rodeo» se llama «Backflip» también en los bots, comentarios y README; y los brazos de otro jugador que empuja ya no se quedan «congelados» si no estaba en pantalla en ese momento. Probado con los 15 personajes, bots, Disputa, online con 2 y 3 jugadores (el consumo sigue en 42 KB) y 48 reglas.
+**Pendiente:**
+- A partir del **29-10-2026**: cerrar las rutas antiguas de Firebase ([FIREBASE.md](FIREBASE.md), paso 3).
+- Comprobar fps en un móvil de verdad y el consumo real en la consola de Firebase.
+- Lo que queda sin marcar en las fases 5 y 6 (personajes más realistas, costa en 3D, tone mapping…).
+- Revisar los cambios que Juanpe vaya haciendo en `main` (auditoría).
 
 ---
 
@@ -101,8 +60,8 @@ Que nadie pueda borrar a otros jugadores, inventarse récords ni llenar la base 
 - [x] Emulador local (`?emulador`) y 47 pruebas de reglas que pasan
 - [x] **Juanpe:** activar el login anónimo en la consola de Firebase ([FIREBASE.md](FIREBASE.md), paso 1) — hecho el 22-10-2026
 - [ ] **Juanpe:** publicar `firebase-reglas.json` en la consola de Firebase (paso 2). Publicadas el 22-10-2026, pero **hay que volver a publicarlas**: después se añadió el campo `sb` (robar la tabla). `node herramientas/comprobar-firebase.mjs` dice si están al día
-- [ ] Unir la rama a `main` (publicar) y subir `BUILD_ID`
-- [ ] Una semana después de publicar: quitar de las reglas las rutas antiguas `salas` y `stats` y borrar sus datos (paso 3)
+- [x] Unir la rama a `main` (publicar) y subir `BUILD_ID` — publicado el 22-10-2026, versión 1792694534
+- [ ] **A partir del 29-10-2026** (una semana después de publicar): quitar de las reglas las rutas antiguas `salas` y `stats` y borrar sus datos (paso 3)
 
 **Nota:** el ranking empieza vacío en `v2`. Cada jugador vuelve a aparecer en cuanto abre la versión nueva, porque su móvil sube los récords que tiene guardados.
 
