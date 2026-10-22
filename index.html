@@ -2090,7 +2090,7 @@ let rideAngle = 0, lastVh = 0, snapCD = 0;
 let hMinRun = 0.5;
 // floater: subiendo a la cresta fuera del tubo, «abajo» justo antes de despegar = 2 s deslizando por encima del labio
 const FLOAT_T = 2, FLOAT_DX = 12;
-let floatT = 0, floatRel = false, floatDownPrev = false, floatAcc = 0;
+let floatT = 0, floatRel = false, floatDownPrev = false, floatAcc = 0, floatDrop = 0;
 const isDownIn = () => (stick.id !== null && stick.y > 0.45) || keys.down;
 function startFloater() {
   floatT = FLOAT_T; floatRel = false; theta = 0.05; omega = 0; turnW = 0; turnLock = 0; backT = 0; pivotAng = 0;
@@ -2098,8 +2098,16 @@ function startFloater() {
   v = Math.max(v, curlSpeed + 1.5);
   chip('🌊 Floater');
 }
+// en pleno salto: arriba del todo de la parábola, «abajo» → baja al labio y se pone a deslizar por él
+function airToFloater() {
+  faceAt(px, 1);
+  floatDrop = Math.max(0, boardRoot.position.y - (face.y + 0.02));
+  air = false; h = 1; spin = flip = spinT = flipT = 0; grab = 0; grabT = 0; trickTaps = 0; supT = 0;
+  startFloater();
+}
 function floaterStep(dt) {
   floatT -= dt;
+  floatDrop *= Math.exp(-dt * 7);
   const k = 1 - Math.exp(-dt * 10);
   h = lerp(h, 1, k); theta = lerp(theta, 0.02, k); bank = lerp(bank, 0, k); omega = 0; twistAmt = lerp(twistAmt, 0, k);
   crouch = lerp(crouch, 1, k);
@@ -2563,7 +2571,7 @@ function placeBoardOnFace() {
     // switch: va con las quillas delante y al final gira 180 para volver a ir de punta
     if (switchT > 0) { qSw.setFromAxisAngle(UP, -Math.PI * sm(0, 0.35, switchT)); boardRoot.quaternion.multiply(qSw); }   // gira metiendo la punta hacia abajo de la ola
   }
-  boardRoot.position.set(px, face.y + 0.02, face.z);
+  boardRoot.position.set(px, face.y + 0.02 + (floatT > 0 ? floatDrop : 0), face.z);
 }
 
 // el dedo marca la altura objetivo en la cara de la ola
@@ -2724,6 +2732,10 @@ function rideStep(dt, hT) {
   } else {
     airT += dt;
     aVy -= 9.8 * dt; aPos.y += aVy * dt; airTop = Math.max(airTop, aPos.y - launchY);
+    // floater desde el salto: arriba del todo (sin truco a medias) y fuera del tubo, «abajo» → al labio
+    const dnA = isDownIn();
+    if (state === 'ride' && dnA && !floatDownPrev && aVy < 2.5 && aVy > -3.5 && !trickTaps && spin === spinT && flip === flipT && px - curlX > FLOAT_DX) { floatDownPrev = dnA; airToFloater(); return; }
+    floatDownPrev = dnA;
     let grabbing = false;
     if (state !== 'title') {
       // gestos: deslizar a un lado = 360 en ese sentido (hasta 720), deslizar abajo = rodeo, dedo quieto = grab
@@ -4219,7 +4231,7 @@ window.__surf = { spawnDolphins, upsertPeer, onMsg, MP, startDuel, DUEL, duelSwi
 </script>
 
 <script>
-const BUILD_ID = '1792671008';
+const BUILD_ID = '1792672880';
 (function () {
   try {
     fetch(location.pathname + '?b=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => {
