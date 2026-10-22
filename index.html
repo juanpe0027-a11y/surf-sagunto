@@ -2089,7 +2089,7 @@ let rideAngle = 0, lastVh = 0, snapCD = 0;
 // la tabla tiene rumbo (theta: 0 = paralela a la orilla, + sube la ola, - baja) y velocidad v en m/s
 let hMinRun = 0.5;
 // floater: subiendo a la cresta fuera del tubo, «abajo» justo antes de despegar = 2 s deslizando por encima del labio
-const FLOAT_T = 2, FLOAT_DX = 12, FLOAT_TH = -1.3;
+const FLOAT_T = 2, FLOAT_DX = 7, FLOAT_TH = -1.3;
 let floatT = 0, floatRel = false, floatDownPrev = false, floatAcc = 0, floatDrop = 0;
 const isDownIn = () => (stick.id !== null && stick.y > 0.45) || keys.down;
 function startFloater() {
@@ -2616,6 +2616,11 @@ function rideStep(dt, hT) {
     // giro: la tabla rota hacia el rumbo pedido con velocidad de giro limitada (trazadas en arco)
     // giro: la tabla rota hacia el rumbo pedido por el camino más corto, con velocidad de giro
     // limitada (trazadas en arco). Rumbo completo de 360°: se puede volver de punta hacia el tubo.
+    // floater fácil: subiendo cerca del labio (fuera del tubo), «abajo» → se queda en el labio en vez de despegar
+    // (se mira antes de girar, para que la tabla no se ponga a bajar)
+    if (state === 'ride' && !fs && isDownIn() && h > 0.62 && Math.sin(theta) > 0.2 && px - curlX > FLOAT_DX && v > 4) {
+      startFloater(); floatDownPrev = true; floaterStep(dt); return;
+    }
     const prev = theta;
     if (fs) {
       // maniobra TRUCO: 180 rápido en el sitio → recto hacia el tubo a la misma altura → 180 de vuelta
@@ -2688,10 +2693,7 @@ function rideStep(dt, hT) {
     vh = v * sn / (Hc * 1.25);
     if (h < hMinRun || sn < 0.15) hMinRun = h;                 // lo más abajo desde que empezaste a subir (de lado o bajando no cuenta)
     if (h < 0.03) { h = 0.03; if (sn < -0.05) theta = cs >= 0 ? -0.05 : -Math.PI + 0.05; }
-    // floater: subiendo hacia la cresta (fuera del tubo), «abajo» justo antes de despegar → se queda encima del labio
-    const dnF = isDownIn();
-    if (state === 'ride' && !fs && dnF && !floatDownPrev && h > 0.68 && sn > 0.25 && px - curlX > FLOAT_DX && v > 5) startFloater();
-    floatDownPrev = dnF;
+    floatDownPrev = isDownIn();
     if (h >= 1) {
       if (sn > 0.35 && v > 4.5 && !turnLock && state !== 'popup' && state !== 'title' || (state === 'title' && sn > 0.35)) launch();
       else { h = 1; if (!turnLock && sn > -0.05) theta = cs >= 0 ? -0.05 : -Math.PI + 0.05; v *= 1 - (turnLock ? 0.9 : 0.5) * dt; }
@@ -2735,7 +2737,9 @@ function rideStep(dt, hT) {
     aVy -= 9.8 * dt; aPos.y += aVy * dt; airTop = Math.max(airTop, aPos.y - launchY);
     // floater desde el salto: arriba del todo (sin truco a medias) y fuera del tubo, «abajo» → al labio
     const dnA = isDownIn();
-    if (state === 'ride' && dnA && !floatDownPrev && aVy < 2.5 && aVy > -3.5 && !trickTaps && spin === spinT && flip === flipT && px - curlX > FLOAT_DX) { floatDownPrev = dnA; airToFloater(); return; }
+    // (también nada más despegar: si das abajo en el primer medio segundo, se queda en el labio)
+    const nearTake = airT < 0.45;
+    if (state === 'ride' && dnA && (nearTake || (!floatDownPrev && aVy < 2.5 && aVy > -3.5)) && !trickTaps && spin === spinT && flip === flipT && px - curlX > FLOAT_DX) { floatDownPrev = dnA; airToFloater(); return; }
     floatDownPrev = dnA;
     let grabbing = false;
     if (state !== 'title') {
@@ -4232,7 +4236,7 @@ window.__surf = { spawnDolphins, upsertPeer, onMsg, MP, startDuel, DUEL, duelSwi
 </script>
 
 <script>
-const BUILD_ID = '1792673132';
+const BUILD_ID = '1792673832';
 (function () {
   try {
     fetch(location.pathname + '?b=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => {
