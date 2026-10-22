@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Special+Elite&family=Barlow+Condensed:wght@500;700&display=swap">
-<link rel="stylesheet" href="css/estilo.css?v=1792694534">
+<link rel="stylesheet" href="css/estilo.css?v=1792698304">
 
 <style>html,body{margin:0}</style>
 </head>
@@ -161,12 +161,69 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 
-<script type="module" src="js/main.js?v=1792694534"></script>
+<!-- mapa de módulos: cada archivo de js/ con la huella de su contenido. Lo escribe herramientas/nueva-version.mjs: no se toca a mano -->
+<script type="importmap">
+{ "imports": {
+  "./js/bucle.js": "./js/bucle.js?v=285246e5",
+  "./js/datos/disenos.js": "./js/datos/disenos.js?v=51ab106f",
+  "./js/datos/personajes.js": "./js/datos/personajes.js?v=45e23695",
+  "./js/debug.js": "./js/debug.js?v=ba9dc4e0",
+  "./js/entrada/controles.js": "./js/entrada/controles.js?v=2228cb71",
+  "./js/inicio.js": "./js/inicio.js?v=9a30fdc0",
+  "./js/interfaz/menu.js": "./js/interfaz/menu.js?v=2ca6e45b",
+  "./js/interfaz/musica.js": "./js/interfaz/musica.js?v=e3da1518",
+  "./js/interfaz/pantalla.js": "./js/interfaz/pantalla.js?v=a7929a00",
+  "./js/interfaz/records.js": "./js/interfaz/records.js?v=0117b17e",
+  "./js/juego/fisica.js": "./js/juego/fisica.js?v=0ea54b64",
+  "./js/juego/floater.js": "./js/juego/floater.js?v=58916850",
+  "./js/juego/hud.js": "./js/juego/hud.js?v=79f1dafc",
+  "./js/juego/puntos.js": "./js/juego/puntos.js?v=9e30a57f",
+  "./js/juego/sesion.js": "./js/juego/sesion.js?v=20042c2e",
+  "./js/juego/trucos.js": "./js/juego/trucos.js?v=99de3080",
+  "./js/main.js": "./js/main.js?v=4c21f735",
+  "./js/modos/bots.js": "./js/modos/bots.js?v=957850ed",
+  "./js/modos/disputa.js": "./js/modos/disputa.js?v=3485a25c",
+  "./js/modos/luchador.js": "./js/modos/luchador.js?v=40d76c57",
+  "./js/mundo/cielo.js": "./js/mundo/cielo.js?v=d41cca36",
+  "./js/mundo/costa.js": "./js/mundo/costa.js?v=ca21c67e",
+  "./js/mundo/delfines.js": "./js/mundo/delfines.js?v=b3165fdc",
+  "./js/mundo/formas.js": "./js/mundo/formas.js?v=3b440b7b",
+  "./js/mundo/mar.js": "./js/mundo/mar.js?v=e3cda6ad",
+  "./js/mundo/motor.js": "./js/mundo/motor.js?v=729b89b9",
+  "./js/mundo/ola.js": "./js/mundo/ola.js?v=2f5465af",
+  "./js/mundo/particulas.js": "./js/mundo/particulas.js?v=768f56be",
+  "./js/mundo/shaders.js": "./js/mundo/shaders.js?v=92977bc9",
+  "./js/nucleo/config.js": "./js/nucleo/config.js?v=a03c63d4",
+  "./js/nucleo/estado.js": "./js/nucleo/estado.js?v=8a93e02c",
+  "./js/nucleo/eventos.js": "./js/nucleo/eventos.js?v=e9ecaf58",
+  "./js/nucleo/guardado.js": "./js/nucleo/guardado.js?v=269e184f",
+  "./js/nucleo/util.js": "./js/nucleo/util.js?v=6192dff2",
+  "./js/online/conexion.js": "./js/online/conexion.js?v=2f4d82d3",
+  "./js/online/empujones.js": "./js/online/empujones.js?v=5b2322e7",
+  "./js/online/jugadores.js": "./js/online/jugadores.js?v=61819536",
+  "./js/online/mensajes.js": "./js/online/mensajes.js?v=5f474a14",
+  "./js/online/protocolo.js": "./js/online/protocolo.js?v=31358ba7",
+  "./js/online/red.js": "./js/online/red.js?v=c98a9e35",
+  "./js/online/robo.js": "./js/online/robo.js?v=2348823c",
+  "./js/surfista/cuerpo.js": "./js/surfista/cuerpo.js?v=440c77c3",
+  "./js/surfista/empujon.js": "./js/surfista/empujon.js?v=22c32efa",
+  "./js/surfista/muneco.js": "./js/surfista/muneco.js?v=7cdced29",
+  "./js/surfista/personaje.js": "./js/surfista/personaje.js?v=5ef6eb67",
+  "./js/surfista/posturas.js": "./js/surfista/posturas.js?v=d8dec435",
+  "./js/surfista/raiz.js": "./js/surfista/raiz.js?v=80874c1f",
+  "./js/surfista/rig.js": "./js/surfista/rig.js?v=654ff131",
+  "./js/surfista/sombra.js": "./js/surfista/sombra.js?v=62ec1e87",
+  "./js/surfista/tabla.js": "./js/surfista/tabla.js?v=8b5efd3c",
+  "./js/surfista/vehiculos.js": "./js/surfista/vehiculos.js?v=ed7c2790"
+} }
+</script>
+
+<script type="module" src="js/main.js?v=1792698304"></script>
 
 <script>
 // versión publicada: si version.json dice que hay una más nueva, se recarga la página saltándose la caché.
 // No se cambia a mano: node herramientas/nueva-version.mjs (pone el mismo número aquí y en version.json)
-const BUILD_ID = '1792694534';
+const BUILD_ID = '1792698304';
 (function () {
   try {
     fetch('version.json?b=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.json() : {}).then(j => {

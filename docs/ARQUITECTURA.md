@@ -140,5 +140,5 @@ Cada personaje es una ficha de datos en `CHARS` y sus fotos en la carpeta con su
 
 - **`THREE` es global** (lo pone `vendor.js`); los módulos no lo importan.
 - **El mundo está espejado en X** (`world.scale.x = -1`): dentro de `world`, +x va hacia la izquierda de la pantalla. Por eso la cámara usa `-camPos.x`.
-- **Caché de GitHub Pages:** guarda los archivos ~10 minutos. `herramientas/nueva-version.mjs` pone `?v=` en `js/main.js` y el CSS, pero los demás módulos pueden tardar esos minutos en actualizarse. Para un juego entre amigos es aceptable; si da problemas, se resuelve con un service worker (fase 6 del plan).
+- **Caché de GitHub Pages:** deja guardar los archivos 10 minutos. Por eso `index.html` tiene un **mapa de módulos** (`<script type="importmap">`) que pide cada archivo de `js/` con la huella de su contenido (`util.js?v=1a2b3c4d`): tras publicar, lo que ha cambiado se descarga seguro y lo demás sale de la caché. Lo escribe `herramientas/nueva-version.mjs` (no se toca a mano) y lo prueba `herramientas/pruebas/cache.mjs`. Las imágenes y modelos no llevan huella: si se cambia una foto con el mismo nombre, puede tardar esos 10 minutos en verse.
 - **Los módulos necesitan servidor:** hay que probar con `python -m http.server`, no abriendo el archivo con doble clic.

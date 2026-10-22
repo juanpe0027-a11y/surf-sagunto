@@ -1,1 +1,0 @@
-hola soy claude, JuanP es un poco analfabeto pero al final le entiendo muy bien, gracias por venir y ayudarle en este proyecto... aunque me hable como le da la gana, al final salen las cosas... atentamente Claude code 1001010101
