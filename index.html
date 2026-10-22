@@ -3468,18 +3468,17 @@ function myPushAnims(dt) {
     const S = MP.steal, V = MP.remotes.get(S.id);
     S.t += dt;
     const back = V && (V.st === 'ride' || V.st === 'air') && S.t > 1.5;
-    if (S.ret) {                                                                   // tu vehículo llegando desde atrás
-      S.ret.t += dt; const k = sm(0, 1.1, S.ret.t), g = S.ret.g.root;
-      g.position.set(lerp(S.ret.x0, boardRoot.position.x, k), boardRoot.position.y, boardRoot.position.z); g.quaternion.copy(boardRoot.quaternion);
-      if (S.ret.t > 1.1 || state !== 'ride') { if (state === 'ride') splash(boardRoot.position, 30, 0.8); stealEnd(true); }
-    } else if (back || S.t > 20 || !V || (state !== 'ride' && state !== 'popup')) stealEnd(back);
+    if (S.ret) stealReturn(dt);
+    else if (back || S.t > 20 || !V || (state !== 'ride' && state !== 'popup')) stealEnd(back);
     else if (state === 'ride' && MP.carry) { carryPose(poseA, MP.carry); applyPose(poseA); }
   }
-  // objetos robados que se van quedando atrás y se hunden detrás de la ola
+  // lo robado se queda atrás flotando a la deriva, cabeceando, y se hunde detrás de la ola
   for (let i = MP.ghosts.length - 1; i >= 0; i--) {
-    const G = MP.ghosts[i]; G.t += dt;
-    G.g.root.position.y -= dt * 0.7; G.g.root.rotateY(dt * 0.6);
-    if (G.t > 2.5) { disposeRig(G.g); MP.ghosts.splice(i, 1); }
+    const G = MP.ghosts[i], r = G.g.root; G.t += dt;
+    G.vx *= Math.exp(-dt * 1.2); r.position.x += G.vx * dt; r.position.z += G.vz * dt;
+    r.position.y = G.y0 + 0.06 * Math.sin(G.t * 5) - 0.45 * sm(1.0, 3.0, G.t);
+    r.quaternion.copy(G.q0); r.rotateY(G.t * G.spin); r.rotateX(0.18 * Math.sin(G.t * 3.3)); r.rotateZ(0.12 * Math.sin(G.t * 2.6) + 0.25 * sm(1.5, 3.0, G.t));
+    if (G.t > 3.2) { disposeRig(G.g); MP.ghosts.splice(i, 1); }
   }
 }
 // --- robar la tabla (segundo empujón al mismo) ---
@@ -3512,21 +3511,59 @@ function ghostOf(ch) {
   rig.root.visible = true; rig.root.position.copy(boardRoot.position); rig.root.quaternion.copy(boardRoot.quaternion);
   return rig;
 }
+// vuelta a lo tuyo, con detalle: (1) si es un vehículo llega navegando por tu costado y frena a tu altura,
+// (2) das un saltito y lo tuyo se mete debajo, (3) caes en ello; lo robado se queda atrás a la deriva
+const RET_APPROACH = 1.4, RET_HOP = 0.62, RET_SIDE = 1.3;
 function stealEnd(back) {
   if (!MP.steal) return;
   const riding = state === 'ride' && !air;
-  // si lo tuyo es un vehículo, primero vuelve navegando solo desde atrás y luego saltas a él
-  if (back && riding && seatedC(CH) && !MP.steal.ret) {
-    const g = ghostOf(CH); g.root.position.x -= 9;
-    MP.steal.ret = { t: 0, g, x0: g.root.position.x }; chip('🛥️ Tu ' + (CH.jetski ? 'moto' : CH.kayak ? 'kayak' : 'zodiac') + ' vuelve navegando');
+  if (back && riding && !MP.steal.ret) {
+    const veh = seatedC(CH);
+    MP.steal.ret = { phase: veh ? 'approach' : 'hop', t: 0, g: veh ? ghostOf(CH) : null, wake: 0 };
+    if (veh) chip('🛥️ Tu ' + (CH.jetski ? 'moto' : CH.kayak ? 'kayak' : 'zodiac') + ' vuelve navegando');
     return;
   }
-  if (MP.steal.ret) disposeRig(MP.steal.ret.g);
-  const stolen = CHARS.find(x => x.id === MP.steal.chId);
-  if (riding && stolen) MP.ghosts.push({ t: 0, g: ghostOf(stolen) });           // el robado se queda atrás y se pierde detrás de la ola
-  MP.steal = null; RIDE_CH = null; paintBoard(CH); setBoardShape(CH); MP.sendT = 0;
+  stealSwap(back && riding);
+  rider.position.set(0, 0, 0);
+}
+// el cambio de objeto (en mitad del salto)
+function stealSwap(withGhost) {
+  if (!MP.steal) return;
+  const S = MP.steal;
+  if (S.ret && S.ret.g) { disposeRig(S.ret.g); S.ret.g = null; }
+  const stolen = CHARS.find(x => x.id === S.chId);
+  if (withGhost && stolen) {                                                   // lo robado se queda donde estaba y se va quedando atrás
+    const g = ghostOf(stolen);
+    MP.ghosts.push({ t: 0, g, y0: g.root.position.y, q0: g.root.quaternion.clone(), vx: curlSpeed * 0.55, vz: -0.5, spin: rnd(-0.5, 0.5) });
+  }
+  RIDE_CH = null; paintBoard(CH); setBoardShape(CH); MP.sendT = 0;
   if (MP.carry) { rider.remove(MP.carry); MP.carry.material.dispose(); MP.carry.userData.tex.dispose(); MP.carry = null; }
-  if (back && state === 'ride') { splash(boardRoot.position, 26, 0.7); chip('🏄 Tiras su tabla y vuelves a la tuya'); }
+  S.swapped = true;
+  if (withGhost && state === 'ride') { splash(boardRoot.position, 34, 0.8); chip(seatedC(CH) ? '🛥️ ¡De vuelta a lo tuyo!' : '🏄 Tiras su objeto y vuelves a tu tabla'); }
+}
+function stealReturn(dt) {
+  const S = MP.steal, R2 = S.ret;
+  if (state !== 'ride') { stealSwap(false); rider.position.set(0, 0, 0); MP.steal = null; return; }
+  R2.t += dt;
+  const b = boardRoot.position, t = performance.now() / 1000;
+  if (R2.phase === 'approach') {
+    // llega desde atrás por tu costado, cabeceando y dejando estela, y frena hasta ponerse a tu altura
+    const k = sm(0, RET_APPROACH, R2.t), g = R2.g.root;
+    g.position.set(b.x - 10 * (1 - k) * (1 - k), b.y + 0.05 * Math.sin(t * 7), b.z + RET_SIDE);
+    g.quaternion.copy(boardRoot.quaternion); g.rotateX(0.07 * Math.sin(t * 5)); g.rotateZ(0.05 * Math.sin(t * 6.3) - 0.08 * (1 - k));
+    if ((R2.wake -= dt) <= 0) { R2.wake = 0.07; mpV.copy(g.position); mpV.x -= 0.9; splash(mpV, 5, 0.35); }
+    if (R2.t >= RET_APPROACH) { R2.phase = 'hop'; R2.t = 0; }
+    return;
+  }
+  // el salto: sube, lo tuyo se mete debajo, cambias en lo alto y caes encima
+  const k = clamp(R2.t / RET_HOP, 0, 1);
+  rider.position.set(0, 0.9 * Math.sin(Math.PI * k), 0);
+  if (R2.g) {
+    const g = R2.g.root, side = RET_SIDE * (1 - sm(0, 0.5, k));
+    g.position.set(b.x, b.y + 0.05 * Math.sin(t * 7), b.z + side); g.quaternion.copy(boardRoot.quaternion);
+  }
+  if (!S.swapped && k >= 0.5) stealSwap(true);
+  if (k >= 1) { rider.position.set(0, 0, 0); splash(boardRoot.position, 22, 0.6); MP.steal = null; }
 }
 function wobbleBoard(obj, w, t) { if (w > 0) obj.rotateX(Math.sin(t * 22) * 0.22 * w); }
 function mpUpdate(dt) {
@@ -4330,7 +4367,7 @@ window.__surf = { spawnDolphins, upsertPeer, onMsg, MP, startDuel, DUEL, duelSwi
 </script>
 
 <script>
-const BUILD_ID = '1792676370';
+const BUILD_ID = '1792677285';
 (function () {
   try {
     fetch(location.pathname + '?b=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => {
