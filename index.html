@@ -3276,6 +3276,7 @@ function updateBots(dt) {
       b.dxTT -= dt;
       if (b.dxTT <= 0) { b.dxTT = rnd(3, 6); b.dxT = Math.random() < 0.3 ? rnd(3, 7) : rnd(8, Math.max(45, XB * 0.7)); }
       const dxdot = clamp((b.dxT - b.dx) * 0.7, -7, 5);
+      b.v = curlSpeed + dxdot; const BRv = MP.remotes.get(b.id); if (BRv) BRv.botV = b.v;
       b.dx = Math.max(1.5, b.dx + dxdot * dt);
       const vx = curlSpeed + dxdot, vy = hdot * HW * 1.25, thN = Math.atan2(vy, vx);
       const om = angDiff(thN, b.th) / Math.max(dt, 1e-3); b.th = thN;
@@ -3292,6 +3293,8 @@ function updateBots(dt) {
         const rx = curlX + b.dx;
         if (!MP.safe && !b.safe && Math.abs(rx - px) < 1.6 && Math.abs(b.h - h) < 0.2 && Math.random() < dt * 0.5) {
           b.pushCD = 7; botSay(b, '💪'); splash(boardRoot.position, 60, 1.2); const BR = MP.remotes.get(b.id); if (BR) BR.pushArm = { t: 0, me: true };
+          // gana el que va más rápido: si tú vas más deprisa, el que se cae es el bot
+          if (v > b.v + 0.6) { MP.wobble = 0.7; chip('💪 ' + b.nm + ' intentó tirarte pero ibas más rápido'); botPushed(b.id, MP.myName || CH.name); if (BR) BR.fly = startFly(BR.rig.root, Math.sign(BR.rig.root.position.x - px) || 1, curlSpeed); continue; }
           const robo = (MP.pushCount[b.id] || 0) === 1 && canSteal(b.ch, CH) && !b.sb;      // segundo empujón: el bot se lleva tu tabla
           gotPushed(b.nm, rx); if (robo && MP.fly) { MP.fly.noBoard = true; b.sb = CH.id; b.sbT = 0; botSay(b, '🏄'); } duelCount(MP.remotes.get(b.id));
         }
@@ -3525,7 +3528,9 @@ function stealEnd(back) {
   if (MP.carry) { rider.remove(MP.carry); MP.carry.material.dispose(); MP.carry.userData.tex.dispose(); MP.carry = null; }
   if (back && state === 'ride') { splash(boardRoot.position, 26, 0.7); chip('🏄 Tiras su tabla y vuelves a la tuya'); }
 }
+function wobbleBoard(obj, w, t) { if (w > 0) obj.rotateX(Math.sin(t * 22) * 0.22 * w); }
 function mpUpdate(dt) {
+  if (MP.wobble > 0) { MP.wobble = Math.max(0, MP.wobble - dt); if (state === 'ride' && !air) wobbleBoard(boardRoot, MP.wobble, performance.now() / 1000); }
   checkIdle(); statsTick(dt); updateSafe(dt); myPushAnims(dt);
   mpSend(dt);
   if (MP.sim) updateBots(dt);
@@ -3546,6 +3551,9 @@ function mpUpdate(dt) {
     R.rig.root.visible = vis;
     if (!vis) { R.label.hidden = true; continue; }
     const c = R.cur, rx = curlX + c.dx, root = R.rig.root;
+    // su velocidad: lo que avanza la ola más lo que se adelanta o se queda respecto a ella
+    if (R.prevDx !== undefined && dt > 0) R.spd = lerp(R.spd || curlSpeed, curlSpeed + (c.dx - R.prevDx) / dt, 1 - Math.exp(-dt * 3));
+    R.prevDx = c.dx;
     if (R.fly) { flyStep(R.fly, root, R.rig.rider, R.rig.pose); applyPoseRig(R.rig, R.rig.pose, 1, 0.9, t); R.label.hidden = true; continue; }
     if (R.st === 'paddle') {
       faceAt(rx, clamp(c.h, 0.03, 1));
@@ -3567,6 +3575,7 @@ function mpUpdate(dt) {
     }
     // el que empuja estira los brazos hacia el otro
     if (R.rig.carry) { carryPose(R.rig.pose, R.rig.carry); applyPoseRig(R.rig, R.rig.pose, 0.7, 0.9, t); }
+    if (R.wobble > 0) { R.wobble = Math.max(0, R.wobble - dt); wobbleBoard(root, R.wobble, t); }
     if (R.pushArm) {
       R.pushArm.t += dt;
       if (R.pushArm.t > PUSH_T) R.pushArm = null;
@@ -3582,7 +3591,8 @@ function mpUpdate(dt) {
     if (state !== 'ride') continue;
     const dxp = rx - px;
     if (!air && R.st === 'ride' && Math.abs(dxp) < 1.6 && Math.abs(c.h - h) < 0.15 && R.hitCD === 0) {
-      R.hitCD = 1.2; R.lastHit = performance.now();
+      // chocar sin empujar no tira a nadie: los dos se tambalean un poco
+      R.hitCD = 1.2; R.lastHit = performance.now(); R.wobble = 0.7; MP.wobble = 0.7;
       v = Math.max(6, v - 1.5); theta += (h > c.h ? 0.2 : -0.2); crouch = 1;
       mpV.copy(boardRoot.position).lerp(root.position, 0.5); splash(mpV, 40, 1);
       chip('💥 Choque con ' + (R.nm || R.ch.name));
@@ -3631,6 +3641,14 @@ function tryPush() {
   const best = pushTarget();
   if (!best) return false;
   const name = best.nm || best.ch.name;
+  // gana el que va más rápido: si él va más deprisa que tú, el que se cae eres tú
+  const suV = best.bot ? (best.botV || curlSpeed) : (best.spd || curlSpeed);
+  if (suV > v + 0.6) {
+    MP.pushArm = { t: 0, R: best }; best.wobble = 0.7;
+    chip('💥 ' + name + ' iba más rápido');
+    gotPushed(name + ' (iba más rápido)', best.rig.root.position.x);
+    return true;
+  }
   const steal = (MP.pushCount[best.id] || 0) === 1 && canSteal(CH, best.ch) && !MP.steal;      // segundo empujón: le robas la tabla
   if (best.bot) botPushed(best.id, MP.myName || CH.name);
   else if (MP.base) MP.base.child('msgs').push(Object.assign({ ev: 'push', to: best.id, id: MP.myId, nm: MP.myName || CH.name, at: firebase.database.ServerValue.TIMESTAMP }, steal ? { sb: 1 } : {})).catch(() => {});
@@ -4312,7 +4330,7 @@ window.__surf = { spawnDolphins, upsertPeer, onMsg, MP, startDuel, DUEL, duelSwi
 </script>
 
 <script>
-const BUILD_ID = '1792676145';
+const BUILD_ID = '1792676370';
 (function () {
   try {
     fetch(location.pathname + '?b=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => {
