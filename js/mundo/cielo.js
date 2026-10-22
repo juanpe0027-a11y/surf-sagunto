@@ -1,0 +1,36 @@
+// El cielo del amanecer (con nubes), dibujado con un shader sobre una esfera enorme.
+import { REFLEJOS } from '../nucleo/config.js';
+import { renderer, scene, world } from './motor.js';
+import { commonUniforms, GLSL_COMMON } from './shaders.js';
+
+export const skyMat = new THREE.ShaderMaterial({
+  uniforms: commonUniforms(), side: THREE.BackSide, depthWrite: false, fog: false,
+  vertexShader: `varying vec3 vDir; void main(){ vDir = (modelMatrix * vec4(position, 0.0)).xyz; vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }`,
+  fragmentShader: GLSL_COMMON + `varying vec3 vDir;
+  void main(){
+    vec3 d = normalize(vDir);
+    vec3 c = skyCol(d);
+    float sd = max(dot(d, sunDir), 0.0);
+    c += vec3(1.0, 0.94, 0.80) * smoothstep(0.99935, 0.99965, sd) * 1.6;
+    if (d.y > 0.0) {
+      vec2 uv = d.xz / (d.y + 0.12);
+      float cl = fbm(uv * vec2(0.9, 2.6) + vec2(time * 0.004, 0.0));
+      cl = smoothstep(0.55, 0.85, cl) * smoothstep(0.0, 0.08, d.y) * (1.0 - smoothstep(0.25, 0.6, d.y));
+      vec3 cc = mix(vec3(1.0, 0.72, 0.62), vec3(1.0, 0.9, 0.78), pow(sd, 4.0));
+      c = mix(c, cc, cl * 0.75);
+    }
+    gl_FragColor = vec4(tone(c), 1.0);
+  }`
+});
+export const sky = new THREE.Mesh(new THREE.SphereGeometry(5000, 32, 16), skyMat);
+sky.renderOrder = -1; world.add(sky);
+
+// Reflejos del cielo: un mapa de entorno sacado del propio cielo, para que la tabla, los neoprenos, los vehículos
+// y la costa cojan su luz cálida. Se hace una sola vez al cargar (las nubes del reflejo no se mueven).
+{
+  const pmrem = new THREE.PMREMGenerator(renderer), soloCielo = new THREE.Scene();
+  soloCielo.add(new THREE.Mesh(sky.geometry, skyMat));
+  scene.environment = pmrem.fromScene(soloCielo, 0, 0.1, 6000).texture;
+  scene.environmentIntensity = REFLEJOS;
+  pmrem.dispose();
+}

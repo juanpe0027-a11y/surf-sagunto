@@ -1,0 +1,9 @@
+// Ajustes generales del juego.
+
+// móviles (iPhone/Android): menos resolución de partida y efectos más ligeros; luego se ajusta solo según los fps
+export const LOWQ = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) || (window.matchMedia && matchMedia('(pointer: coarse)').matches);
+export const PQ = LOWQ ? 0.55 : 1;   // cantidad de spray y espuma
+export const SESSION = 180;          // segundos de sesión
+
+// fuerza de los reflejos del cielo en tablas, neoprenos y costa (0 = sin reflejos)
+export const REFLEJOS = 0.45;
