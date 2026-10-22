@@ -91,7 +91,7 @@ Ahora que Juanpe publica directamente y a menudo, lo importante es que cada publ
 
 - [x] **6.1 Que publicar no rompa el juego** (22-10-2026). Problema comprobado: GitHub Pages deja guardar cada archivo 10 minutos y solo `main.js` y el CSS llevaban `?v=`; tras publicar, un móvil podía usar módulos viejos de su caché (o mezclarlos con nuevos y no cargar). Solución, sin service worker: un **mapa de módulos** en `index.html` (importmap) que pide cada archivo de `js/` con la huella de su contenido; lo escribe `nueva-version.mjs` y `--comprobar` dice si está al día. `herramientas/pruebas/cache.mjs` imita la caché de GitHub Pages y publica una versión: con el mapa se usan los módulos nuevos al momento; sin él (como antes), el jugador se quedaba con los viejos. De paso, los módulos que no cambian ya no se vuelven a descargar en cada versión
 - [ ] ~~**6.2 Instalable**~~ — aplazado: la gracia es que siga siendo un juego de navegador
-- [ ] **6.3 Comprobar la web publicada**: que `herramientas/probar.mjs` pueda abrir la dirección pública (no solo la carpeta local) y jugar una ola, para comprobar en un minuto que lo que ha publicado Juanpe funciona
+- [x] **6.3 Comprobar la web publicada** (22-10-2026): `node herramientas/probar.mjs herramientas/pruebas/partida.js --web` juega una ola con cada personaje en la dirección pública (con Firebase bloqueado)
 - [ ] **6.4 Revisión de lo que sube Juanpe**: con cada tanda de cambios en `main`, pasar las pruebas y revisar que sigue las normas de `CLAUDE.md` (módulo correcto, nada de base64, reglas si cambia la red, `nueva-version.mjs`…). Si algo se sale, corregirlo en una rama y explicárselo a Juanpe. Se puede automatizar con una tarea programada que avise cuando haya cambios
 
 ## Fase 7 — Personajes realistas ⬜

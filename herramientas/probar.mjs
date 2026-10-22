@@ -1,11 +1,13 @@
 // Prueba automática del juego en Chrome/Edge sin ventana (opcional: necesita Node 22+ y Chrome o Edge).
 // Sirve la carpeta, abre el juego, recoge los errores de la consola, ejecuta un guion de pruebas y hace capturas.
 //
-//   node herramientas/probar.mjs [guion.js] [--hash=pruebas] [--espera=8] [--capturas=carpeta] [--jugadores=2] [--emulador] [--online] [--cpu] [--pagina=ruta.html]
+//   node herramientas/probar.mjs [guion.js] [--hash=pruebas] [--espera=8] [--capturas=carpeta] [--jugadores=2] [--emulador] [--online] [--cpu] [--pagina=ruta.html] [--web]
 //
 // Sin --online se bloquea Firebase, para no llenar la base de datos real de jugadores y récords de prueba.
 // --emulador conecta el juego al emulador local de Firebase; --jugadores=N abre N pestañas (N jugadores distintos).
 // --cpu dibuja sin tarjeta gráfica (mucho más lento: el juego va a cámara lenta).
+// --web prueba el juego publicado (https://juanpe0027-a11y.github.io/surf-sagunto/) en vez de esta carpeta: sirve para
+// comprobar en un minuto que lo que se acaba de publicar funciona (Firebase sigue bloqueado salvo con --online).
 //
 // El guion (opcional) es un archivo JS que se ejecuta DENTRO de la página, con acceso a window.__surf,
 // y debe devolver un objeto (o una promesa) con los resultados; se imprime como JSON.
@@ -61,7 +63,8 @@ const cdp = (method, params = {}, sessionId) => new Promise((ok, mal) => { const
 
 // --- una pestaña por jugador, cada una con su propio perfil (= su propio login anónimo) ---
 const JUGADORES = Number(args.jugadores ?? 1);
-const URL_JUEGO = `http://127.0.0.1:${PUERTO}/${args.pagina || ''}${args.emulador ? '?emulador' : ''}${HASH && !args.pagina ? '#' + HASH : ''}`;
+const BASE = args.web ? 'https://juanpe0027-a11y.github.io/surf-sagunto/' : `http://127.0.0.1:${PUERTO}/`;
+const URL_JUEGO = `${BASE}${args.pagina || ''}${args.emulador ? '?emulador' : ''}${HASH && !args.pagina ? '#' + HASH : ''}`;
 const paginas = [];
 for (let i = 0; i < JUGADORES; i++) {
   const { browserContextId } = await cdp('Target.createBrowserContext');

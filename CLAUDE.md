@@ -106,6 +106,7 @@ Necesitan Node 22 o más y Chrome o Edge. Abren el juego en un Chrome sin ventan
 node herramientas/capas.mjs                                            # nadie importa de una capa de arriba
 node herramientas/nueva-version.mjs --comprobar                        # el mapa de módulos de index.html está al día
 node herramientas/pruebas/cache.mjs                                    # tras publicar, los móviles usan los módulos nuevos (imita la caché de GitHub Pages)
+node herramientas/probar.mjs herramientas/pruebas/partida.js --web     # lo mismo que partida.js, pero en la web publicada (tras publicar)
 node herramientas/probar.mjs herramientas/pruebas/datos.js             # fotos, diseños y vehículo de cada personaje
 node herramientas/probar.mjs herramientas/pruebas/partida.js           # una ola con cada personaje, menú y récords
 node herramientas/probar.mjs herramientas/pruebas/bots.js --hash=bots  # bots y Disputa por el Pico
