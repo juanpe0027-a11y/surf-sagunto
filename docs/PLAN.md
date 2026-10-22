@@ -11,8 +11,8 @@ Antes de empezar una fase se descompone en tareas pequeñas (se apuntan aquí mi
 
 **Siguiente, por orden:**
 
-1. **Fase 6.1 — Que publicar no rompa el juego a nadie** (service worker). Es lo más urgente: después de cada publicación, durante ~10 minutos un móvil puede mezclar archivos viejos y nuevos y no cargar. Juanpe publica a menudo.
-2. **Fase 7 — Personajes realistas**: lo que más se nota al jugar (ahora parecen hechos de bolas). Antes hay que decidir el estilo y quién hace los modelos (7.0).
+1. ~~Fase 6.1 — Que publicar no rompa el juego a nadie~~ ✅ (mapa de módulos, 22-10-2026)
+2. **Fase 7 — Personajes realistas**: que cada surfista se reconozca en sus fotos (ahora parecen hechos de bolas). En marcha: modelos en Blender, para validarlos antes de aplicarlos.
 3. **El 29-10-2026**: cerrar las rutas antiguas de Firebase (fase 1, paso 3 de [FIREBASE.md](FIREBASE.md)).
 4. **Medidas reales** (las hace Juanpe): fps en su móvil y consumo en la consola de Firebase.
 5. **Siempre**: revisar los cambios que Juanpe suba a `main` (fase 6.4).
@@ -89,8 +89,8 @@ El script único de ~3.500 líneas es ahora **una cincuentena de módulos** en `
 
 Ahora que Juanpe publica directamente y a menudo, lo importante es que cada publicación llegue limpia a todos los móviles y que nosotros veamos enseguida si algo se ha roto.
 
-- [ ] **6.1 Service worker** (`sw.js` en la raíz, registrado desde `js/main.js`). Problema real comprobado: GitHub Pages deja guardar cada archivo 10 minutos (`Cache-Control: max-age=600`) y solo `main.js` y el CSS llevan `?v=`; los demás módulos no. Tras publicar, un móvil puede cargar el `inicio.js` nuevo con módulos viejos y quedarse en «No se ha podido cargar el juego». Solución: el service worker pide los archivos del juego a la red preguntando si han cambiado (si no, responde «igual» y no se vuelve a descargar) y solo usa la copia guardada si no hay conexión. Probar: publicar dos versiones seguidas y abrir con la caché llena
-- [ ] **6.2 Instalable** (`manifest.json` + icono): se añade a la pantalla de inicio como una app y, sin conexión, se juega con bots
+- [x] **6.1 Que publicar no rompa el juego** (22-10-2026). Problema comprobado: GitHub Pages deja guardar cada archivo 10 minutos y solo `main.js` y el CSS llevaban `?v=`; tras publicar, un móvil podía usar módulos viejos de su caché (o mezclarlos con nuevos y no cargar). Solución, sin service worker: un **mapa de módulos** en `index.html` (importmap) que pide cada archivo de `js/` con la huella de su contenido; lo escribe `nueva-version.mjs` y `--comprobar` dice si está al día. `herramientas/pruebas/cache.mjs` imita la caché de GitHub Pages y publica una versión: con el mapa se usan los módulos nuevos al momento; sin él (como antes), el jugador se quedaba con los viejos. De paso, los módulos que no cambian ya no se vuelven a descargar en cada versión
+- [ ] ~~**6.2 Instalable**~~ — aplazado: la gracia es que siga siendo un juego de navegador
 - [ ] **6.3 Comprobar la web publicada**: que `herramientas/probar.mjs` pueda abrir la dirección pública (no solo la carpeta local) y jugar una ola, para comprobar en un minuto que lo que ha publicado Juanpe funciona
 - [ ] **6.4 Revisión de lo que sube Juanpe**: con cada tanda de cambios en `main`, pasar las pruebas y revisar que sigue las normas de `CLAUDE.md` (módulo correcto, nada de base64, reglas si cambia la red, `nueva-version.mjs`…). Si algo se sale, corregirlo en una rama y explicárselo a Juanpe. Se puede automatizar con una tarea programada que avise cuando haya cambios
 
@@ -98,7 +98,7 @@ Ahora que Juanpe publica directamente y a menudo, lo importante es que cada publ
 
 Lo que más se nota al jugar: los surfistas parecen hechos de bolas. El cuerpo es un maniquí de pruebas de three.js (Xbot, `modelos/cuerpo.glb`) pintado por zonas, y la cabeza la construye el código con esferas (la cara es la foto pegada sobre un trozo de esfera; pelo, barba y gorra son esferas). El navegador puede con modelos realistas hechos en Blender (`.glb`, como ya se carga el cuerpo); los límites son el peso de descarga en el móvil y la potencia con 12 surfistas a la vez.
 
-Objetivo realista: nivel de un buen juego de móvil (cuerpo humano con piel y neopreno, cabeza con forma de cabeza y la cara de cada uno), no fotorrealismo de consola. **Un cuerpo común para todos** y lo propio de cada personaje en colores, texturas y piezas pequeñas.
+**Lo principal: que cada surfista se reconozca al compararlo con sus fotos** (`img/personajes/<id>/foto.jpg` y `cara.jpg`). Objetivo realista: nivel de un buen juego de móvil (cuerpo humano con piel y neopreno, cabeza con forma de cabeza y la cara de cada uno), no fotorrealismo de consola. **Un cuerpo común para todos** y lo propio de cada personaje en colores, texturas y piezas pequeñas.
 
 - [ ] **7.0 Decidir** (Juanpe y nosotros): estilo (semirrealista o más «dibujo»), con 2–3 referencias; y **quién hace los modelos**: instalar Blender (gratis) en el ordenador de desarrollo para que Claude pueda generar parte por línea de comandos, o que alguien los haga a mano
 - [ ] **7.1 Cuerpo nuevo**: una base humana realista de licencia libre (MPFB/MakeHuman para Blender) con el esqueleto de nombres `mixamorig…` que ya usa `surfista/cuerpo.js`, así el código que lo mueve sirve tal cual. Presupuesto: ~10–15 mil triángulos y ≤ 3 MB. Neopreno por zonas (como ahora) o con textura
@@ -125,7 +125,6 @@ Objetivo realista: nivel de un buen juego de móvil (cuerpo humano con piel y ne
 
 - **Estilo de los personajes** y si se instala Blender (fase 7.0).
 - **Color de cine** (fase 5): ¿reajustar todos los colores con tone mapping o dejarlo como está? Lo decide Juanpe.
-- `LEEME-LEO.md` (una nota en broma del Claude de Juanpe) está publicada en la raíz de la web: ¿se deja o se quita?
 - ¿Archivar o borrar el repo `surf-sagunto-privado`, ahora que no se usa? (Lo decide Juanpe.)
 
 ---

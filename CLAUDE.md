@@ -47,7 +47,7 @@ Si la petición es grande o arriesgada (cambiar la física entera, el online, mu
 - **Cambiar los nombres de las claves de guardado** (`js/nucleo/guardado.js`): todos perderían personaje, nombre y récords.
 - **Mandar un campo nuevo por la red sin sus reglas publicadas** en Firebase: se rechaza en silencio.
 - **Borrar una foto o un modelo que el código todavía usa**, o escribir una ruta con mayúsculas distintas a las del archivo (en Windows funciona y en GitHub Pages da 404).
-- **Subir a `main` sin `nueva-version.mjs`**: los móviles se quedan con archivos viejos mezclados con nuevos.
+- **Subir a `main` sin `nueva-version.mjs`**: los móviles se quedan con archivos viejos mezclados con nuevos (`node herramientas/nueva-version.mjs --comprobar` dice si el mapa de módulos está al día).
 - **`git push --force` o `git reset` sobre `main`.**
 
 ## Revisión
@@ -89,7 +89,7 @@ Opciones en la URL: `#sala`, `#bots`, `?emulador` (usa el emulador local de Fire
 - Este repo (`juanpe0027-a11y/surf-sagunto`, público) es el único con el que se trabaja. GitHub Pages publica la rama **`main`** en **https://juanpe0027-a11y.github.io/surf-sagunto/**.
 - ⚠️ **Subir a `main` = publicar al momento para todos los jugadores.** Por eso no se trabaja en `main`: se trabaja en una rama, se prueba, y se une a `main` solo cuando funciona.
 - El repo `surf-sagunto-privado` era una copia; ya no se usa.
-- Al publicar una versión nueva, ejecuta `node herramientas/nueva-version.mjs`: pone el mismo número nuevo en `BUILD_ID` (al final de `index.html`) y en `version.json`, y añade `?v=` a `js/main.js` y al CSS. Así los móviles que tienen el juego abierto se recargan solos y no se quedan con archivos viejos de la caché. Sin Node, cambia a mano el número en esos sitios (el mismo en todos, y mayor que el anterior).
+- Al publicar una versión nueva, ejecuta `node herramientas/nueva-version.mjs`: pone el mismo número nuevo en `BUILD_ID` (al final de `index.html`) y en `version.json`, añade `?v=` a `js/main.js` y al CSS, y reescribe el **mapa de módulos** de `index.html` (cada archivo de `js/` con la huella de su contenido). Así los móviles que tienen el juego abierto se recargan solos y nunca mezclan módulos nuevos con viejos de la caché. **El bloque `<script type="importmap">` de `index.html` no se toca a mano.** Sin Node no se puede publicar bien: pide a quien revisa el código que lo haga.
 - El repo es público: no metas aquí contraseñas ni datos personales (la configuración de Firebase sí puede estar, es normal que sea pública).
 
 ## Cómo probar
@@ -104,6 +104,8 @@ Necesitan Node 22 o más y Chrome o Edge. Abren el juego en un Chrome sin ventan
 
 ```
 node herramientas/capas.mjs                                            # nadie importa de una capa de arriba
+node herramientas/nueva-version.mjs --comprobar                        # el mapa de módulos de index.html está al día
+node herramientas/pruebas/cache.mjs                                    # tras publicar, los móviles usan los módulos nuevos (imita la caché de GitHub Pages)
 node herramientas/probar.mjs herramientas/pruebas/datos.js             # fotos, diseños y vehículo de cada personaje
 node herramientas/probar.mjs herramientas/pruebas/partida.js           # una ola con cada personaje, menú y récords
 node herramientas/probar.mjs herramientas/pruebas/bots.js --hash=bots  # bots y Disputa por el Pico
