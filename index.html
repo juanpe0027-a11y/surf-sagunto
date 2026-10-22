@@ -2098,13 +2098,6 @@ function startFloater() {
   v = Math.max(v, curlSpeed + 1.5);
   chip('🌊 Floater');
 }
-// en pleno salto: arriba del todo de la parábola, «abajo» → baja al labio y se pone a deslizar por él
-function airToFloater() {
-  faceAt(px, 1);
-  floatDrop = Math.max(0, boardRoot.position.y - (face.y + 0.02));
-  air = false; h = 1; spin = flip = spinT = flipT = 0; grab = 0; grabT = 0; trickTaps = 0; supT = 0;
-  startFloater();
-}
 function floaterStep(dt) {
   floatT -= dt;
   floatDrop *= Math.exp(-dt * 7);
@@ -2735,12 +2728,7 @@ function rideStep(dt, hT) {
   } else {
     airT += dt;
     aVy -= 9.8 * dt; aPos.y += aVy * dt; airTop = Math.max(airTop, aPos.y - launchY);
-    // floater desde el salto: arriba del todo (sin truco a medias) y fuera del tubo, «abajo» → al labio
-    const dnA = isDownIn();
-    // (también nada más despegar: si das abajo en el primer medio segundo, se queda en el labio)
-    const nearTake = airT < 0.45;
-    if (state === 'ride' && dnA && (nearTake || (!floatDownPrev && aVy < 2.5 && aVy > -3.5)) && !trickTaps && spin === spinT && flip === flipT && px - curlX > FLOAT_DX) { floatDownPrev = dnA; airToFloater(); return; }
-    floatDownPrev = dnA;
+    floatDownPrev = isDownIn();                 // en el aire ya no se puede enganchar al labio (solo antes de despegar)
     let grabbing = false;
     if (state !== 'title') {
       // gestos: deslizar a un lado = 360 en ese sentido (hasta 720), deslizar abajo = rodeo, dedo quieto = grab
@@ -4236,7 +4224,7 @@ window.__surf = { spawnDolphins, upsertPeer, onMsg, MP, startDuel, DUEL, duelSwi
 </script>
 
 <script>
-const BUILD_ID = '1792673832';
+const BUILD_ID = '1792674266';
 (function () {
   try {
     fetch(location.pathname + '?b=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => {
