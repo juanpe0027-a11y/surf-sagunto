@@ -1,22 +1,32 @@
 // Copias del muñeco para los demás jugadores (cada una con sus propios materiales y texturas).
 import { V3 } from '../nucleo/util.js';
+import { avisar } from '../nucleo/eventos.js';
 import { G } from '../nucleo/estado.js';
+import { canCarry } from '../datos/personajes.js';
 import { setLimb, UP } from '../mundo/formas.js';
 import { world } from '../mundo/motor.js';
 import { HUMAN, makeHuman, poseHuman } from './cuerpo.js';
 import { footB, footF, hair, headG, J, L, rider, SEGL, strandG, strands, torsoCv, torsoTex } from './muneco.js';
-import { applyChar } from './personaje.js';
+import { applyChar, setBoardShape } from './personaje.js';
 import { mkPose, placePaddle } from './posturas.js';
 import { boardRoot } from './raiz.js';
 import { sombra } from './sombra.js';
-import { boardMesh, deckCv, deckTex, finCv, finTex } from './tabla.js';
-import { paddle } from './vehiculos.js';
+import { boardMesh, deckCv, deckTex, finCv, finMeshes, finTex, paintBoard } from './tabla.js';
+import { ironG, jetG, kayakG, paddle, zodiacG } from './vehiculos.js';
 
 function objMap(a, b, m) { m.set(a, b); for (let i = 0; i < a.children.length; i++) objMap(a.children[i], b.children[i], m); return m; }
-function texFromCanvas(src) { const c = document.createElement('canvas'); c.width = src.width; c.height = src.height; c.getContext('2d').drawImage(src, 0, 0); const t = new THREE.CanvasTexture(c); t.anisotropy = 4; return t; }
-export function buildRig(c) {
+export function texFromCanvas(src) { const c = document.createElement('canvas'); c.width = src.width; c.height = src.height; c.getContext('2d').drawImage(src, 0, 0); const t = new THREE.CanvasTexture(c); t.anisotropy = 4; return t; }
+// la tabla bajo el brazo (tabla robada): la misma forma de tabla con la textura de la suya
+export function makeCarry(tex, scale) {
+  const m = new THREE.Mesh(boardMesh.geometry, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.35 }));
+  m.scale.copy(scale); return m;
+}
+// boardCh: si lleva robada la tabla o el vehículo de otro, ese personaje (y la suya va bajo el brazo, si es una tabla)
+export function buildRig(c, boardCh) {
   const keep = G.CH, keepVis = boardRoot.visible, keepPos = boardRoot.position.clone(), keepQ = boardRoot.quaternion.clone();
   applyChar(c); boardRoot.visible = true;
+  let carryTex = null, carryScale = null;
+  if (boardCh) { if (canCarry(c)) { carryTex = texFromCanvas(deckCv); carryScale = boardMesh.scale.clone(); } paintBoard(boardCh); setBoardShape(boardCh); }
   const myBody = HUMAN.local && HUMAN.local.root; if (myBody) boardRoot.remove(myBody);   // el cuerpo con esqueleto se clona aparte
   const r = boardRoot.clone(true);
   const m = objMap(boardRoot, r, new Map());
@@ -35,12 +45,15 @@ export function buildRig(c) {
     o.material = matMap.get(om);
   });
   applyChar(keep); boardRoot.visible = keepVis; boardRoot.position.copy(keepPos); boardRoot.quaternion.copy(keepQ);
+  avisar('rig-hecho');            // mi muñeco ha vuelto a lo mío: si llevo algo robado, online/robo.js lo vuelve a poner
   const g = x => m.get(x);
   const rig = { root: r, L: {}, J: {}, hair: g(hair), headG: g(headG), footB: g(footB), footF: g(footF), strandG: g(strandG),
     strands: strands.map(s => s.map(g)), pony: g(L.pony), pose: mkPose(), faceYaw: new THREE.Quaternion(), mats: [...matMap.values()], texs: [...texDone.values()] };
   for (const k in L) rig.L[k] = g(L[k]);
   for (const k in J) rig.J[k] = g(J[k]);
   rig.rider = g(rider); rig.sombra = g(sombra); rig.paddle = g(paddle); rig.board = g(boardMesh);
+  rig.objs = [boardMesh, jetG, kayakG, zodiacG, ironG, paddle, ...finMeshes].map(g).filter(Boolean);   // todo lo que es «su objeto»
+  if (carryTex) { rig.carry = makeCarry(carryTex, carryScale); rig.rider.add(rig.carry); rig.mats.push(rig.carry.material); rig.texs.push(carryTex); }
   rig.human = makeHuman(c); if (rig.human) r.add(rig.human.root);
   r.visible = false; world.add(r);
   return rig;

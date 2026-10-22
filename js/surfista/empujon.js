@@ -1,4 +1,5 @@
-// Animación del empujón: los brazos del que empuja hacia el otro, y el empujado saliendo volando separado de su tabla.
+// Animación del empujón: los brazos del que empuja hacia el otro, el empujado saliendo volando separado de su tabla,
+// la tabla bajo el brazo cuando te la roban y el tambaleo de los choques.
 // Sirve para mi surfista (boardRoot + rider) y para las copias de los demás (rig.root + rig.rider).
 import { clamp, rnd, V3 } from '../nucleo/util.js';
 import { stance } from './posturas.js';
@@ -44,3 +45,11 @@ export function flyStep(f, board, rider, o) {
 }
 // el surfista vuelve a su sitio sobre la tabla
 export function endFly(rider) { rider.position.set(0, 0, 0); rider.quaternion.identity(); }
+// la tabla bajo el brazo (tabla robada): de canto, pegada al costado y sujeta con el brazo de atrás
+export function carryPose(o, m) {
+  o.eB.set(o.ch.x - 0.28, o.ch.y - 0.16, o.ch.z - 0.16); o.aB.set(o.ch.x - 0.12, o.ch.y - 0.34, o.ch.z - 0.27);
+  m.position.set(o.ch.x - 0.05, o.ch.y - 0.3, o.ch.z - 0.33); m.rotation.set(Math.PI / 2, 0, -0.12);
+  return o;
+}
+// tambaleo tras un choque: la tabla cabecea rápido unos instantes (w = lo que queda, de 0,7 a 0)
+export function wobbleBoard(obj, w, t) { if (w > 0) obj.rotateX(Math.sin(t * 22) * 0.22 * w); }

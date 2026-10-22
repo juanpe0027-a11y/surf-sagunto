@@ -1,6 +1,7 @@
 // Física de la tabla en la ola: rumbo, velocidad, giros, rebotes y cutbacks (rideStep), y el spray que levanta.
 import { angDiff, clamp, lerp, rnd, sm, TAU, V3 } from '../nucleo/util.js';
 import { G, keys, ptr, stick } from '../nucleo/estado.js';
+import { rideC } from '../datos/personajes.js';
 import { basisQuat, UP, vF, vN, vT, vZ } from '../mundo/formas.js';
 import { face, faceAt, HW } from '../mundo/ola.js';
 import { acc, emit, splash } from '../mundo/particulas.js';
@@ -225,7 +226,7 @@ export function estelaTabla(dt) {
       emit(bx, by, bz, vZ.x * a + vN.x * b - vF.x * c, vZ.y * a + vN.y * b - vF.y * c + 1, vZ.z * a + vN.z * b - vF.z * c, rnd(0.45, 0.8), rnd(0.15, 0.45), 0.85, 1);
     }
   }
-  if ((G.CH.jetski || G.CH.zodiac) && !G.air && (G.state === 'ride' || G.state === 'popup' || G.state === 'title')) {
+  if ((rideC().jetski || rideC().zodiac) && !G.air && (G.state === 'ride' || G.state === 'popup' || G.state === 'title')) {
     acc.jet = (acc.jet || 0) + dt * 110 * Math.min(1.5, G.v / 9);
     vF.set(1, 0, 0).applyQuaternion(boardRoot.quaternion);
     const sx = boardRoot.position.x - vF.x * 1.45, sy = boardRoot.position.y + 0.15, sz = boardRoot.position.z - vF.z * 1.45;

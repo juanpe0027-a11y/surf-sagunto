@@ -26,7 +26,7 @@ async function espera(nombre, esperado, promesa) {
 await op('admin', 'DELETE', '');
 const A = await usuario(), B = await usuario();
 const sala = 'v2/salas/pruebas';
-const jugador = (extra = {}) => ({ ch: 'jowi', nm: 'Ana', st: 'ride', dx: 1.5, h: 0.4, th: 0.1, bk: 0, cr: 0.2, gr: 0, ay: 0, sp: 0, fl: 0, pr: 1, pt: 1, sc: 120, t: TS, ...extra });
+const jugador = (extra = {}) => ({ ch: 'jowi', nm: 'Ana', st: 'ride', dx: 1.5, h: 0.4, th: 0.1, bk: 0, cr: 0.2, gr: 0, ay: 0, sp: 0, fl: 0, pr: 1, pt: 1, sb: '', sc: 120, t: TS, ...extra });
 
 console.log('— jugadores');
 await espera('sin login no se puede leer', false, op(null, 'GET', `${sala}/players`));
@@ -38,6 +38,8 @@ await espera('no puedo escribir el jugador de otro', false, op(B, 'PUT', `${sala
 await espera('no puedo borrar a otro que está activo', false, op(B, 'DELETE', `${sala}/players/${A.uid}`));
 await espera('campo desconocido', false, op(A, 'PUT', `${sala}/players/${A.uid}`, jugador({ hack: 1 })));
 await espera('número que no es número', false, op(A, 'PUT', `${sala}/players/${A.uid}`, jugador({ dx: 'mucho' })));
+await espera('escribo mi jugador con una tabla robada', true, op(A, 'PUT', `${sala}/players/${A.uid}`, jugador({ sb: 'litos' })));
+await espera('tabla robada con nombre larguísimo', false, op(A, 'PUT', `${sala}/players/${A.uid}`, jugador({ sb: 'x'.repeat(21) })));
 await espera('protección que no es 0 ni 1', false, op(A, 'PUT', `${sala}/players/${A.uid}`, jugador({ pt: 5 })));
 await espera('puntos imposibles', false, op(A, 'PUT', `${sala}/players/${A.uid}`, jugador({ sc: 9e9 })));
 await espera('hora inventada', false, op(A, 'PUT', `${sala}/players/${A.uid}`, jugador({ t: 123 })));
@@ -51,6 +53,8 @@ console.log('— mensajes');
 const msg = (extra = {}) => ({ id: A.uid, nm: 'Ana', at: TS, ...extra });
 await espera('mando un texto', true, op(A, 'PUT', `${sala}/msgs/m1`, msg({ tx: '¡Vaya ola!' })));
 await espera('mando un empujón', true, op(A, 'PUT', `${sala}/msgs/m2`, msg({ ev: 'push', to: B.uid })));
+await espera('mando un empujón que le roba la tabla', true, op(A, 'PUT', `${sala}/msgs/m2b`, msg({ ev: 'push', to: B.uid, sb: 1 })));
+await espera('«robo» en un mensaje que no es empujón', false, op(A, 'PUT', `${sala}/msgs/m2c`, msg({ tx: 'hola', sb: 1 })));
 await espera('mando un golpe de la disputa', true, op(A, 'PUT', `${sala}/msgs/m3`, msg({ ev: 'hit', to: B.uid, ty: 2 })));
 await espera('mando una nota de voz', true, op(A, 'PUT', `${sala}/msgs/m4`, msg({ au: 'data:audio/webm;base64,' + 'A'.repeat(20000) })));
 await espera('no puedo hacerme pasar por otro', false, op(A, 'PUT', `${sala}/msgs/m5`, msg({ id: B.uid, tx: 'soy B' })));

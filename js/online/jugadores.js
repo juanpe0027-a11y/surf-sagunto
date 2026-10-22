@@ -10,13 +10,14 @@ import { splash } from '../mundo/particulas.js';
 import { poseFor, posturas } from '../surfista/posturas.js';
 import { boardRoot } from '../surfista/raiz.js';
 import { applyPoseRig, buildRig, disposeRig } from '../surfista/rig.js';
-import { endFly, flyStep, FLY_T, pushArms, PUSH_T } from '../surfista/empujon.js';
+import { carryPose, endFly, flyStep, FLY_T, pushArms, PUSH_T, wobbleBoard } from '../surfista/empujon.js';
 import { aPos } from '../juego/fisica.js';
 import { chip, hud, showTrick, toast } from '../juego/hud.js';
 import { addPts, bump } from '../juego/puntos.js';
 import { armTarget, myPushAnims, updatePushHint, updateSafe } from './empujones.js';
 import { CAMPOS_NUM, mandarSurfista, miSurfista, olvidarEnviado } from './protocolo.js';
 import { MP, mpCount, mpLayer, mpMenu } from './red.js';
+import { canSteal, updateRobo } from './robo.js';
 import { updateBots } from '../modos/bots.js';
 
 // cuando llega el cuerpo realista, se rehacen los surfistas que ya estaban en el agua
@@ -69,7 +70,12 @@ export function upsertPeer(id, pr) {
     mpLayer.appendChild(R.label);
     MP.remotes.set(id, R);
   }
-  if (R.chId !== ch.id) { if (R.rig) disposeRig(R.rig); R.rig = buildRig(ch); R.chId = ch.id; }
+  // con algo robado (sb): su muñeco va con la tabla o el vehículo del otro (y su tabla bajo el brazo)
+  const sbCh = typeof pr.sb === 'string' && pr.sb ? CHARS.find(x => x.id === pr.sb) : null;
+  const sbOk = sbCh && canSteal(ch, sbCh) ? sbCh : null;
+  const rigKey = ch.id + '|' + (sbOk ? sbOk.id : '');
+  if (R.rigKey !== rigKey) { if (R.rig) disposeRig(R.rig); R.rig = buildRig(ch, sbOk); R.chId = ch.id; R.rigKey = rigKey; }
+  R.poseCh = sbOk;                // va como el dueño de lo robado: de pie, sentado en la moto, en el kayak…
   const wasSt = R.st;
   R.seen = performance.now(); R.purged = false;
   R.ch = ch; R.st = typeof pr.st === 'string' ? pr.st : 'menu';
@@ -107,7 +113,8 @@ function remoteFaceQuat(th, bk, out) {
   return out;
 }
 export function mpUpdate(dt) {
-  checkIdle(); updateSafe(dt); myPushAnims(dt);
+  if (MP.wobble > 0) { MP.wobble = Math.max(0, MP.wobble - dt); if (G.state === 'ride' && !G.air) wobbleBoard(boardRoot, MP.wobble, performance.now() / 1000); }
+  checkIdle(); updateSafe(dt); myPushAnims(dt); updateRobo(dt);
   mpSend(dt);
   if (MP.sim) updateBots(dt);
   updateBoard(dt); waveLength(dt); updatePushHint();
@@ -122,12 +129,15 @@ export function mpUpdate(dt) {
     // los fantasmas no se ven; si siguen así 45 s, se borran de la sala
     if (!alive(R) && !R.purged && MP.base && performance.now() - (R.seen || 0) > 45000) { R.purged = true; MP.base.child('players/' + R.id).remove().catch(() => {}); }
     // si lo acaban de tirar, se ve cómo sale volando separado de su tabla
-    if (R.fly && (R.fly.t += dt) > FLY_T) { endFly(R.rig.rider); R.fly = null; }
+    if (R.fly && (R.fly.t += dt) > FLY_T) { endFly(R.rig.rider); if (R.fly.hidden) R.fly.hidden.forEach(o => { o.visible = true; }); R.fly = null; }
     if (R.pushArm && (R.pushArm.t += dt) > PUSH_T) R.pushArm = null;
     const vis = showAll && alive(R) && G.state !== 'duel' && R.st !== 'menu' && R.st !== 'duel' && (R.st !== 'wipe' || !!R.fly);
     R.rig.root.visible = vis;
     if (!vis) { R.label.hidden = true; continue; }
     const c = R.cur, rx = G.curlX + c.dx, root = R.rig.root;
+    // su velocidad (para el empujón, que lo gana el más rápido): lo que avanza la ola más lo que se adelanta o se queda
+    if (R.prevDx !== undefined && dt > 0) R.spd = lerp(R.spd || G.curlSpeed, G.curlSpeed + (c.dx - R.prevDx) / dt, 1 - Math.exp(-dt * 3));
+    R.prevDx = c.dx;
     R.rig.sombra.visible = R.st !== 'air' && !R.fly;
     if (R.fly) {
       R.label.hidden = true;
@@ -148,20 +158,22 @@ export function mpUpdate(dt) {
       qR2.setFromAxisAngle(UP, c.sp); qR3.setFromAxisAngle(V3(0, 0, 1), c.fl);
       root.quaternion.copy(qR2).multiply(qR).multiply(qR3);
       root.position.set(rx, Math.max(c.ay, face.y), face.z);
-      pose = poseFor(R.ch)(R.rig.pose, 0.95, c.gr, t, 0); viento = 1;
+      pose = poseFor(R.poseCh || R.ch)(R.rig.pose, 0.95, c.gr, t, 0); viento = 1;
     } else {
       faceAt(rx, clamp(c.h, 0.03, 1));
       remoteFaceQuat(c.th, c.bk, root.quaternion);
       root.position.set(rx, face.y + 0.02, face.z);
-      pose = poseFor(R.ch)(R.rig.pose, c.cr, 0, t + R.tgt.pr, -c.bk * 0.8); viento = 0.7;
+      pose = poseFor(R.poseCh || R.ch)(R.rig.pose, c.cr, 0, t + R.tgt.pr, -c.bk * 0.8); viento = 0.7;
     }
     // si está fuera de la pantalla no se dibuja ni se le mueve el esqueleto (con mucha gente en la ola se nota)
     const sc = toScreen(root.position.x, root.position.y + 2.3, root.position.z);
     const enPantalla = sc[2] <= 1 && sc[0] > -200 && sc[0] < wrap.clientWidth + 200 && sc[1] > -100 && sc[1] < wrap.clientHeight + 400;
     root.visible = enPantalla;
     // el que empuja estira los brazos hacia el otro
+    if (R.rig.carry && enPantalla) carryPose(pose, R.rig.carry);            // su tabla bajo el brazo
+    if (R.wobble > 0) { R.wobble = Math.max(0, R.wobble - dt); wobbleBoard(root, R.wobble, t); }
     if (R.pushArm && enPantalla) pushArms(pose, root, R.rig.rider, armTarget(R.pushArm), R.pushArm.t);
-    if (enPantalla) applyPoseRig(R.rig, pose, viento, seatedC(R.ch) ? 1.5 : 0.9, t);
+    if (enPantalla) applyPoseRig(R.rig, pose, viento, seatedC(R.poseCh || R.ch) ? 1.5 : 0.9, t);
     // nombre (y bocadillo) sobre su cabeza
     R.label.hidden = !enPantalla;
     if (enPantalla) R.label.style.transform = 'translate(' + Math.round(sc[0]) + 'px,' + Math.round(sc[1]) + 'px) translate(-50%,-100%)';
@@ -171,7 +183,8 @@ export function mpUpdate(dt) {
     if (G.state !== 'ride') continue;
     const dxp = rx - G.px;
     if (!G.air && R.st === 'ride' && Math.abs(dxp) < 1.6 && Math.abs(c.h - G.h) < 0.15 && R.hitCD === 0) {
-      R.hitCD = 1.2;
+      // chocar sin empujar no tira a nadie: los dos se tambalean un poco
+      R.hitCD = 1.2; R.wobble = 0.7; MP.wobble = 0.7;
       G.v = Math.max(6, G.v - 1.5); G.theta += (G.h > c.h ? 0.2 : -0.2); G.crouch = 1;
       mpV.copy(boardRoot.position).lerp(root.position, 0.5); splash(mpV, 40, 1);
       chip('💥 Choque con ' + (R.nm || R.ch.name));

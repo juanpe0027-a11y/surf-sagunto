@@ -117,7 +117,7 @@ Online y reglas, contra el **emulador** de Firebase (necesita Java; ver [docs/FI
 
 ```
 firebase emulators:start --only auth,database                       # en otra terminal
-node herramientas/pruebas/reglas.mjs                                 # 48 pruebas de las reglas
+node herramientas/pruebas/reglas.mjs                                 # 52 pruebas de las reglas
 node herramientas/probar.mjs herramientas/pruebas/online.js --emulador --jugadores=2 --hash=pruebas   # dos jugadores: chat, empujón, Disputa, récords
 node herramientas/pruebas/sala.mjs                                   # la ola pública llena manda al nuevo a pantalan-2
 node herramientas/probar.mjs herramientas/pruebas/red.js --emulador --jugadores=3 --hash=pruebas      # cuánto gasta el online ("red": bytes)

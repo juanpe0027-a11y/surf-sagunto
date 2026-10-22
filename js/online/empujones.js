@@ -1,9 +1,11 @@
 // Empujones: pegado a otro surfista, TRUCO lo tira (vuelve a remar y pierde los puntos de la ola).
 // Nada más coger la ola hay unos segundos de protección (🛡️ junto al nombre) en los que nadie te puede tirar.
+// Gana el que va más rápido, y el segundo empujón al mismo le roba lo suyo (online/robo.js).
 import { G } from '../nucleo/estado.js';
 import { splash } from '../mundo/particulas.js';
 import { endFly, flyStep, FLY_T, pushArms, PUSH_T, startFly } from '../surfista/empujon.js';
 import { applyPose, rider } from '../surfista/muneco.js';
+import { setBoardShape } from '../surfista/personaje.js';
 import { poseA } from '../surfista/posturas.js';
 import { boardRoot } from '../surfista/raiz.js';
 import { chip, showTrick } from '../juego/hud.js';
@@ -12,6 +14,7 @@ import { wipeout } from '../juego/sesion.js';
 import { alive } from './jugadores.js';
 import { evento } from './protocolo.js';
 import { MP } from './red.js';
+import { canSteal, misObjetos, stealStart } from './robo.js';
 import { botPushed } from '../modos/bots.js';
 import { duelCount } from '../modos/disputa.js';
 
@@ -54,11 +57,21 @@ export function tryPush() {
   const best = pushTarget();
   if (!best) return false;
   const name = best.nm || best.ch.name;
+  // gana el que va más rápido: si él va más deprisa que tú, el que se cae eres tú
+  const suV = best.bot ? (best.botV || G.curlSpeed) : (best.spd || G.curlSpeed);
+  if (suV > G.v + 0.6) {
+    MP.pushArm = { t: 0, R: best }; best.wobble = 0.7;
+    chip('💥 ' + name + ' iba más rápido');
+    gotPushed(name + ' (iba más rápido)', best.rig.root.position.x);
+    return true;
+  }
+  const steal = (MP.pushCount[best.id] || 0) === 1 && canSteal(G.CH, best.ch) && !MP.steal;      // segundo empujón: le robas lo suyo
   if (best.bot) botPushed(best.id, MP.myName || G.CH.name);
-  else if (MP.base) MP.base.child('msgs').push(evento('push', best.id)).catch(() => {});
+  else if (MP.base) MP.base.child('msgs').push(evento('push', best.id, steal ? { sb: 1 } : undefined)).catch(() => {});
   best.st = 'wipe';
   MP.pushArm = { t: 0, R: best };
   best.fly = startFly(best.rig.root, Math.sign(best.rig.root.position.x - G.px) || 1, G.curlSpeed);
+  if (steal) { best.fly.hidden = best.rig.objs.filter(o => o.visible); best.fly.hidden.forEach(o => { o.visible = false; }); stealStart(best); }
   splash(best.rig.root.position, 70, 1.4);
   const got = addPts(300); chip('💪 Has tirado a ' + name); showTrick('Empujón a ' + name, got); bump(0.1);
   G.v = Math.max(6, G.v - 1); G.crouch = 1;
@@ -86,8 +99,11 @@ export function myPushAnims(dt) {
     else { pushArms(poseA, boardRoot, rider, armTarget(MP.pushArm), MP.pushArm.t); applyPose(poseA); }
   }
   if (MP.fly) {
-    if (G.state !== 'wipe') { endFly(rider); MP.fly = null; }
+    if (G.state !== 'wipe') { endFly(rider); if (MP.fly.noBoard) setBoardShape(G.CH); MP.fly = null; }
     else if ((MP.fly.t += dt) > FLY_T) boardRoot.visible = false;
-    else { boardRoot.visible = true; flyStep(MP.fly, boardRoot, rider, poseA); applyPose(poseA); }
+    else {
+      boardRoot.visible = true; flyStep(MP.fly, boardRoot, rider, poseA); applyPose(poseA);
+      if (MP.fly.noBoard) misObjetos().forEach(m => { m.visible = false; });       // te han robado lo tuyo: vuelas sin ello
+    }
   }
 }

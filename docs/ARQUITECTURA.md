@@ -61,11 +61,12 @@ js/
     muneco.js          cabeza, pelo, gafas, gorra, pies… y applyPose
     personaje.js       applyChar: viste el muñeco con un personaje; setBoardShape
     rig.js             copias del muñeco para los demás jugadores
-    empujon.js         animación del empujón: brazos del que empuja y el empujado volando
+    empujon.js         animación del empujón: brazos del que empuja, el empujado volando, tabla bajo el brazo, tambaleo
   juego/
     sesion.js          estados de la partida (tabla ESTADOS) y sus cambios: remar, ponerse de pie, caer, fin…
     fisica.js          rideStep: movimiento por la ola; spray de la tabla
     trucos.js          saltos, trucos en el aire, caídas, snaps
+    floater.js         floater: deslizar encima del labio
     puntos.js          addPts, bump (multiplicador)
     hud.js             marcadores, mensajes (say, chip, showTrick, toast) y pantallas
   online/
@@ -73,7 +74,8 @@ js/
     protocolo.js       qué se manda por la red y cómo (solo lo que cambia)
     conexion.js        al empezar: bots o conexión a la sala (y reparto de la ola pública cuando se llena)
     jugadores.js       mandar mi estado, dibujar a los demás, choques, clasificación, inactividad
-    empujones.js       empujar y que te empujen (con 4 s de protección al coger la ola)
+    empujones.js       empujar y que te empujen (con 4 s de protección al coger la ola; gana el más rápido)
+    robo.js            robar la tabla o el vehículo (segundo empujón al mismo) y volver a lo tuyo
     mensajes.js        chat, frases rápidas, notas de voz
   modos/
     bots.js            simulación con bots (sala #bots)
@@ -102,6 +104,7 @@ Un objeto `G` con todo lo que cambian varias partes del juego: `G.state`, `G.sco
 | `foto-tabla` | `datos/disenos.js` (carga una foto de tabla) | `surfista/personaje.js`, `interfaz/menu.js` |
 | `cuerpo-listo` | `surfista/cuerpo.js` | `surfista/muneco.js`, `online/jugadores.js` |
 | `tamano` | `mundo/motor.js` (resize) | `mundo/particulas.js` |
+| `rig-hecho` | `surfista/rig.js` (al crear el muñeco de otro jugador, el mío vuelve a lo suyo) | `online/robo.js` (si llevo algo robado, lo vuelve a poner) |
 
 ### Estados de la partida (`juego/sesion.js`)
 `ESTADOS` tiene una función por estado (`title`, `paddle`, `miss`, `popup`, `ride`, `wipe`, `over`) que se ejecuta cada fotograma y devuelve la postura del surfista. Las funciones que cambian de estado (`startPaddle`, `popUp`, `wipeout`, `endSession`…) están en el mismo archivo. La Disputa (`duel`) la lleva `modos/disputa.js`.

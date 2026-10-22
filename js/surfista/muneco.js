@@ -3,7 +3,7 @@
 import { TAU, V3 } from '../nucleo/util.js';
 import { escuchar } from '../nucleo/eventos.js';
 import { G } from '../nucleo/estado.js';
-import { seatedC } from '../datos/personajes.js';
+import { rideC, seatedC } from '../datos/personajes.js';
 import { cyl, setLimb, sph, tv, UP } from '../mundo/formas.js';
 import { HUMAN, poseHuman } from './cuerpo.js';
 import { placePaddle } from './posturas.js';
@@ -136,7 +136,7 @@ export function applyPose(o) {
   J.hB.position.copy(o.aB); J.hF.position.copy(o.aF); J.head.position.copy(o.hd); J.chest.position.copy(o.ch);
   hair.position.copy(o.hd);
   tv.subVectors(o.hd, o.ch).normalize(); hair.quaternion.setFromUnitVectors(UP, tv);
-  faceYaw.setFromAxisAngle(UP, seatedC(G.CH) && G.faceTurn > 0.5 ? 1.5 * Math.sign(rider.scale.z) : G.faceTurn);
+  faceYaw.setFromAxisAngle(UP, seatedC(rideC()) && G.faceTurn > 0.5 ? 1.5 * Math.sign(rider.scale.z) : G.faceTurn);
   placePaddle(paddle, o);
   headG.position.copy(o.hd); headG.quaternion.copy(hair.quaternion).multiply(faceYaw);
   footB.position.copy(o.fB); footF.position.copy(o.fF);

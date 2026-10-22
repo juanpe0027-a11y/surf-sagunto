@@ -5,8 +5,11 @@ import { G } from '../nucleo/estado.js';
 import { CHARS } from '../datos/personajes.js';
 import { face, faceAt, HW } from '../mundo/ola.js';
 import { splash } from '../mundo/particulas.js';
+import { startFly } from '../surfista/empujon.js';
 import { boardRoot } from '../surfista/raiz.js';
+import { chip } from '../juego/hud.js';
 import { gotPushed, SAFE_T } from '../online/empujones.js';
+import { canSteal } from '../online/robo.js';
 import { upsertPeer } from '../online/jugadores.js';
 import { logMsg } from '../online/mensajes.js';
 import { MP } from '../online/red.js';
@@ -52,6 +55,7 @@ export function updateBots(dt) {
       b.dxTT -= dt;
       if (b.dxTT <= 0) { b.dxTT = rnd(3, 6); b.dxT = Math.random() < 0.3 ? rnd(3, 7) : rnd(8, Math.max(45, G.XB * 0.7)); }
       const dxdot = clamp((b.dxT - b.dx) * 0.7, -7, 5);
+      b.v = G.curlSpeed + dxdot; const BRv = MP.remotes.get(b.id); if (BRv) BRv.botV = b.v;   // su velocidad (el empujón lo gana el más rápido)
       b.dx = Math.max(1.5, b.dx + dxdot * dt);
       const vx = G.curlSpeed + dxdot, vy = hdot * HW * 1.25, thN = Math.atan2(vy, vx);
       const om = angDiff(thN, b.th) / Math.max(dt, 1e-3); b.th = thN;
@@ -69,7 +73,15 @@ export function updateBots(dt) {
         if (!MP.safe && !b.safe && Math.abs(rx - G.px) < 1.6 && Math.abs(b.h - G.h) < 0.2 && Math.random() < dt * 0.5) {
           b.pushCD = 7; botSay(b, '💪'); splash(boardRoot.position, 60, 1.2);
           const BR = MP.remotes.get(b.id); if (BR) BR.pushArm = { t: 0, me: true };
-          gotPushed(b.nm, rx); duelCount(BR);
+          if (G.v > b.v + 0.6) {
+            // gana el que va más rápido: si tú vas más deprisa, el que se cae es el bot
+            MP.wobble = 0.7; chip('💪 ' + b.nm + ' intentó tirarte pero ibas más rápido'); botPushed(b.id);
+            if (BR) BR.fly = startFly(BR.rig.root, Math.sign(BR.rig.root.position.x - G.px) || 1, G.curlSpeed);
+          } else {
+            const robo = (MP.pushCount[b.id] || 0) === 1 && canSteal(b.ch, G.CH) && !b.sb;      // segundo empujón: el bot se lleva lo tuyo
+            gotPushed(b.nm, rx); if (robo && MP.fly) { MP.fly.noBoard = true; b.sb = G.CH.id; b.sbT = 0; botSay(b, '🏄'); }
+            duelCount(BR);
+          }
         }
       }
       if (b.rideT > 28) { b.score += b.wave; b.wave = 0; b.st = 'wipe'; b.t = 1.2; }
@@ -85,10 +97,12 @@ export function updateBots(dt) {
         botSay(b, b.flT ? 'Backflip!' : b.spT > TAU ? '720!' : b.spT ? '360!' : '🤙');
       }
     }
+    // te devuelve lo tuyo cuando vuelves a coger ola (o al rato, o si se cae)
+    if (b.sb) { b.sbT += dt; if ((b.sbT > 1.5 && (G.state === 'ride' || G.state === 'popup')) || b.sbT > 20 || (b.st !== 'ride' && b.st !== 'air')) { b.sb = ''; botSay(b, '🤙'); } }
     b.sendT -= dt;
     if (b.sendT <= 0) {
       b.sendT = 1 / 15;
-      upsertPeer(b.id, { ch: b.ch.id, nm: b.nm, st: b.st, pt: (b.st === 'ride' || b.st === 'air') && b.safe ? 1 : 0, dx: b.dx, h: b.h, th: b.th, bk: b.bk, cr: b.cr, gr: 0, ay: b.ay, sp: b.sp, fl: b.fl, pr: b.pr % TAU, sc: Math.floor(b.score + b.wave) });
+      upsertPeer(b.id, { ch: b.ch.id, nm: b.nm, st: b.st, sb: b.sb || '', pt: (b.st === 'ride' || b.st === 'air') && b.safe ? 1 : 0, dx: b.dx, h: b.h, th: b.th, bk: b.bk, cr: b.cr, gr: 0, ay: b.ay, sp: b.sp, fl: b.fl, pr: b.pr % TAU, sc: Math.floor(b.score + b.wave) });
       const R = MP.remotes.get(b.id); if (R) R.bot = true;
     }
   }

@@ -24,6 +24,7 @@
               "fl": { ".validate": "newData.isNumber() && newData.val() > -100000 && newData.val() < 100000" },
               "pr": { ".validate": "newData.isNumber() && newData.val() > -100000 && newData.val() < 100000" },
               "pt": { ".validate": "newData.val() === 0 || newData.val() === 1" },
+              "sb": { ".validate": "newData.isString() && newData.val().length <= 20" },
               "sc": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 5000000" },
               "t": { ".validate": "newData.val() === now" },
               "$otro": { ".validate": false }
@@ -41,6 +42,7 @@
               "ev": { ".validate": "newData.val() === 'push' || newData.val() === 'duel' || newData.val() === 'hit'" },
               "to": { ".validate": "newData.isString() && newData.val().length <= 40" },
               "ty": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 10" },
+              "sb": { ".validate": "newData.val() === 1 && newData.parent().child('ev').val() === 'push'" },
               "tx": { ".validate": "newData.isString() && newData.val().length <= 80" },
               "au": { ".validate": "newData.isString() && newData.val().length <= 100000 && newData.val().beginsWith('data:audio/')" },
               "$otro": { ".validate": false }

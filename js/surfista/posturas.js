@@ -1,7 +1,7 @@
 // Posturas del cuerpo: de pie en la tabla, tumbado, sentado en la moto, el kayak o la zodiac, remando y saludando.
 // Una postura es un objeto con la posición de cada articulación (manos, rodillas, pies, pecho, cabeza…).
 import { V3 } from '../nucleo/util.js';
-import { G } from '../nucleo/estado.js';
+import { rideC } from '../datos/personajes.js';
 import { UP } from '../mundo/formas.js';
 
 const KEYS_POSE = ['hB', 'hF', 'kB', 'kF', 'fB', 'fF', 'ch', 'hd', 'sB', 'sF', 'eB', 'eF', 'aB', 'aF', 'fw'];
@@ -161,5 +161,5 @@ const POSTURAS = {
 export const posturas = c => POSTURAS[vehiculo(c)];
 // postura de surfear: de pie (surf), tumbado (bodyboard) o sentado (moto de agua, kayak, zodiac)
 export function poseFor(c) { return posturas(c).surf; }
-export function riderStance(o, c, grab, t, lean, twist) { return poseFor(G.CH)(o, c, grab, t, lean, twist); }
+export function riderStance(o, c, grab, t, lean, twist) { return poseFor(rideC())(o, c, grab, t, lean, twist); }
 export function lerpPose(a, b, t, out) { for (const k of KEYS_POSE) out[k].lerpVectors(a[k], b[k], t); return out; }

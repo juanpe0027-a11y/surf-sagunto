@@ -13,7 +13,7 @@ Todo el trabajo está en la rama **`mejoras`**, subida a GitHub el 21-10-2026 pe
 
 **Para publicar (en este orden):**
 1. ~~Subir la rama `mejoras` a GitHub~~ (hecho) y probarla a mano si se quiere (ver «Cómo probar» en `CLAUDE.md`, o `herramientas/pruebas.html`).
-2. Juanpe: activar el login anónimo y publicar las reglas en Firebase. Lo hace con su Claude siguiendo [PREPARAR-FIREBASE.md](PREPARAR-FIREBASE.md); se comprueba con `node herramientas/comprobar-firebase.mjs`. Comprobado el 21-10-2026: **todavía sin hacer** (Authentication ni siquiera está empezado). No afecta al juego de ahora.
+2. Juanpe: activar el login anónimo y publicar las reglas en Firebase, con su Claude y [PREPARAR-FIREBASE.md](PREPARAR-FIREBASE.md). El login anónimo ya está (22-10-2026); **las reglas hay que volver a publicarlas** porque se añadió el campo `sb` (robar la tabla). Se comprueba con `node herramientas/comprobar-firebase.mjs`.
 3. Unir `mejoras` a `main` y ejecutar `node herramientas/nueva-version.mjs` (los móviles se recargan solos).
 4. Una semana después: cerrar las rutas antiguas de Firebase ([FIREBASE.md](FIREBASE.md), paso 3).
 
@@ -45,12 +45,14 @@ Juanpe sigue mejorando el juego en el `index.html` antiguo de `main`. Antes de p
 
 **22-10-2026** (9 commits, de `f812d52` a `635bcdb`):
 
-- [ ] Unir otra vez `origin/main` a `mejoras`
-- [ ] **Floater** (`juego/floater.js` nuevo + `posturas.js` + `sesion.js`): subiendo hacia la cresta fuera del tubo, «abajo» → la tabla se queda cruzada encima del labio deslizando hasta 2 s (con estela de agua y postura agachada); «abajo» otra vez o a los 2 s baja la ola y puntúa. Mientras dura, nadie te puede empujar
-- [ ] **El revert del switch** gira metiendo la punta hacia abajo de la ola (al revés que antes)
-- [ ] **Robar la tabla** (`online/robo.js` nuevo): el segundo empujón al mismo surfista le roba lo suyo (tabla, moto, kayak o zodiac; el bodyboard no). Surfeas con lo suyo, con su postura y sus trucos, llevando tu tabla bajo el brazo; cuando él vuelve a coger ola, das un saltito y vuelves a lo tuyo (tu vehículo llega navegando por tu costado) y lo robado se queda atrás a la deriva. Los bots también roban. **Campos nuevos en la red:** `sb` en el jugador (qué lleva robado) y `sb` en el mensaje de empujón → `protocolo.js`, `firebase-reglas.json` y pruebas, **y Juanpe tiene que volver a publicar las reglas**
-- [ ] **Choques con tambaleo**: chocar sin empujar ya no tira a nadie, los dos se tambalean un momento
-- [ ] **El empujón lo gana el más rápido**: si el otro va más deprisa que tú, el que se cae eres tú (también con los bots)
+- [x] Unir otra vez `origin/main` a `mejoras`
+- [x] **Floater** (`juego/floater.js` nuevo + `posturas.js` + `sesion.js`): subiendo hacia la cresta fuera del tubo, «abajo» → la tabla se queda cruzada encima del labio deslizando hasta 2 s (con estela de agua y postura agachada); «abajo» otra vez o a los 2 s baja la ola y puntúa. Mientras dura, nadie te puede empujar
+- [x] **El revert del switch** gira metiendo la punta hacia abajo de la ola (al revés que antes)
+- [x] **Robar la tabla** (`online/robo.js` nuevo): el segundo empujón al mismo surfista le roba lo suyo (tabla, moto, kayak o zodiac; el bodyboard no). Surfeas con lo suyo, con su postura y sus trucos, llevando tu tabla bajo el brazo; cuando él vuelve a coger ola, das un saltito y vuelves a lo tuyo (tu vehículo llega navegando por tu costado) y lo robado se queda atrás a la deriva. Los bots también roban. **Campos nuevos en la red:** `sb` en el jugador (qué lleva robado) y `sb` en el mensaje de empujón → `protocolo.js`, `firebase-reglas.json` y pruebas, **y Juanpe tiene que volver a publicar las reglas**
+- [x] **Choques con tambaleo**: chocar sin empujar ya no tira a nadie, los dos se tambalean un momento
+- [x] **El empujón lo gana el más rápido**: si el otro va más deprisa que tú, el que se cae eres tú (también con los bots)
+
+Cómo quedó: floater en `juego/floater.js`; robo en `online/robo.js` (la tabla bajo el brazo y el tambaleo, en `surfista/empujon.js`). Al pasarlo se ha corregido un fallo de `main`: si te tiraban llevando algo robado (o pasaban 20 s), el robo no terminaba nunca (se repintaba la tabla en cada fotograma, los demás te seguían viendo con lo robado y no podías volver a robar). No se han pasado restos sin uso (`floatDrop`, `floatDownPrev`). Se ha añadido el floater al panel de ayuda. Probado: 15 personajes, bots, Disputa, online con 2 y 3 jugadores (38 KB), 52 reglas, y guiones a propósito para floater y robo (tabla, moto, vuelta navegando, más rápido, choque).
 
 Cómo quedó: la animación va en `surfista/empujon.js` (no depende del online) y la protección y el resto en `online/empujones.js`. De paso: el «Rodeo» se llama «Backflip» también en los bots, comentarios y README; y los brazos de otro jugador que empuja ya no se quedan «congelados» si no estaba en pantalla en ese momento. Probado con los 15 personajes, bots, Disputa, online con 2 y 3 jugadores (el consumo sigue en 42 KB) y 48 reglas.
 
@@ -97,8 +99,8 @@ Que nadie pueda borrar a otros jugadores, inventarse récords ni llenar la base 
 - [x] Ranking: descarga solo los 20 mejores en vez de todas las puntuaciones
 - [x] Al conectar se recuperan los récords de la nube (por si se borran los datos del navegador)
 - [x] Emulador local (`?emulador`) y 47 pruebas de reglas que pasan
-- [ ] **Juanpe:** activar el login anónimo en la consola de Firebase ([FIREBASE.md](FIREBASE.md), paso 1)
-- [ ] **Juanpe:** publicar `firebase-reglas.json` en la consola de Firebase (paso 2). Se puede hacer ya: las rutas antiguas siguen abiertas y el juego en vivo no se rompe
+- [x] **Juanpe:** activar el login anónimo en la consola de Firebase ([FIREBASE.md](FIREBASE.md), paso 1) — hecho el 22-10-2026
+- [ ] **Juanpe:** publicar `firebase-reglas.json` en la consola de Firebase (paso 2). Publicadas el 22-10-2026, pero **hay que volver a publicarlas**: después se añadió el campo `sb` (robar la tabla). `node herramientas/comprobar-firebase.mjs` dice si están al día
 - [ ] Unir la rama a `main` (publicar) y subir `BUILD_ID`
 - [ ] Una semana después de publicar: quitar de las reglas las rutas antiguas `salas` y `stats` y borrar sus datos (paso 3)
 

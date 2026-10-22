@@ -7,9 +7,11 @@
 //   surfeando:     dx distancia al tubo · h altura en la cara · th rumbo · bk inclinación · cr flexión · gr agarre
 //                  ay altura en el aire · sp giro · fl mortal · pr fase de la remada
 //                  pt protegido (1 = acaba de coger la ola y no se le puede empujar, 0 = sí)
+//                  sb qué lleva robado: el id del personaje al que le ha quitado la tabla o el vehículo ('' = nada)
 //   en la Disputa: du rival · dx posición · h vidas · gr golpes dados · sp tipo de golpe · bk cubriéndose · ay salto
 // Mensajes, en v2/salas/<sala>/msgs: id quién · nm su nombre · at hora, y además uno de estos:
-//   tx texto · au nota de voz · ev evento ('push' empujón, 'duel' disputa, 'hit' golpe) con to a quién (y ty tipo de golpe)
+//   tx texto · au nota de voz · ev evento ('push' empujón, 'duel' disputa, 'hit' golpe) con to a quién
+//   (y ty tipo de golpe; en el empujón, sb: 1 si además le roba lo suyo)
 import { TAU } from '../nucleo/util.js';
 import { G } from '../nucleo/estado.js';
 import { aPos } from '../juego/fisica.js';
@@ -34,7 +36,7 @@ export function miSurfista() {
   const st = miEstado(), yo = { ch: G.CH.id, nm: MP.myName || G.CH.name, st, sc: Math.floor(G.score) };
   if (st === 'duel' && DUEL.on) return Object.assign(yo, { du: DUEL.oppId, dx: r2(DUEL.A.u), h: DUEL.A.hp, gr: DUEL.swN, sp: DUEL.A.sw.type, bk: DUEL.A.block ? 1 : 0, ay: r2(DUEL.A.jy) });
   return Object.assign(yo, { dx: r2(G.px - G.curlX), h: r2(G.h), th: r2(G.theta), bk: r2(G.bank), cr: r2(G.crouch),
-    gr: r2(G.grab), ay: r2(G.air ? aPos.y : 0), sp: r2(G.spin), fl: r2(G.flip), pr: r2(G.paddlePh % TAU), pt: MP.safe ? 1 : 0 });
+    gr: r2(G.grab), ay: r2(G.air ? aPos.y : 0), sp: r2(G.spin), fl: r2(G.flip), pr: r2(G.paddlePh % TAU), pt: MP.safe ? 1 : 0, sb: MP.steal ? MP.steal.chId : '' });
 }
 
 // Mandar solo lo que ha cambiado gasta mucho menos (la descarga mensual es el límite del plan gratuito).

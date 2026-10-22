@@ -2,7 +2,7 @@
 import { clamp, rnd, sm, TAU, V3 } from '../nucleo/util.js';
 import { PQ } from '../nucleo/config.js';
 import { G, ptr } from '../nucleo/estado.js';
-import { seatedC } from '../datos/personajes.js';
+import { rideC, seatedC } from '../datos/personajes.js';
 import { basisQuat, UP, vF, vN, vT } from '../mundo/formas.js';
 import { face, faceAt } from '../mundo/ola.js';
 import { emit, splash } from '../mundo/particulas.js';
@@ -40,14 +40,14 @@ export function launch() {
   splash(aPos, 25, 0.8);
   ptr.ax = ptr.x; ptr.ay = ptr.y; ptr.moved = false;
   if (G.state === 'title') G.spinT = TAU;
-  else if (!G.airHintShown) { G.airHintShown = true; say(seatedC(G.CH) ? 'TRUCO: 1 toque Superman · 2 Backflip · 3 360 · 4 Backflip + Superman' : 'TRUCO: 1 toque switch · 2 360 · 3 backflip agarrado · mantén = agarrar', 2.6); }
+  else if (!G.airHintShown) { G.airHintShown = true; say(seatedC(rideC()) ? 'TRUCO: 1 toque Superman · 2 Backflip · 3 360 · 4 Backflip + Superman' : 'TRUCO: 1 toque switch · 2 360 · 3 backflip agarrado · mantén = agarrar', 2.6); }
 }
 // 1 pulsación = switch · 2 = 360 · 3 = backflip agarrado · 4 = backflip 360 (se pueden encadenar mientras dure el salto)
 export const SWITCH_T = 1.3;   // segundos que va en switch antes de volver solo de punta
 
 export function doTrick(n) {
   const dir = 1;
-  if (seatedC(G.CH)) {
+  if (seatedC(rideC())) {
     if (n === 1) G.supT = 0.8;
     else if (n === 2) G.flipT += TAU;
     else if (n === 3) G.spinT += TAU;
@@ -72,11 +72,11 @@ export function land() {
   if (sErr > 0.9 || fErr > 0.9) { wipeout(sErr > 0.9 ? 'No te ha dado tiempo a completar el giro' : 'No has cerrado el mortal'); return; }
   G.spin = G.spinT; G.flip = G.flipT;
   const ns = Math.floor(Math.abs(G.spinT) / TAU + 0.05), nf = Math.round(G.flipT / TAU), grabbed = G.grabT > 0.2;
-  const sw = !seatedC(G.CH) && Math.abs(Math.abs(G.spinT) - ns * TAU - Math.PI) < 0.3;      // ha caído en switch (180)
+  const sw = !seatedC(rideC()) && Math.abs(Math.abs(G.spinT) - ns * TAU - Math.PI) < 0.3;      // ha caído en switch (180)
   if (sw) { G.switchT = SWITCH_T; qTmp.setFromAxisAngle(UP, -Math.PI); qLand.multiply(qTmp); }
   const name = [];
-  const gName = seatedC(G.CH) ? 'Superman' : 'Indy';
-  if (grabbed) { name.push(G.grabT > 0.6 ? gName + ' largo' : gName); chip((seatedC(G.CH) ? '🦸 ' : '✋ ') + gName + ' ' + G.grabT.toFixed(1) + ' s'); }
+  const gName = seatedC(rideC()) ? 'Superman' : 'Indy';
+  if (grabbed) { name.push(G.grabT > 0.6 ? gName + ' largo' : gName); chip((seatedC(rideC()) ? '🦸 ' : '✋ ') + gName + ' ' + G.grabT.toFixed(1) + ' s'); }
   if (ns > 0 || sw) { const n = (G.spinT < 0 ? 'Alley-oop ' : '') + (ns * 360 + (sw ? 180 : 0)) + (sw ? ' switch' : ''); name.push(n); chip('↻ ' + n); }
   if (nf > 0) { const n = nf > 1 ? 'Doble backflip' : 'Backflip'; name.push(n); chip('⟳ ' + n); }
   if (!name.length) name.push('Aéreo');

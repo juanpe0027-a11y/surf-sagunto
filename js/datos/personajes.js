@@ -4,6 +4,10 @@ import { G } from '../nucleo/estado.js';
 import { leer } from '../nucleo/guardado.js';
 
 export const seatedC = c => !!(c.jetski || c.kayak || c.zodiac);
+// lo que se puede llevar bajo el brazo (cuando te roban o robas): una tabla, no un vehículo ni un bodyboard
+export const canCarry = c => !!c && !seatedC(c) && !c.bodyboard;
+// con qué va montado ahora: lo suyo, o lo que ha robado (con su postura y sus trucos)
+export const rideC = () => G.rideCh || G.CH;
 // surfistas: aspecto y estilo (1–5). vel = empuje de la ola, air = altura y giro, tubo = aguante y puntos en el tubo
 // fotos reales de cada surfista para su ficha de selección
 export const PHOTOS = {

@@ -38,7 +38,7 @@ export function onMsg(m) {
   if (m.ev === 'push') {
     // el que empuja estira los brazos; el empujado (yo u otro) sale volando
     if (R) R.pushArm = { t: 0, me: m.to === MP.myId, to: m.to };
-    if (m.to === MP.myId) { gotPushed(who, R && R.rig ? R.rig.root.position.x : G.px - 1); duelCount(R); }
+    if (m.to === MP.myId) { gotPushed(who, R && R.rig ? R.rig.root.position.x : G.px - 1); if (m.sb && MP.fly) MP.fly.noBoard = true; duelCount(R); }
     else { const V = MP.remotes.get(m.to); if (V && V.rig && R && R.rig) V.fly = startFly(V.rig.root, Math.sign(V.rig.root.position.x - R.rig.root.position.x) || 1, G.curlSpeed); }
     return;
   }
