@@ -50,6 +50,7 @@ export const G = {
   landV: 0,         // velocidad al caer
   landT: 1,         // tiempo desde que cayó (la tabla se asienta en 0,2 s)
   switchT: 0,       // tiempo que le queda yendo en switch (con las quillas delante) tras caer de un 180
+  floatT: 0,        // tiempo que le queda de floater (deslizando encima del labio); 0 = no está haciendo floater
   lastVh: 0,
   fs: null,         // maniobra TRUCO en marcha (180 · 180), o null
   btnTurn: null,    // rumbo pedido con el botón TRUCO, o null

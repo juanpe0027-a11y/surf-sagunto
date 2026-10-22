@@ -41,6 +41,7 @@ function pushTarget() {
 // protección: nada más coger la ola (o volver después de que te tiren), unos segundos sin que te puedan tirar
 MP.safe = true; MP.safeT = 0;
 export function updateSafe(dt) {
+  if (G.floatT > 0) { if (!MP.safe) { MP.safe = true; MP.sendT = 0; } return; }   // haciendo un floater tampoco te pueden tirar
   if (G.state === 'ride' || G.state === 'popup') {
     MP.safeT += dt;
     if (MP.safe && MP.safeT > SAFE_T) { MP.safe = false; MP.sendT = 0; }

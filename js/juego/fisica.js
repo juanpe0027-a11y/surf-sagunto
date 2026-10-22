@@ -9,6 +9,7 @@ import { chip, showTrick } from './hud.js';
 import { addPts, bump } from './puntos.js';
 import { wipeout } from './sesion.js';
 import { doTrick, land, LAND_H, launch, lipSpray, snap } from './trucos.js';
+import { floaterStep, quiereFloater, startFloater } from './floater.js';
 
 export const LAND_A = 0.5, LAND_SOFT = 1.0;    // al caer: la tabla apunta hacia abajo de la ola y un rato de recepción suave
 export const qLandPose = new THREE.Quaternion(), qLand = new THREE.Quaternion(), qAirBase = new THREE.Quaternion();
@@ -32,7 +33,7 @@ export function placeBoardOnFace() {
     if (G.landT < 0.2) THREE.Quaternion.slerp(qLand, qRide, boardRoot.quaternion, sm(0, 0.2, G.landT));   // recepción suave
     else boardRoot.quaternion.copy(qRide);
     // switch: va con las quillas delante y al final gira 180 para volver a ir de punta
-    if (G.switchT > 0) { qSw.setFromAxisAngle(UP, Math.PI * sm(0, 0.35, G.switchT)); boardRoot.quaternion.multiply(qSw); }
+    if (G.switchT > 0) { qSw.setFromAxisAngle(UP, -Math.PI * sm(0, 0.35, G.switchT)); boardRoot.quaternion.multiply(qSw); }   // gira metiendo la punta hacia abajo de la ola
   }
   boardRoot.position.set(G.px, face.y + 0.02, face.z);
 }
@@ -63,8 +64,10 @@ export function rideStep(dt, hT) {
   G.curlSpeed = 8.5 + Math.min(3.5, G.rideT * 0.035);
   G.curlX += G.curlSpeed * dt;
   G.snapCD = Math.max(0, G.snapCD - dt);
+  if (G.floatT > 0 && !G.air && G.state === 'ride') { floaterStep(dt); return; }
   if (!G.air) {
-    // giro: la tabla rota hacia el rumbo pedido con velocidad de giro limitada (trazadas en arco)
+    // floater: subiendo cerca del labio (fuera del tubo), «abajo» → se queda en el labio en vez de despegar
+    if (quiereFloater()) { startFloater(); floaterStep(dt); return; }
     // giro: la tabla rota hacia el rumbo pedido por el camino más corto, con velocidad de giro
     // limitada (trazadas en arco). Rumbo completo de 360°: se puede volver de punta hacia el tubo.
     const prev = G.theta;

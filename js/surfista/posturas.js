@@ -44,6 +44,13 @@ export function stance(o, c, grab, t, lean, twist) {
   return o;
 }
 const TWIST_KEYS = ['sB', 'sF', 'eB', 'eF', 'aB', 'aF', 'hd'];
+// postura de floater (encima de la de surf): muy agachado, el peso delante y los brazos abiertos para equilibrarse
+export function floaterPose(o, t) {
+  o.hB.y -= 0.12; o.hF.y -= 0.12; o.ch.y -= 0.14; o.hd.y -= 0.14; o.sB.y -= 0.14; o.sF.y -= 0.14; o.ch.z += 0.1; o.hd.z += 0.12;
+  o.eB.set(-0.45, o.ch.y + 0.05, o.ch.z - 0.1); o.aB.set(-0.78, o.ch.y + 0.22 + 0.04 * Math.sin(t * 3), o.ch.z - 0.05);
+  o.eF.set(0.38, o.ch.y - 0.1, o.ch.z + 0.2); o.aF.set(0.62, o.ch.y - 0.28 + 0.04 * Math.cos(t * 3), o.ch.z + 0.38);
+  return o;
+}
 // saludo surfero (shaka) con la mano de delante
 export function shaka(o) {
   o.eF.set(o.ch.x + 0.24, o.ch.y - 0.04, o.ch.z + 0.26);

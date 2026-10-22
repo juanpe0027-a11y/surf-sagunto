@@ -10,7 +10,7 @@ import { guardar, leer } from '../nucleo/guardado.js';
 import { basisQuat, UP, vT } from '../mundo/formas.js';
 import { face, faceAt } from '../mundo/ola.js';
 import { splash } from '../mundo/particulas.js';
-import { lerpPose, poseA, poseB, poseOut, posturas, riderStance } from '../surfista/posturas.js';
+import { floaterPose, lerpPose, poseA, poseB, poseOut, posturas, riderStance } from '../surfista/posturas.js';
 import { boardRoot } from '../surfista/raiz.js';
 import { placeBoardOnFace, qRide, qTmp, qTmp2, rideStep, steerTarget } from './fisica.js';
 import { bubble, chip, clockEl, dial, fade, fmtClock, hud, menuP, overlay, overP, promptEl, ringArc, ringbox, ringTxt, say, showTrick, tricksEl, waveNEl } from './hud.js';
@@ -34,7 +34,7 @@ export function newGame() {
 }
 export function startPaddle() {
   if (G.sessionT <= 0) { endSession(); return; }
-  G.state = 'paddle'; G.pt = 0; G.windowOpen = false; G.air = false; G.tubeT = 0; G.mult = 1; G.wavePts = 0; G.switchT = 0;
+  G.state = 'paddle'; G.pt = 0; G.windowOpen = false; G.air = false; G.tubeT = 0; G.mult = 1; G.wavePts = 0; G.switchT = 0; G.floatT = 0;
   G.curlX = G.px - 7; G.grow = 0.35; G.pm = 0; G.h = 0.04; G.vh = 0; G.s = 1.25; G.rideT = 0;
   boardRoot.visible = true;
   ringbox.hidden = false; ringbox.classList.remove('go'); ringTxt.textContent = 'Prepárate para tocar';
@@ -53,7 +53,7 @@ function missTakeoff(why) {
 }
 export function wipeout(why) {
   if (G.state !== 'ride' && G.state !== 'popup') return;
-  G.state = 'wipe'; G.wipeT = 0; G.air = false; G.tubeT = 0;
+  G.state = 'wipe'; G.wipeT = 0; G.air = false; G.tubeT = 0; G.floatT = 0;
   say(why, 1.8);
   wVel.set(G.s * 8.5 * 0.4, 4, 2.5); wAxis.set(rnd(-1, 1), rnd(-1, 1), rnd(-1, 1)).normalize();
   splash(boardRoot.position, 70, 1.3);
@@ -163,7 +163,8 @@ const ESTADOS = {
       } else if (dx < -0.4 && G.aVy < 0) wipeout('Has caído dentro de la espuma');
     }
     G.landT += dt;
-    return riderStance(poseA, G.crouch, G.air ? G.grab : 0, G.clock, G.air ? 0 : -G.bank * 0.8, G.air ? 0 : G.twistAmt);
+    const pose = riderStance(poseA, G.crouch, G.air ? G.grab : 0, G.clock, G.air ? 0 : -G.bank * 0.8, G.air ? 0 : G.twistAmt);
+    return G.floatT > 0 && !G.air ? floaterPose(pose, G.clock) : pose;
   },
   wipe: caida,
   over: caida,
