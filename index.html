@@ -2089,7 +2089,7 @@ let rideAngle = 0, lastVh = 0, snapCD = 0;
 // la tabla tiene rumbo (theta: 0 = paralela a la orilla, + sube la ola, - baja) y velocidad v en m/s
 let hMinRun = 0.5;
 // floater: subiendo a la cresta fuera del tubo, «abajo» justo antes de despegar = 2 s deslizando por encima del labio
-const FLOAT_T = 2, FLOAT_DX = 12;
+const FLOAT_T = 2, FLOAT_DX = 12, FLOAT_TH = -1.3;
 let floatT = 0, floatRel = false, floatDownPrev = false, floatAcc = 0, floatDrop = 0;
 const isDownIn = () => (stick.id !== null && stick.y > 0.45) || keys.down;
 function startFloater() {
@@ -2109,7 +2109,8 @@ function floaterStep(dt) {
   floatT -= dt;
   floatDrop *= Math.exp(-dt * 7);
   const k = 1 - Math.exp(-dt * 10);
-  h = lerp(h, 1, k); theta = lerp(theta, 0.02, k); bank = lerp(bank, 0, k); omega = 0; twistAmt = lerp(twistAmt, 0, k);
+  // la tabla va cruzada sobre el labio (la punta hacia abajo de la ola) mientras se desliza de lado con la ola
+  h = lerp(h, 1, k); theta = lerp(theta, FLOAT_TH, 1 - Math.exp(-dt * 7)); bank = lerp(bank, 0, k); omega = 0; twistAmt = lerp(twistAmt, 0, k);
   crouch = lerp(crouch, 1, k);
   v = lerp(v, curlSpeed + 1.8, 1 - Math.exp(-dt * 2)); px += v * dt; s = v / 8.5; vh = 0;
   floaterSpray(dt);
@@ -4231,7 +4232,7 @@ window.__surf = { spawnDolphins, upsertPeer, onMsg, MP, startDuel, DUEL, duelSwi
 </script>
 
 <script>
-const BUILD_ID = '1792672880';
+const BUILD_ID = '1792673132';
 (function () {
   try {
     fetch(location.pathname + '?b=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => {
